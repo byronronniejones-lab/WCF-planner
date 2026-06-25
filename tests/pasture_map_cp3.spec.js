@@ -120,9 +120,10 @@ test('records moves and derives occupied/resting state', async ({page}) => {
   await page.locator(`.pm-area-${A_ID}`).first().hover();
   await expect(page.locator('.pm-area-hover-tip').filter({hasText: 'Resting'})).toBeVisible({timeout: 15_000});
 
-  // Reports tab grazing-days log records the Mommas moves.
+  // Reports tab: open the occupied paddock's grazing record -> it lists the Mommas stay.
   await page.locator('.pm-tabs button', {hasText: 'Reports'}).click();
-  await expect(page.locator('[data-pasture-recent-moves]')).toContainText('Mommas', {timeout: 15_000});
+  await page.locator(`[data-pasture-report-area-row="${B_ID}"]`).click();
+  await expect(page.locator('[data-pasture-report-timeline]')).toContainText('Mommas', {timeout: 15_000});
 
   // Mobile: the view still loads and area polygons render.
   await page.setViewportSize({width: 390, height: 844});

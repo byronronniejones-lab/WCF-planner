@@ -28,8 +28,6 @@ import {
   createPasturePlannedMove,
   updatePasturePlannedMoveStatus,
   listPastureHistoryReport,
-  listPastureRestReport,
-  listPastureStockingReport,
   listPastureRotations,
   upsertPastureRotation,
   clearPastureRotation,
@@ -407,6 +405,84 @@ function formatTimeInArea(movedAt) {
   const hours = totalHours % 24;
   return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
 }
+const ANIMAL_TYPE_LABEL = {
+  cattle_herd: 'Cattle',
+  sheep_flock: 'Sheep',
+  breeder_pigs: 'Pigs',
+  feeder_pigs: 'Feeder pigs',
+};
+function animalTypeLabel(t) {
+  return ANIMAL_TYPE_LABEL[t] || 'Animals';
+}
+
+// Derive grazing STAYS for an area from its move-event history
+// (list_pasture_history_report, already filtered to the area). A stay starts on each
+// move INTO the area (to_land_area_id === id) and ends on that same group's next move
+// OUT (from_land_area_id === id); an unmatched start is "still here". Per-stay density
+// (head/ac) and animal-days derive from the area's acres and the stay length. Overlap
+// impacts are NOT stays (the group grazed a different, overlapping area).
+function buildGrazingStays(areaId, history, acres) {
+  const asc = (history || [])
+    .filter((h) => h && h.moved_at)
+    .slice()
+    .sort((a, b) => new Date(a.moved_at) - new Date(b.moved_at));
+  const acreVal = Number(acres);
+  const hasAcres = Number.isFinite(acreVal) && acreVal > 0;
+  const nowMs = Date.now();
+  const stays = [];
+  for (let i = 0; i < asc.length; i++) {
+    const ev = asc[i];
+    if (ev.to_land_area_id !== areaId) continue;
+    let exit = null;
+    for (let j = i + 1; j < asc.length; j++) {
+      const nx = asc[j];
+      if (nx.animal_type !== ev.animal_type || nx.group_key !== ev.group_key) continue;
+      if (nx.from_land_area_id === areaId) {
+        exit = nx;
+        break;
+      }
+      if (nx.to_land_area_id === areaId) break; // re-entry without a recorded exit
+    }
+    const inMs = new Date(ev.moved_at).getTime();
+    const endMs = exit ? new Date(exit.moved_at).getTime() : nowMs;
+    const days =
+      Number.isFinite(inMs) && Number.isFinite(endMs) && endMs >= inMs
+        ? Math.round(((endMs - inMs) / 86400000) * 10) / 10
+        : null;
+    const count = Number.parseInt(ev.animal_count, 10);
+    const headCount = Number.isFinite(count) && count > 0 ? count : null;
+    const density = headCount != null && hasAcres ? Math.round((headCount / acreVal) * 100) / 100 : null;
+    const animalDays = headCount != null && days != null ? Math.round(headCount * days) : null;
+    stays.push({
+      id: ev.id,
+      groupLabel: ev.group_label,
+      animalType: ev.animal_type,
+      headCount,
+      inAt: ev.moved_at,
+      outAt: exit ? exit.moved_at : null,
+      stillHere: !exit,
+      days,
+      density,
+      animalDays,
+      notes: ev.notes || '',
+    });
+  }
+  return stays.reverse(); // newest first
+}
+
+function grazingRecordTotals(stays) {
+  let totalAnimalDays = 0;
+  const densities = [];
+  for (const s of stays) {
+    if (s.animalDays != null) totalAnimalDays += s.animalDays;
+    if (s.density != null) densities.push(s.density);
+  }
+  const avgDensity = densities.length
+    ? Math.round((densities.reduce((a, b) => a + b, 0) / densities.length) * 100) / 100
+    : null;
+  return {timesGrazed: stays.length, totalAnimalDays, avgDensity};
+}
+
 function isTempArea(area) {
   return !!area && area.permanence === 'temporary';
 }
@@ -447,10 +523,6 @@ export default function PastureMapView({Header, authState}) {
   const [areas, setAreas] = React.useState([]);
   const [moves, setMoves] = React.useState([]);
   const [plans, setPlans] = React.useState([]);
-  const [restReport, setRestReport] = React.useState({areas: [], counts: {}});
-  const [stockingReport, setStockingReport] = React.useState({areas: []});
-  const [historyRows, setHistoryRows] = React.useState([]);
-  const [historyLoading, setHistoryLoading] = React.useState(false);
   const [offlineStatus, setOfflineStatus] = React.useState('');
   const [queueState, setQueueState] = React.useState({queued: [], stuck: [], queuedCount: 0, stuckCount: 0});
   const [loading, setLoading] = React.useState(true);
@@ -472,7 +544,11 @@ export default function PastureMapView({Header, authState}) {
   const [listView, setListView] = React.useState(false);
   const [addMode, setAddMode] = React.useState(false);
   const [expandedPasture, setExpandedPasture] = React.useState(null);
-  const [openReport, setOpenReport] = React.useState('rest');
+  // Reports = every-area grazing records: the area list, the drilled-in area, and
+  // that area's lazily-loaded move history (the source for its grazing timeline).
+  const [reportAreaId, setReportAreaId] = React.useState(null);
+  const [reportHistory, setReportHistory] = React.useState([]);
+  const [reportHistoryLoading, setReportHistoryLoading] = React.useState(false);
   const [zoomSignal, setZoomSignal] = React.useState(0);
   const [styleDraft, setStyleDraft] = React.useState(() => styleDraftFromArea(null));
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
@@ -529,28 +605,22 @@ export default function PastureMapView({Header, authState}) {
       await syncPastureQueue();
       // Light is Map-only: fetch only the area + move data the Map needs, and skip
       // the planning/report RPCs (which Light is not granted and never displays).
-      const [areaRes, moveRes, planRes, restRes, stockingRes, rotRes, measRes] = await Promise.all([
+      const [areaRes, moveRes, planRes, rotRes, measRes] = await Promise.all([
         listLandAreas(false),
         listPastureMoves(75),
         canViewPlanning
           ? listPasturePlannedMoves({status: 'planned', limit: 75})
           : Promise.resolve({planned_moves: []}),
-        canViewPlanning ? listPastureRestReport() : Promise.resolve({areas: [], counts: {}}),
-        canViewPlanning ? listPastureStockingReport() : Promise.resolve({areas: []}),
         canViewPlanning ? listPastureRotations() : Promise.resolve({rotations: []}),
         canViewPlanning ? listPastureMeasurements() : Promise.resolve({measurements: []}),
       ]);
       const nextAreas = (areaRes && areaRes.land_areas) || [];
       const nextMoves = (moveRes && moveRes.moves) || [];
       const nextPlans = (planRes && planRes.planned_moves) || [];
-      const nextRest = restRes || {areas: [], counts: {}};
-      const nextStocking = stockingRes || {areas: []};
       const nextRotations = (rotRes && rotRes.rotations) || [];
       setAreas(nextAreas);
       setMoves(nextMoves);
       setPlans(nextPlans);
-      setRestReport(nextRest);
-      setStockingReport(nextStocking);
       setServerRotations(nextRotations);
       setMeasurements((measRes && measRes.measurements) || []);
       cachePastureSnapshot({
@@ -558,8 +628,6 @@ export default function PastureMapView({Header, authState}) {
         moves: nextMoves,
         plans: nextPlans,
         rotations: nextRotations,
-        restReport: nextRest,
-        stockingReport: nextStocking,
       });
       setOfflineStatus('');
       await refreshQueueState();
@@ -570,8 +638,6 @@ export default function PastureMapView({Header, authState}) {
         setMoves(cached.moves || []);
         setPlans(cached.plans || []);
         setServerRotations(cached.rotations || []);
-        setRestReport(cached.restReport || {areas: [], counts: {}});
-        setStockingReport(cached.stockingReport || {areas: []});
         setOfflineStatus(
           cached.savedAt
             ? `Showing saved field map from ${formatMoveTime(cached.savedAt)}. New work will queue on this device.`
@@ -606,32 +672,32 @@ export default function PastureMapView({Header, authState}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Reports drill-down: load the selected area's full move history (the grazing
+  // timeline source) only when its record is open. Same farm_team+/light read gate.
   React.useEffect(() => {
     let alive = true;
-    // History is a Reports-tab read; Light has no Reports tab and is not granted
-    // the history RPC, so never fetch it for Light.
-    if (!selectedId || !canViewPlanning) {
-      setHistoryRows([]);
-      setHistoryLoading(false);
+    if (!reportAreaId || appMode !== 'reports' || !canViewPlanning) {
+      setReportHistory([]);
+      setReportHistoryLoading(false);
       return () => {
         alive = false;
       };
     }
-    setHistoryLoading(true);
-    listPastureHistoryReport({landAreaId: selectedId, limit: 20})
+    setReportHistoryLoading(true);
+    listPastureHistoryReport({landAreaId: reportAreaId, limit: 500})
       .then((res) => {
-        if (alive) setHistoryRows((res && res.history) || []);
+        if (alive) setReportHistory((res && res.history) || []);
       })
       .catch((e) => {
-        if (alive) setErr(e.message || 'Could not load pasture history.');
+        if (alive) setErr(e.message || 'Could not load the area grazing record.');
       })
       .finally(() => {
-        if (alive) setHistoryLoading(false);
+        if (alive) setReportHistoryLoading(false);
       });
     return () => {
       alive = false;
     };
-  }, [selectedId, moves.length, canViewPlanning]);
+  }, [reportAreaId, appMode, canViewPlanning, moves.length]);
 
   React.useEffect(() => () => clearTrackWatch(), []);
 
@@ -782,6 +848,50 @@ export default function PastureMapView({Header, authState}) {
     [activeAreas, occupantsByArea],
   );
   const selectedArea = areas.find((a) => a.id === selectedId) || null;
+  // Reports area list: every real area (incl. archived/retired) except draft Tracks /
+  // Lines (setupAreas already applies that filter), grouped so pastures and feeder-pig
+  // areas carry their child paddocks nested (parent_id), with temp paddocks and
+  // everything else in their own sections.
+  const reportSections = React.useMemo(() => {
+    const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+    const childrenOf = (id) => setupAreas.filter((a) => a.parent_id === id).sort(byName);
+    const used = new Set();
+    const withChildren = (parents) => {
+      const rows = [];
+      parents.sort(byName).forEach((p) => {
+        if (used.has(p.id)) return;
+        rows.push({area: p, depth: 0});
+        used.add(p.id);
+        childrenOf(p.id).forEach((c) => {
+          if (used.has(c.id)) return;
+          rows.push({area: c, depth: 1});
+          used.add(c.id);
+        });
+      });
+      return rows;
+    };
+    const pastureRows = withChildren(setupAreas.filter((a) => a.kind === 'pasture' && a.permanence !== 'temporary'));
+    const feederRows = withChildren(setupAreas.filter((a) => a.kind === 'feeder_pig_area'));
+    const flat = (list) => {
+      const rows = list.sort(byName).map((a) => ({area: a, depth: 0}));
+      rows.forEach((r) => used.add(r.area.id));
+      return rows;
+    };
+    const tempRows = flat(setupAreas.filter((a) => a.permanence === 'temporary' && !used.has(a.id)));
+    const otherRows = flat(setupAreas.filter((a) => !used.has(a.id)));
+    return [
+      {key: 'pastures', title: 'Pastures & paddocks', rows: pastureRows},
+      {key: 'feeders', title: 'Feeder-pig areas', rows: feederRows},
+      {key: 'temp', title: 'Temp paddocks', rows: tempRows},
+      {key: 'other', title: 'Other areas', rows: otherRows},
+    ].filter((s) => s.rows.length);
+  }, [setupAreas]);
+  const reportArea = reportAreaId ? areaById.get(reportAreaId) || null : null;
+  const reportStays = React.useMemo(
+    () => (reportArea ? buildGrazingStays(reportArea.id, reportHistory, reportArea.effective_acres) : []),
+    [reportArea, reportHistory],
+  );
+  const reportTotals = React.useMemo(() => grazingRecordTotals(reportStays), [reportStays]);
   const selectedEditable = hasPolygonGeom(selectedArea);
   const selectedDensity = densityCopy(selectedArea);
   const selectedStyleChanged = lineStyleChanged(selectedArea, styleDraft);
@@ -871,8 +981,6 @@ export default function PastureMapView({Header, authState}) {
     [activeAreas],
   );
   const invalidArea = activeAreas.find((area) => grazingState(area) === 'invalid') || null;
-  const restCounts = restReport && restReport.counts ? restReport.counts : {};
-  const stockingRows = (stockingReport && stockingReport.areas) || [];
 
   function clearTrackWatch() {
     if (trackWatchRef.current != null && typeof navigator !== 'undefined' && navigator.geolocation) {
@@ -891,6 +999,7 @@ export default function PastureMapView({Header, authState}) {
     setAppMode(next);
     setErr('');
     setPreviewAreaId(null);
+    if (next !== 'reports') setReportAreaId(null);
     if (next !== 'plan') setAddMode(false);
     // Boundary tools (track/draw/edit) now live in Plan; reset them off any other tab.
     if (next !== 'plan' && mapMode === 'track') resetTrackFlow();
@@ -3252,23 +3361,6 @@ export default function PastureMapView({Header, authState}) {
     );
   }
 
-  function renderRecentMoves() {
-    if (!moves.length) return null;
-    return (
-      <div className="pm-card pm-recent-moves" data-pasture-recent-moves="1">
-        <div className="pm-card-title">Grazing days log</div>
-        {moves.slice(0, 6).map((m) => (
-          <div key={m.id} className="pm-recent-row">
-            <strong>{m.group_label}</strong>
-            <span>
-              {m.to_land_area_name ? `to ${m.to_land_area_name}` : 'off map'} {formatMoveTime(m.moved_at)}
-            </span>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   // Reports keep spatial/status context: every row is tagged Permanent / Temp /
   // Archived / Archived temp, or Deleted when only a text snapshot survives
   // (the area is gone from the live list). Archived areas are included.
@@ -3282,113 +3374,150 @@ export default function PastureMapView({Header, authState}) {
     return <span className={'pm-report-tag ' + cls}>{label}</span>;
   }
 
+  // Reports = every-area grazing records. The list (grouped, archived tagged) drills
+  // into a per-area record: status header + lifetime totals + the dated grazing
+  // timeline (every stay, by which group and how many head, with density/animal-days).
   function renderReportsPanel() {
-    const restRows = restReport.areas && restReport.areas.length ? restReport.areas : setupAreas;
-    const reportCards = [
-      {
-        id: 'rest',
-        title: 'Rest & recovery history',
-        meta: `${restRows.length} rows - incl. archived`,
-        body: (
-          <div data-pasture-rest-report="1">
-            <div className="pm-report-metrics">
-              <span>Occupied {Number(restCounts.occupied || 0)}</span>
-              <span>Resting {Number(restCounts.resting || 0)}</span>
-              <span>Ready {Number(restCounts.rested || restCounts.ready || 0)}</span>
-              <span>No history {Number(restCounts.baseline || restCounts.no_history || 0)}</span>
-            </div>
-            {restRows.slice(0, 12).map((row) => (
-              <div key={row.land_area_id || row.id} className="pm-report-row">
-                <strong>{row.land_area_name || row.name}</strong>
-                {reportAreaTag(row.land_area_id || row.id)}
-                <span>{row.rest_days == null ? restCopy(row) : `${row.rest_days}d rested`}</span>
-              </div>
-            ))}
-          </div>
-        ),
-      },
-      {
-        id: 'stocking',
-        title: 'Stocking rate',
-        meta: `${stockingRows.length || groups.length} groups`,
-        body: (
-          <div data-pasture-stocking-report="1">
-            {stockingRows.length === 0
-              ? groups.map((group) => (
-                  <div key={group.id} className="pm-report-row">
-                    <strong>{group.name}</strong>
-                    <span>{group.size || 'No head count'} on rotation</span>
-                  </div>
-                ))
-              : stockingRows.slice(0, 8).map((r) => (
-                  <div key={r.land_area_id} className="pm-report-row">
-                    <strong>{r.land_area_name}</strong>
-                    {reportAreaTag(r.land_area_id)}
-                    <span>
-                      {r.animal_days_per_acre == null ? 'No acres' : `${r.animal_days_per_acre} / ac`} - {r.animal_days}{' '}
-                      animal-days
-                    </span>
-                  </div>
-                ))}
-          </div>
-        ),
-      },
-      {
-        id: 'history',
-        title: 'Grazing days log',
-        meta: `${moves.length} moves`,
-        body: (
-          <div data-pasture-history-report="1">
-            {historyLoading ? (
-              <div className="pm-report-empty">Loading history...</div>
-            ) : historyRows.length > 0 ? (
-              historyRows.slice(0, 8).map((h) => (
-                <div key={h.id} className="pm-report-row">
-                  <strong>{h.group_label}</strong>
-                  {reportAreaTag(h.to_land_area_id)}
-                  <span>
-                    {h.to_land_area_name ? `to ${h.to_land_area_name}` : 'off map'} {formatMoveTime(h.moved_at)}
-                  </span>
-                </div>
-              ))
-            ) : moves.length ? (
-              moves.slice(0, 8).map((m) => (
-                <div key={m.id} className="pm-report-row">
-                  <strong>{m.group_label}</strong>
-                  {reportAreaTag(m.to_land_area_id)}
-                  <span>
-                    {m.to_land_area_name ? `to ${m.to_land_area_name}` : 'off map'} {formatMoveTime(m.moved_at)}
-                  </span>
-                </div>
-              ))
-            ) : (
-              <div className="pm-report-empty">No moves recorded yet.</div>
-            )}
-          </div>
-        ),
-      },
-    ];
+    if (reportAreaId && reportArea) return renderAreaRecord();
+    return renderReportAreaList();
+  }
+
+  function renderReportAreaList() {
     return (
       <>
         <div className="pm-panel-title">
-          <span className="pm-kicker">Reports / Secondary</span>
-          <h2>Grazing reports</h2>
-          <p>Kept available but out of the planning flow. Expand any report to open it full-screen.</p>
+          <span className="pm-kicker">Reports</span>
+          <h2>Grazing records by area</h2>
+          <p>Every area and its full grazing history. Select an area to open its record.</p>
         </div>
-        <div className="pm-report-panel" data-pasture-reports="1">
-          {reportCards.map((card) => (
-            <div key={card.id} className={'pm-report-card' + (openReport === card.id ? ' is-open' : '')}>
-              <button type="button" onClick={() => setOpenReport(openReport === card.id ? '' : card.id)}>
-                <span className="pm-report-icon">=</span>
-                <strong>{card.title}</strong>
-                <em>{card.meta}</em>
-                <span>{openReport === card.id ? '-' : '+'}</span>
-              </button>
-              {openReport === card.id && <div className="pm-report-body">{card.body}</div>}
+        <div className="pm-report-status-strip" data-pasture-report-summary="1">
+          <span>
+            <i className="dot occupied" /> Occupied {statusCounts.occupied}
+          </span>
+          <span>
+            <i className="dot resting" /> Resting {statusCounts.resting}
+          </span>
+          <span>
+            <i className="dot ready" /> Ready {statusCounts.ready}
+          </span>
+          <span>
+            <i className="dot no-history" /> No history {statusCounts.no_history}
+          </span>
+        </div>
+        <div className="pm-report-area-list" data-pasture-report-areas="1">
+          {reportSections.map((section) => (
+            <div key={section.key} className="pm-report-area-section">
+              <div className="pm-report-area-section-title">{section.title}</div>
+              {section.rows.map(({area, depth}) => {
+                const state = grazingState(area);
+                return (
+                  <button
+                    type="button"
+                    key={area.id}
+                    className={'pm-report-area-row depth-' + depth + ' state-' + state}
+                    onClick={() => setReportAreaId(area.id)}
+                    data-pasture-report-area-row={area.id}
+                  >
+                    <span className="pm-report-area-name">
+                      {area.name || 'Unnamed'} {reportAreaTag(area.id)}
+                    </span>
+                    <span className="pm-report-area-meta">
+                      {designationLabel(area)}
+                      {area.effective_acres != null ? ` · ${area.effective_acres} ac` : ''}
+                    </span>
+                    <span className="pm-report-area-status">
+                      <i className="dot" /> {restCopy(area)}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ))}
+          {!reportSections.length && <div className="pm-report-empty">No areas yet. Import or draw areas first.</div>}
         </div>
-        {renderRecentMoves()}
+      </>
+    );
+  }
+
+  function renderAreaRecord() {
+    const area = reportArea;
+    const occ = (occupantsByArea[area.id] || []).find((o) => !o.overlap) || null;
+    const openStay = reportStays.find((s) => s.stillHere) || null;
+    const statusLine =
+      occ && openStay
+        ? `In use by ${occ.name} since ${formatMoveTime(openStay.inAt)}`
+        : area.last_touched_at
+          ? `Last grazed ${formatMoveTime(area.last_touched_at)}`
+          : 'No grazing history yet';
+    return (
+      <>
+        <div className="pm-panel-title pm-record-title">
+          <button
+            type="button"
+            className="pm-btn pm-btn-sm"
+            onClick={() => setReportAreaId(null)}
+            data-pasture-report-back="1"
+          >
+            &larr; All areas
+          </button>
+          <span className="pm-kicker">Area grazing record</span>
+          <h2>
+            {area.name || 'Unnamed area'} {reportAreaTag(area.id)}
+          </h2>
+        </div>
+        <div className="pm-card pm-record-header" data-pasture-report-record={area.id}>
+          <div className="pm-record-facts">
+            <span className="pm-record-fact">
+              <b>{designationLabel(area)}</b>
+            </span>
+            {area.effective_acres != null && <span className="pm-record-fact">{area.effective_acres} ac</span>}
+          </div>
+          <div className="pm-record-status" data-pasture-report-status="1">
+            {statusLine}
+          </div>
+          <div className="pm-record-rest">{restCopy(area)}</div>
+          <div className="pm-record-totals" data-pasture-report-totals="1">
+            <span>
+              <b>{reportTotals.timesGrazed}</b> times grazed
+            </span>
+            <span>
+              <b>{reportTotals.totalAnimalDays.toLocaleString()}</b> animal-days
+            </span>
+            <span>
+              <b>{reportTotals.avgDensity != null ? reportTotals.avgDensity.toLocaleString() : '-'}</b> avg head/ac
+            </span>
+          </div>
+        </div>
+        <div className="pm-card" data-pasture-report-timeline="1">
+          <div className="pm-card-title">Grazing timeline</div>
+          {reportHistoryLoading ? (
+            <div className="pm-report-empty">Loading record...</div>
+          ) : reportStays.length ? (
+            reportStays.map((s) => (
+              <div key={s.id} className="pm-record-stay" data-pasture-report-stay="1">
+                <div className="pm-record-stay-head">
+                  <strong>{s.groupLabel}</strong>
+                  <span className="pm-record-stay-type">{animalTypeLabel(s.animalType)}</span>
+                  {s.headCount != null && (
+                    <span className="pm-record-stay-count">{s.headCount.toLocaleString()} head</span>
+                  )}
+                  {s.stillHere && <span className="pm-record-stay-here">Still here</span>}
+                </div>
+                <div className="pm-record-stay-when">
+                  {formatMoveTime(s.inAt)} &rarr; {s.outAt ? formatMoveTime(s.outAt) : 'now'}
+                  {s.days != null ? ` · ${s.days} day${s.days === 1 ? '' : 's'}` : ''}
+                </div>
+                <div className="pm-record-stay-metrics">
+                  {s.density != null && <span>{s.density.toLocaleString()} head/ac</span>}
+                  {s.animalDays != null && <span>{s.animalDays.toLocaleString()} animal-days</span>}
+                </div>
+                {s.notes && <div className="pm-record-stay-notes">{s.notes}</div>}
+              </div>
+            ))
+          ) : (
+            <div className="pm-report-empty">No grazing recorded for this area yet.</div>
+          )}
+        </div>
       </>
     );
   }

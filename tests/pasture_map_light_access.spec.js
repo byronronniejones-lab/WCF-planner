@@ -155,9 +155,11 @@ test('light sees all four tabs and can record a move (mig 139), but gets no mana
   await page.locator('.pm-tabs button', {hasText: 'Map'}).click();
   await expect(page.locator('.pm-occupant-marker').filter({hasText: 'Mommas'})).toHaveCount(1, {timeout: 15_000});
 
-  // Reports: light has read access to the grazing-days log (mig 139 report RPCs).
+  // Reports: light has read access — open the area's grazing record; its timeline
+  // lists Mommas (mig 139 widened list_pasture_history_report to light).
   await page.locator('.pm-tabs button', {hasText: 'Reports'}).click();
-  await expect(page.locator('[data-pasture-recent-moves]')).toContainText('Mommas', {timeout: 15_000});
+  await page.locator(`[data-pasture-report-area-row="${A_ID}"]`).click();
+  await expect(page.locator('[data-pasture-report-timeline]')).toContainText('Mommas', {timeout: 15_000});
 });
 
 test('light can draw + SAVE a Field temp paddock (drawIsTemp form is allowed for canCreateTrack)', async ({page}) => {

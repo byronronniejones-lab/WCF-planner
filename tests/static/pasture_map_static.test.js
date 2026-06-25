@@ -75,9 +75,11 @@ describe('Pasture Map route + wiring', () => {
     expect(viewSrc).not.toContain('MODE_TABS.filter');
     // Planning/report/history reads now run for all pasture roles (incl. Light).
     expect(viewSrc).toMatch(/canViewPlanning\s*\?\s*listPasturePlannedMoves/);
-    expect(viewSrc).toMatch(/canViewPlanning\s*\?\s*listPastureRestReport/);
-    expect(viewSrc).toMatch(/canViewPlanning\s*\?\s*listPastureStockingReport/);
-    expect(viewSrc).toMatch(/if \(!selectedId \|\| !canViewPlanning\)/);
+    expect(viewSrc).toMatch(/canViewPlanning\s*\?\s*listPastureRotations/);
+    expect(viewSrc).toMatch(/canViewPlanning\s*\?\s*listPastureMeasurements/);
+    // The Reports area-record drill-down lazily loads that area's grazing history
+    // (still farm_team+/light gated).
+    expect(viewSrc).toMatch(/if \(!reportAreaId \|\| appMode !== 'reports' \|\| !canViewPlanning\)/);
     // Move writes stay hard-gated on canRecordMoves (which now includes light).
     expect(viewSrc).toMatch(/async function recordGroupMove[\s\S]*?if \(!canRecordMoves\) return;/);
     expect(viewSrc).toContain('disabled={!activeNextArea || saving || !canRecordMoves}');
@@ -405,18 +407,44 @@ describe('V1 reset — Plan is a bottom-sheet on phones (touch)', () => {
   });
 });
 
-describe('V1 reset — Reports are historical/current only, read-only to all pasture users', () => {
-  it('Reports shows rest/stocking/history + recent moves, with NO planned/future moves', () => {
+describe('Reports = every-area grazing records, read-only to all pasture users', () => {
+  it('Reports lists every area (grouped, archived tagged) and drills into a per-area record', () => {
     const body = viewSrc.slice(viewSrc.indexOf('function renderReportsPanel'), viewSrc.indexOf('function renderPanel'));
-    expect(body).toContain('data-pasture-rest-report');
-    expect(body).toContain('data-pasture-stocking-report');
-    expect(body).toContain('data-pasture-history-report');
-    expect(body).toContain('renderRecentMoves()');
+    // Area list + drill-down record, replacing the old rest/stocking/history cards.
+    expect(body).toContain('data-pasture-report-areas');
+    expect(body).toContain('data-pasture-report-area-row');
+    expect(body).toContain('data-pasture-report-record');
+    expect(body).toContain('data-pasture-report-back');
+    expect(body).toContain('data-pasture-report-timeline');
+    expect(body).toContain('data-pasture-report-stay');
+    expect(body).toContain('data-pasture-report-status');
+    expect(body).toContain('data-pasture-report-totals');
+    // The old report cards + flat moves log are gone.
+    expect(body).not.toContain('data-pasture-rest-report');
+    expect(body).not.toContain('data-pasture-stocking-report');
+    expect(body).not.toContain('data-pasture-history-report');
+    expect(body).not.toContain('renderRecentMoves');
     // Planned/future moves live in Plan, never in Reports.
     expect(body).not.toContain('renderPlannedMoves');
     expect(body).not.toContain('data-pasture-planned-moves');
-    // Light reaches Reports: mig 139 widened the 3 report RPCs and canViewPlanning
-    // includes light (asserted in the mig-139 + Light blocks above).
+    // The record header carries the status line + lifetime totals (times grazed,
+    // animal-days, avg density) and rest days.
+    expect(body).toContain('times grazed');
+    expect(body).toContain('animal-days');
+    expect(body).toContain('avg head/ac');
+  });
+
+  it('grazing records derive stays + density/animal-days from the move history (no new DB)', () => {
+    // Per-area record is computed client-side from list_pasture_history_report; no new
+    // migration/RPC. Stays pair each move-in with that group's next move-out.
+    expect(viewSrc).toContain('function buildGrazingStays');
+    expect(viewSrc).toContain('function grazingRecordTotals');
+    expect(viewSrc).toContain('ev.to_land_area_id !== areaId');
+    expect(viewSrc).toContain('nx.from_land_area_id === areaId');
+    expect(viewSrc).toContain('listPastureHistoryReport({landAreaId: reportAreaId');
+    // Grouped list: pastures/feeder areas carry child paddocks (parent_id) nested.
+    expect(viewSrc).toContain('const reportSections = React.useMemo');
+    expect(viewSrc).toContain('a.parent_id === id');
   });
 
   it('Reports renders NO map: full-width reports surface, canvas only in the non-reports branch', () => {
@@ -684,7 +712,6 @@ describe('CP3 API + UI wiring', () => {
       'data-pasture-move-save',
       'data-pasture-occupancy',
       'data-pasture-rest-state',
-      'data-pasture-recent-moves',
     ]) {
       expect(viewSrc).toContain(marker);
     }
@@ -774,9 +801,6 @@ describe('CP4 API + UI wiring', () => {
       'data-pasture-same-day-prompt',
       'data-pasture-density',
       'data-pasture-use-facts',
-      'data-pasture-history-report',
-      'data-pasture-rest-report',
-      'data-pasture-stocking-report',
     ]) {
       expect(viewSrc).toContain(marker);
     }
