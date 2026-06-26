@@ -7,11 +7,11 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-06-25.
-Current product checkpoint: `d18736f`
-(`Merge pull request #38 from feature/pasture-area-modal-reports-reset-move`),
-plus this 2026-06-25 docs/TEST Disk IO maintenance lane.
-Current docs checkpoint: this 2026-06-25 pasture/newsletter wrap.
+Last updated: 2026-06-26.
+Current product checkpoint: `73a8432` (`Merge pasture group records workflow`).
+Latest shipped product merges include newsletter Checkpoint A (`7d41d7f`) and
+Pasture Map group records (`73a8432`).
+Current docs checkpoint: this 2026-06-26 pasture/newsletter wrap.
 Production URL: https://wcfplanner.com.
 Netlify auto-deploys from GitHub `main`.
 
@@ -65,91 +65,71 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: latest product merge is `d18736f` after PR #38 (Pasture Map
-  reset-history + move-to-side-bar). PR #37 (`05b03e5`) shipped the Pasture Map
-  Area modal + Reports accordion before it. See Recent Shipped Checkpoints for
-  both.
-- Active lane: Build Queue item 1 (Pasture Map groups + grazing-history-edit +
-  parent-pasture coloring) is the next build — investigation done, no code
-  written; branch `feature/pasture-groups-grazing-edit` was prepared off
-  `d18736f` and should be rebased onto current `main` before build work.
-- Parallel active lane: Build Queue item 2 (Monthly Newsletter Engine) is in
-  CC#2's isolated worktree `C:/Users/Ronni/WCF-planner-newsletter`, branch
-  `feature/newsletter-engine`. It was originally branched from `origin/main`
-  `05b03e5`; rebase/merge onto current `main` `d18736f` before release.
-  Foundation migrations `144`/`145` are being built locally only (not PROD-
-  applied/deployed/merged yet) and include the accepted security fixes below.
-- Source history note: prior to PR #37, `main` was `1411981` after PR #36, the
-  Pasture Map Map/Plan merge. Latest `main` includes mobile
-  app-shell repair, weather farm-point 10-year precipitation, Daily Report task/
-  To Do copy and filled toggles, Eggmobile 3 layer display, security/dependency
-  hardening, Vite 8 / Vitest 4 / SheetJS 0.20.3 / Node 22, cattle/sheep
-  accounting month-end snapshots, Pasture Map V1, and system-generated task
-  titles with batch/group labels.
-- Active PRs / gates: none open on `main`. PRs #37 and #38 are merged. Next
-  gates belong to Build Queue item 1 (a new per-move-delete migration apply +
-  commit/push/merge) and Build Queue item 2 (newsletter migrations/buckets/Edge
-  Function/cron/Vault secret/release gates when CC#2 reaches that point).
-- Local worktree risk: before the next lane, run `git status`; the post-PR #36
-  worktree may still have untracked pasture screenshot folders.
-- Open production gates: none for current `main`. Pending newsletter gates, once
-  CC#2 is ready and Ronnie explicitly approves release, are: create/apply the
-  newsletter storage buckets, apply newsletter migrations `144`/`145`/`146`,
-  deploy the newsletter Edge Function, add the AI provider Vault/API secret, and
-  enable the monthly `pg_cron` schedule.
-- PROD-applied recent migrations include `112` through `116`, `125`, `126`,
-  `127`, `128`, `129`, `130`, `131`, `132`, `133`, `134`, `135`, `136`, `137`,
-  `138`, `139`, `140`, `141`, `142`, and `143`. `116`
-  (Pasture Map CP1), `125` (Production legacy events), and `126` (breeding-pig
-  Activity entity) were applied to PROD on 2026-06-15. `127` (Pasture Map
-  draw/edit RPCs) was applied to PROD on 2026-06-16. Pasture Map `128`-`132`
-  artifacts were verified present on TEST and PROD by catalog checks on
-  2026-06-17. Migration `133` (task system generation support and To Do
-  approval notifications) was applied to TEST on 2026-06-17 and PROD on
-  2026-06-18. Migration `134` (originator task/to-do edit photos) was applied to
-  PROD on 2026-06-18. Migration `135` (temp-paddock lifecycle RPCs) was
-  PROD-applied and verified before the Pasture Map Plan-centric/tool-lifecycle
-  wrap. Migration `136` (Light read-only Pasture Map read access) was applied to
-  TEST by CC and applied to PROD by Codex on 2026-06-20 with `psql
-  --single-transaction`; PostgREST schema reload was notified. Migration `137`
-  (pasture feeder-pig paddock destinations) is in `main` and was applied before
-  the 2026-06-24 wrap. Migration `138` (Tier-1 anon write-boundary drop) is
-  PROD-applied and verified: zero `*_anon_*` policies remain on the targeted
-  write tables; five authenticated `*_auth_all` policies remain. Migrations
-  `139`-`141` (Pasture Map V1 reset) and `142` (system task title entity labels)
-  were PROD-applied on 2026-06-24 in one transaction-wrapped Supabase linked
-  query apply; verification confirmed the two new pasture tables, six new
-  pasture RPCs, the 4-arg `generate_system_task_instance` signature, and `0`
-  open system tasks without a label suffix. Migration `143`
-  (`delete_land_area_grazing_history`, the per-area grazing-history reset RPC)
-  was applied to TEST and PROD on 2026-06-25 with `psql --single-transaction` +
-  PostgREST schema reload; verified SECDEF, authenticated EXECUTE, anon denied.
-  A 2026-06-25 PROD data fix reparented the FP3/FP4 paddocks under their pastures
-  (6 + 23 rows; the previously mis-parented FP3A1 corrected to FP3).
+- Source: latest product merge on `main` is `73a8432` (`Merge pasture group
+  records workflow`). `origin/main` is pushed. The immediately prior shipped
+  newsletter merge is `7d41d7f` (PR #40, `feature/newsletter-engine`).
+- Active lanes / PR gates: none. Pasture Map groups/grazing delete/group-records
+  and Monthly Newsletter Checkpoint A are committed, merged to `main`, and
+  pushed. Start the next build from current `origin/main` in a fresh worktree.
+- Worktree inventory at wrap:
+  `C:/Users/Ronni/WCF-planner-codex-residuals` is clean on `main`;
+  `C:/Users/Ronni/WCF-planner` is clean on
+  `feature/pasture-groups-grazing-edit` except untracked review screenshot
+  folders `pasture-cp2-shots/`, `pasture-grazing-edit-shots/`, and
+  `pasture-map-shots/`; `C:/Users/Ronni/WCF-planner-newsletter` is clean on
+  `feature/newsletter-engine` except untracked `newsletter-shots/`.
+- Open production/build gates: newsletter automation is not built. Migration
+  `146`, the `newsletter-harvest` Edge Function, AI/Vault secret wiring, and
+  the monthly `pg_cron` schedule remain Build Queue work. The admin navigation
+  entry for `/admin/newsletter` is also not added yet; the admin surface is
+  reachable by URL.
+- PROD-applied recent migrations include `112` through `116`, `125` through
+  `145`, `147`, and `148`. Migration `146` is reserved for newsletter
+  automation and is not written/applied. Migration `143`
+  (`delete_land_area_grazing_history`) remains deployed but unused by the UI.
+  Pasture migrations `147` and `148` are PROD-applied and smoke verified:
+  `delete_pasture_move` exists, `pasture_move_events.total_weight_lbs` exists,
+  and the retired `pasture_planned_moves` table is absent. Newsletter migrations
+  `144` and `145` are present on PROD: the five newsletter tables have RLS
+  enabled, the public anon RPC surface is the three newsletter read RPCs, and
+  buckets `newsletter-staging` (private) and `newsletter-public` (public) exist.
+  PROD currently has `0` newsletter issues.
 - Production legacy import: `Processing Events - ALL.xlsx` parsed 69 rows,
   skipped 0, and upserted 69 rows into `production_legacy_events` on PROD by
   stable `source_key`.
-- Pasture Map PROD state: V1, the Map/Plan merge, the Area modal, the Reports
-  accordion, and the move-to-side-bar are all merged. Tabs are Map / Field /
-  Reports. Map is the single working surface: desktop hover keeps the read-only
-  area/group readout; clicking a map area opens the accessible Area modal (area
-  config only — classification, parent pasture, line style, redraw, archive,
-  admin hard-delete; NO move form). The slim side panel holds the group switcher,
-  current-group Move/Clear, the free-form "Record a move"/"Plan a move" forms,
-  the rotation editor, planned moves, and one bottom Import KML. Field owns
-  phone-first execution/offline tools. Reports are a collapsible per-area
-  accordion (pastures collapse over child paddocks; "Needs pasture assignment",
-  Tracks/Lines, archived, etc. as collapsed sections) with no map. Light has
-  pasture farm-team-level Map/Field working controls; non-pasture authorization
-  is unchanged.
-- Known pasture behaviors carried into the active lane (Build Queue item 1):
-  the per-area "Reset grazing history" button is to be removed in favor of
-  per-entry grazing delete; the parent-pasture occupancy/rest FILL bleeds from
-  child paddocks via geometric `overlap` impacts and must be suppressed; a
-  permanent paddock's bright-green STROKE is locked (not a state color).
-- Latest Pasture Map V1 validation before merge: `format:check` clean; `lint`
-  0 errors; `build` green; focused static tests 162 passed; `npx playwright
-  test --config=playwright.pasture.config.js` passed 31 tests.
+- Newsletter PROD state: Checkpoint A is merged and pushed. Public no-login
+  archive routes live under `/newsletter`, including `/newsletter/latest`,
+  issue slugs, and token preview. Admin manual issue editing lives at
+  `/admin/newsletter` and is admin-only. The engine is manual/public/admin only:
+  no fact detectors, AI generation, monthly task, Edge Function, Vault secret,
+  or cron are live yet. First production issue creation/publication still needs
+  real admin use and browser verification with actual photo upload/approve/cover
+  bytes.
+- Pasture Map PROD state: tabs are Map / Field / Reports. Map is the single
+  working surface. The Area modal is config-only and has one close affordance:
+  the upper-right `X`, which debounces/saves edits on close; extra Close, Save
+  Area, Zoom to pasture, and Clear selection controls are removed. The side
+  panel uses DataTable-style animal group rows with normal site hover/open
+  behavior. Clicking a group row opens the inline group record beside the map
+  (not a modal), ordered as group details, rotation editor, move box, then
+  grazing history. The rotation editor is chip-based, supports Add from map and
+  Draw temp paddock, can be reordered, and shows the selected group's path on
+  the map. The old planned-move utility/table/RPCs are removed. Move recording
+  happens from current area to next rotation area with a date/time field and
+  optional actual group weight; grazing stays use only recorded data for head
+  count, acres, head/ac, days, animal-days, and lbs/ac. Reports include grazing
+  stays by animal group, inactive groups behind an Include inactive groups
+  filter, and per-stay delete. Parent-pasture occupancy/rest fill no longer
+  comes from direct child paddock impacts. Light keeps pasture farm-team-level
+  Map/Field working controls; non-pasture authorization is unchanged.
+- Latest validation on merged `main`: `npm run format:check` passed; `npm test`
+  passed (`251` files / `6371` tests); `npm run build` passed; `npm run lint`
+  passed with 0 errors and existing warnings. Full pasture Playwright passed
+  before merge (`playwright.pasture.config.js`, 36/36). Newsletter public/admin
+  Playwright passed in the CC#2 lane (`tests/newsletter_public.spec.js`, 5/5).
+  Residual non-blocking console noise observed during pasture Playwright:
+  duplicate `undefined|date` keys in HomeDashboard/LightHomePortal and Leaflet
+  `_leaflet_pos` teardown warnings during rapid navigation.
 - Broiler derived-data drift lane is closed: merge `6b94d37` contains Codex
   `c639311` and CC#2 `6ff36c7`; code is deployed/verified; B-26-08 wk6 PROD
   repair was run through `recomputeBroilerBatchWeekAvg(sb, 'B-26-08', 6)` and
@@ -167,6 +147,54 @@ Design/function invariants that govern cross-surface behavior live in
 The following work is merged to `main` and pushed. Netlify deploys from `main`.
 The current source checkpoint is listed in the header above.
 
+- Pasture Map group records workflow (`73a8432`, pushed 2026-06-26):
+  - Area modal dismissal was simplified to one upper-right `X`; removed the
+    extra area-detail `X`, Close, Save Area, Zoom to pasture, and Clear
+    selection controls. Area edits debounce/save on close.
+  - Animal groups in the Map side panel were rebuilt as DataTable-style rows
+    with the site's normal hover/open behavior. Clicking a group opens an inline
+    group record beside the map so the full map remains visible while planning.
+  - The inline group record order is group details, simplified chip-based
+    rotation editor, move box, and grazing history. The move box records current
+    area to next rotation area with a date/time field and optional actual group
+    weight; no notes field. The rotation path renders on the map.
+  - Migration `148` adds `pasture_move_events.total_weight_lbs`, updates pasture
+    move/history report RPCs for actual-weight metrics, and drops the unused
+    planned-move table/RPCs. PROD smoke verified the column, record-move
+    signature, and planned table removal.
+  - Validation: full pasture Playwright 36/36; merged-main
+    `format:check`, `npm test` (`251` files / `6371` tests), `build`, and
+    `lint` 0 errors all passed.
+- Pasture Map groups, per-entry grazing delete, and parent coloring
+  (PR #39, `b1ccf88`, pushed 2026-06-26):
+  - Migration `147` adds `delete_pasture_move(p_move_id)` for management/admin
+    per-stay grazing delete and updates `_land_area_summary` so parent pastures
+    do not derive occupancy/rest fill from direct child paddocks.
+  - Completed-stay delete is chain-aware: deleting the move-in event clears the
+    linked departure impacts on the next move for the same group/touched areas,
+    preserves the later move event, and prevents derived-state drift.
+  - The Map side panel removed the old Current groups card/header copy; group
+    rows carry location data, and Reports rename grazing records to Grazing
+    History with per-entry delete.
+  - Migration `143` remains deployed but unused; the whole-area grazing reset UI
+    and client wrapper were removed.
+- Monthly Newsletter Checkpoint A, manual public + admin engine
+  (PR #40, `7d41d7f`, pushed 2026-06-26):
+  - Public no-login routes `/newsletter`, `/newsletter/latest`, issue slugs, and
+    token preview are mounted above the login gate. Public rendering uses a
+    structured block whitelist and locked `noindex`; no raw AI HTML.
+  - Admin-only `/admin/newsletter` supports manual issue creation/editing,
+    intake answers, manual facts, photo staging/approval/cover controls,
+    preview, publish/unpublish, and draft-only preview token regeneration.
+  - Migrations `144`/`145` define deny-all newsletter tables, the narrow three
+    RPC anon surface, preview hardening, and private/public newsletter buckets.
+    PROD catalog verified the tables/RPCs/buckets exist; PROD issue count is
+    currently `0`.
+  - Remaining newsletter automation is not part of Checkpoint A: no fact
+    detectors, AI generation, `newsletter-harvest` Edge Function, Vault secret,
+    migration `146`, or monthly cron are live yet.
+  - CC#2 validation before merge: `format:check`, `lint`, `npm test`, `build`,
+    TEST migration apply/smoke, and `tests/newsletter_public.spec.js` 5/5.
 - Pasture Map Area modal, Reports accordion, reset-history, and move-to-side-bar
   (PRs #37-#38, pushed 2026-06-25; `main` now `d18736f`):
   - PR #37 (`05b03e5`): per-area editing moved out of the Map side panel into an
@@ -182,16 +210,16 @@ The current source checkpoint is listed in the header above.
     "Draw temp paddock"; redraw via the modal).
   - PR #38 (`d18736f`): added migration `143`
     `delete_land_area_grazing_history` (management/admin per-area "Reset grazing
-    history") — applied and verified on PROD (`psql --single-transaction`;
+    history") - applied and verified on PROD (`psql --single-transaction`;
     SECDEF, authenticated EXECUTE, anon denied; PostgREST schema reloaded).
     Move/animal placement was pulled OUT of the Area modal and relocated to the
     side panel ("Record a move" + "Plan a move": any roster group + any
-    destination area; the planned-move "Use" records in one click). NOTE: the
-    per-area reset BUTTON is being REMOVED again in active Build Queue item 1
-    (Ronnie wants per-entry grazing delete instead); mig `143`'s RPC stays
-    deployed but becomes unused.
+    destination area; the planned-move "Use" records in one click). Later pasture
+    checkpoints removed those free-form move/plan controls and the per-area
+    reset button in favor of group-record moves and per-stay grazing delete; mig
+    `143`'s RPC stays deployed but unused.
   - PROD data fix (2026-06-25): reparented FP3/FP4 paddocks under their pastures
-    via `psql --single-transaction` — 6 FP3 paddocks to the FP3 pasture (fixing
+    via `psql --single-transaction` - 6 FP3 paddocks to the FP3 pasture (fixing
     FP3A1, which was mis-parented to FP4) and 23 FP4 paddocks to the FP4 pasture.
     Verified: all 6 under FP3, all 23 under FP4; the FP3 outline-candidate draft
     line was correctly excluded.
@@ -325,7 +353,7 @@ The current source checkpoint is listed in the header above.
   - `8b21a20` removed the year picker/top duplicate stat from events, ensured
     all imported production events show, and links matched broiler processing
     events to batch record pages when the batch can be deduced.
-- List controls — column pickers, program-color tool buttons, always-flat
+- List controls - column pickers, program-color tool buttons, always-flat
   results (2026-06-18):
   - Broiler Batches: rich filtering + single-rule sort + saved views scoped to
     the PROCESSED table only; a processed-table column/display picker over ~30
@@ -335,11 +363,11 @@ The current source checkpoint is listed in the header above.
   - Cattle Herds + Sheep Flocks: a column/display picker over every field
     (cattle 23, sheep 25), persisted per surface (`cattle.herds.columns` /
     `sheep.flocks.columns`) and stored in saved views. The grouped/flat view
-    toggle is REMOVED — results are always one flat list; outcome herds/flocks
+    toggle is REMOVED - results are always one flat list; outcome herds/flocks
     (processed/sold/deceased) stay browsable in the collapsible sections below.
     `tag` is always shown.
   - Selected tool buttons fill with the program color + readable (white) glyph
-    to match the filled top-nav tab — broiler gold, cattle maroon, sheep green.
+    to match the filled top-nav tab - broiler gold, cattle maroon, sheep green.
     `getReadableText(accent)` returns white for cattle/sheep; broiler gold is
     light, so the broiler selected glyph is hard-set white.
   - Daily program list pages + Home "Last 5 Days" render as white record-cards
@@ -355,29 +383,29 @@ The current source checkpoint is listed in the header above.
     column-row hover radius had to be `>=10px` (bumped 8->10 in all three
     views); the `openable_hover_affordance` guard greps the literal
     `hoverable-tile` string, so a stale comment mentioning it tripped the guard
-    after `openableProps` was removed — reword such comments.
-- Design-law compliance pass (CP0 A1–A12 + Tabs + WI-6; 2026-06-17 designer
+    after `openableProps` was removed - reword such comments.
+- Design-law compliance pass (CP0 A1-A12 + Tabs + WI-6; 2026-06-17 designer
   audit, 53 findings):
-  - Tokens + Constitution amended to CP0 — true-black primary text, one defined
-    border gray, 10px radius floor + documented sub-10 allowlist — with the
+  - Tokens + Constitution amended to CP0 - true-black primary text, one defined
+    border gray, 10px radius floor + documented sub-10 allowlist - with the
     `design_token_contract` / `radius_floor` / `openable_hover_affordance` guards
     updated in the same change.
   - Universal hover affordance: tile/card openables lift 3px/300ms + trailing
     chevron. Shared `DataTable` rows use row-hover wash + cell-border emphasis +
     chevron without transforming `<tr>`. Daily report lists now use div-based
     `.hoverable-tile` record cards so they get the exact Home-tile lift.
-  - Header sub-nav selected tab → filled program-color PILL (radius 999: pig blue
+  - Header sub-nav selected tab -> filled program-color PILL (radius 999: pig blue
     / broiler gold / layer orange / cattle maroon / sheep green); unselected =
     plain text; dark-green top-bar chrome kept.
-  - Site-wide color sweep (all programs): stat numbers → black, species/group/
-    herd/flock → dot + black label, card backgrounds + colored borders
-    neutralized, status → shared `Badge`, category chips → dot+label/text,
+  - Site-wide color sweep (all programs): stat numbers -> black, species/group/
+    herd/flock -> dot + black label, card backgrounds + colored borders
+    neutralized, status -> shared `Badge`, category chips -> dot+label/text,
     primary actions re-tinted per program; semantic colors (mortality, YoY,
     warn/danger notices) preserved.
-  - Dailys (×6): status row-fills removed, comments black + 2-line clamp,
-    herd/flock pills → dot+label, `DataTable` windowed render cap (export/print/
+  - Dailys (Ã—6): status row-fills removed, comments black + 2-line clamp,
+    herd/flock pills -> dot+label, `DataTable` windowed render cap (export/print/
     filters/saved-views unchanged).
-  - Broiler PROCESSED cards → shared `DataTable`; weigh-in list + shared session
+  - Broiler PROCESSED cards -> shared `DataTable`; weigh-in list + shared session
     page program-accented. Pasture Map intentionally untouched.
 - Pasture Map header polish:
   - `/pasture-map` uses the shared app `Header` instead of a pasture-only header.
@@ -475,25 +503,23 @@ The current source checkpoint is listed in the header above.
   - `/pasture-map` renders the one-page grazing cockpit with Map, Field, and
     Reports tabs. Plan is folded into Map; the Setup tab was already removed.
   - Map is the single working surface (Plan merged in). Desktop hover shows the
-    read-only area readout; clicking/tapping an area opens the working Area
-    inspector. With no area selected the side panel shows the Current groups
-    overview, and the planning cockpit (group switcher, Move + Clear current
-    area, rotation editor, classification queue, Tracks / Lines, archived-area
-    recovery, Boundary tools, area management) is always available below it, so
-    selecting an area never hides the working controls. There is no centered
-    modal and no Land areas list; Map/Pan, explicit zoom, Escape, and inspector
-    dismissal are the exit paths.
+    read-only area readout; clicking/tapping an area opens the accessible Area
+    modal for area configuration only. The modal has one upper-right `X` close
+    affordance and debounces/saves edits on close.
+  - The Map side panel uses DataTable-style Animal Groups rows. Clicking a group
+    row opens the inline group record beside the full map. Group records show
+    details, a chip-based rotation editor, a current->next move box with
+    date/time and optional actual group weight, and grazing history.
+  - Rotation order is the planning source. The old planned-move utility/table/
+    RPCs and free-form Record/Plan move forms are removed.
   - Occupancy visuals are derived from the real planner-group roster and latest
     `pasture_move_events` by canonical `(animal_type, group_key)`, not from
     ad-hoc/free-form groups. Occupied polygons fill by animal type and show
-    group markers. Farm status `Occupied` counts are explained in the Map side
-    panel by the reconciled occupied-area list.
-  - Hovering/focusing a Current-group row previews its mapped area/name on the
-    map; clicking/tapping an AREA opens the working inspector. The old read-only
-    touch Map popover is retired.
+    group markers. Parent pasture fill suppresses direct-child overlap state.
+    Group row hover is table-only; it does not preview on the map.
   - Field mode provides phone-first execution controls, offline queue/sync
-    state, selected group movement, `My Location`, `Fit Farm`, and draft-lines
-    visibility when applicable.
+    state, `My Location`, `Fit Farm`, and draft-lines visibility when
+    applicable.
   - Client parses OnX KML with `@tmcw/togeojson`; Polygons import as reviewable
     areas; LineStrings import as outline candidates and are never auto-closed.
   - Tracks / Lines are draft LineStrings only. They have no acreage, are
@@ -503,11 +529,12 @@ The current source checkpoint is listed in the header above.
     line-geometry RPC exists.
   - Read access starts at `farm_team`; management/admin can import/classify,
     close/delete permanent areas, draw/edit permanent geometry, promote temp
-    areas, and manage Tracks / Lines. Farm-team users can view/measure, confirm
-    planned moves, record and Clear moves, and create temp paddocks/tracks
-    through the temp lifecycle. Light is pasture farm-team-level (migration
-    `139`): Light keeps the farm-team working controls on Map and Field and is
-    NOT Map-only/read-only; only management/admin-only actions stay gated.
+    areas, manage Tracks / Lines, and delete individual grazing stays. Farm-team
+    users can view/measure, record moves from the group record, and create temp
+    paddocks/tracks through the temp lifecycle. Light is pasture farm-team-level
+    (migration `139`): Light keeps the farm-team working controls on Map and
+    Field and is NOT Map-only/read-only; only management/admin-only actions stay
+    gated.
   - Map rendering uses Leaflet with Esri World Imagery as the primary online
     imagery source. Geometry is provider-neutral GeoJSON/PostGIS; Google is not
     the geometry source.
@@ -520,9 +547,9 @@ The current source checkpoint is listed in the header above.
     boundaries are fixed bright green 4px. Temp paddocks default to white dashed
     5px and are style-editable. Only temp paddocks and GPS/field tracks have
     editable line style.
-  - Migrations `116`, `127`, `128`, `129`, `130`, `131`, `132`, `135`, and `136`
-    are present on TEST and PROD. Offline imagery cache is not built; vector/
-    cache/queue behavior is present.
+  - Migrations `116`, `127`, `128`, `129`, `130`, `131`, `132`, `135`, `136`,
+    `139`, `140`, `141`, `143`, `147`, and `148` are present on PROD. Offline
+    imagery cache is not built; vector/cache/queue behavior is present.
   - `design_handoff_pasture_map/` is committed as the design reference bundle;
     production code does not import from it.
 
@@ -533,176 +560,53 @@ The current source checkpoint is listed in the header above.
 Treat these as product lanes, not hotfixes, unless Ronnie says otherwise.
 This is the canonical home for outstanding build/design work.
 
-1. Pasture Map groups + grazing-history-edit + parent-pasture coloring lane
-   - Status: NOT STARTED. Investigation is DONE (findings recorded below);
-     no code written yet. This is the active top-priority lane.
-   - Class: `ENH`/`IA`/`DEFECT` plus one `DB-GATE` (a new per-move delete RPC),
-     and a second `DB-GATE` if the color fix is done server-side.
-   - Base: `feature/pasture-groups-grazing-edit` was prepared from `d18736f`
-     (after PR #38); rebase onto current `main` before implementation if this
-     docs/maintenance lane has merged. The prior accordion/modal lane (old Build
-     Queue item 1) SHIPPED via PR #37 + PR #38 — see Recent Shipped Checkpoints.
-   - Ronnie direction (verbatim asks, 2026-06-25):
-     1. Remove the per-area "Reset grazing history" button entirely. No
-        whole-area history wipe from a button.
-     2. In the Reports area record, make the grazing history EDITABLE: delete a
-        SINGLE grazing entry there.
-     3. Rename the record card title "Grazing timeline" to "Grazing History".
-     4. Remove the "Current groups" card from the Map side panel.
-     5. Add location data to the "Animal Groups" card (the group switcher pills).
-     6. Clicking an animal group opens a MODAL showing all that group's move
-        data (its full move history).
-     7. Remove the side-panel header text: "Plan / Grazing cockpit" (kicker),
-        "Move planner" (h2), and "Pick a group, then build its rotation. Drag to
-        reorder; tap the map to add a stop." (paragraph).
-     8. Bug: clearing the Ewes out of a child paddock recolored the whole parent
-        pasture FP3; resetting FP3A1 left it "green". Fix so a pasture does NOT
-        take occupancy/rest color from its own child paddocks.
-   - Investigation findings (build needs no re-investigation; line numbers are
-     approximate as of `d18736f`):
-     - STROKE vs FILL (`src/pasture/PastureMapCanvas.jsx`): permanent pasture
-       stroke is LOCKED blue `#1d4ed8`; permanent paddock stroke is LOCKED bright
-       green `#4ade80` (`withDesignationStroke`, ~L90-92, L171-192). A permanent
-       paddock is ALWAYS green-stroked regardless of occupancy. Occupancy/rest
-       state is the FILL only (`STATE_STYLE`, ~L76-83): resting fill =
-       gold/amber `#C7920A`. So "FP3A1 still green after reset" is almost
-       certainly the LOCKED green STROKE (a non-bug); the reset reloads and
-       clears the fill. Confirm and, if useful, make the stroke-vs-fill meaning
-       clearer in the UI.
-     - PARENT-PASTURE COLOR BUG root cause: `record_pasture_move`
-       (mig `128`, ~L462-476) inserts an `overlap` impact for EVERY active area
-       whose geometry `ST_Intersects` the destination. A child paddock sits
-       inside its parent pasture, so a move into the paddock gives the PARENT an
-       `overlap` impact. `_land_area_summary` (mig `128`, ~L176-227) counts
-       `destination` AND `overlap` impacts identically toward occupancy/rest, so
-       clearing the group adds a `departure`/overlap impact on the parent too and
-       the parent flips to "resting" fill. NO suppression exists today.
-       Recommended fix (server-side, cleanest): in `_land_area_summary`, exclude
-       `overlap` impacts whose move destination is a CHILD of `p_id` (a
-       `land_areas` row with `parent_id = p_id`) when deriving a pasture's
-       occupancy/rest. State is read-derived, so the existing FP3 impacts stop
-       coloring FP3 immediately after the function is replaced (one new
-       migration; TEST apply in-lane, PROD apply is a gate). Client-side
-       alternative: do not render occupancy FILL on an area that has child
-       paddocks. Server-side is more correct; confirm with Ronnie.
-     - GROUP RENDERING (`PastureMapView.jsx`): `renderCurrentGroups()` (the
-       "Current groups" card, ~L2343-2412) shows each group + a location chip
-       from `groupLocation`. `renderGroupSwitcher()` (the "Animal Groups" card,
-       ~L2491-2529) shows species pills with NO location. For asks 4-5: delete
-       the Current groups card and add the location chip (`groupLocation[g.id]`:
-       area name + time-in-area) into the Animal Groups pills. `groupLocation`
-       (~L727-737) = latest move's `to_land_area_id`/name per
-       `(animalType, groupKey)`. Note: the pill `onClick` currently calls
-       `setActiveGroupFromGroup`; for ask 6 the click should ALSO/instead open
-       the group modal.
-     - GROUP MODAL (ask 6): for one group's full move history use
-       `listPastureHistoryReport({animalType, groupKey, limit})` (NOT
-       `listPastureMoves`, which is all-groups). Group identity = `(animalType,
-       groupKey)` on the roster group object. Build an accessible modal (reuse
-       the `src/pasture/PastureAreaModal.jsx` chrome or `useModalFocusTrap`),
-       opened from a group pill; show the group's moves (in/out area, date, head
-       count, notes).
-     - PER-ENTRY GRAZING DELETE (asks 1-3): `buildGrazingStays()` (~L379-426)
-       gives each stay an `id` = the move-IN event id (`ev.id`). Stays render at
-       ~L3574-3597 (`data-pasture-report-stay`); the card title "Grazing
-       timeline" is at ~L3570. Add a per-stay delete (management/admin) targeting
-       `s.id`. Needs a NEW RPC (next free migration number after `143`), e.g.
-       `delete_pasture_move(p_move_id text)` gated management/admin: delete the
-       one `pasture_move_events` row (its `pasture_move_impacts` cascade via
-       `ON DELETE CASCADE`); state re-derives automatically. Mirror the
-       `delete_land_area` SECDEF/role-gate/REVOKE/GRANT boilerplate from
-       mig `116`.
-   - Disposition of mig `143`: the per-area
-     `delete_land_area_grazing_history` RPC (shipped + PROD-applied this session)
-     becomes UNUSED once the button is removed. Leave the RPC deployed (harmless);
-     remove only the UI button + `resetAreaHistory` handler + state +
-     `deleteLandAreaGrazingHistory` call, and update the static test that asserts
-     the reset button/RPC wiring.
-   - Decisions to confirm with Ronnie:
-     - Color fix location: server-side `_land_area_summary` change (recommended)
-       vs client-side "pastures with children show no occupancy fill".
-     - Pending from the prior lane (unrelated): should the planned-move "Use"
-       button keep recording at `now`, or pre-fill an editable date/notes.
-   - Validation target: `format:check`, `lint`,
-     `npm test -- tests/static/pasture_map_static.test.js`, focused pasture
-     Playwright (groups card + group modal, per-stay delete, color fix, record
-     rename), full `playwright.pasture.config.js` if stable, `npm test`,
-     `npm run build`. New migration(s): TEST apply in-lane; PROD migration apply
-     and commit/push/merge are explicit Ronnie gates.
-   - Out of scope unless promoted: editing a move's date/notes in place (the
-     ledger is append-only — correction is delete + re-record), open-line
-     geometry edit.
-
-2. Monthly Newsletter Engine
-   - Status: ACTIVE in CC#2's isolated worktree
-     `C:/Users/Ronni/WCF-planner-newsletter`, branch
-     `feature/newsletter-engine`. Foundation SQL/security review is updated;
-     public surface, admin one-pass editor, AI generation, automation, tests,
-     deploy/release gates remain.
+1. Monthly Newsletter Checkpoint B automation and first-production verification
+   - Status: NEXT NEWSLETTER LANE. Checkpoint A is shipped: code is merged to
+     `main`/pushed, PROD has migrations `144`/`145` and both newsletter buckets,
+     and PROD currently has `0` newsletter issues.
    - Class: `ENH`/`AI`/`DB-GATE`/`SECURITY`/`AUTOMATION`.
-   - Product decision: web only. Public no-login archive lives at a sensible
-     `/newsletter` URL, with past months navigable and a latest issue route.
-     Public pages are intentionally `noindex`; there is no email/PDF/RSS/login
-     requirement for readers. The admin/build surface is admin-only inside the
-     planner.
-   - Editorial decision: title format like `White Creek Farm June Review`; visual
-     style should match the farm's current email style, not a new marketing
-     landing page. Target length is about two pages. Every issue should include
-     at least a few photos, chosen/recommended from what was noteworthy that
-     month, but admins can add/remove/approve photos before publication.
-   - Content decision: fact-based positive PR for owners/periphery staff.
-     Communicate animal-on-farm numbers, births, production/processing/yield
-     highs, and other factually noteworthy accomplishments from the prior month.
-     Do NOT include finances or mortalities. First names of team members are OK;
-     do not expose sensitive/private details.
-   - Workflow decision: one coordinated late-month task/reminder drives the
-     monthly intake. The planner should keep reminding until the issue is ready.
-     A short monthly Q&A/checklist should ask about noteworthy events the
-     planner data may not show, then request specific photo suggestions based on
-     the facts found. Ronnie keeps final editorial approval.
-   - AI decision: use a static prompt/template in the API/Edge Function setup so
-     the generation stays consistent and inside the planner. AI output must be
-     structured blocks rendered by a whitelist; no raw AI HTML.
-   - Data/security foundation in CC#2 worktree:
-     - Migration `144_newsletter_engine.sql` adds
-       `newsletter_issues`, `newsletter_fact_candidates`, `newsletter_photos`,
-       `newsletter_runs`, and `newsletter_settings`; deny-all RLS; admin-only
-       SECDEF RPCs; and exactly three anon read RPCs:
-       `list_published_newsletters()`, `get_published_newsletter(slug)`, and
-       `get_newsletter_preview(slug, token)`.
-     - Migration `145_newsletter_public_bucket.sql` was revised into two
-       buckets: private `newsletter-staging` for uploads/copies before consent
-       and public-read/admin-write `newsletter-public` for approved bytes only.
-     - Accepted security fixes: preview RPC returns approved photos only;
-       approval is the explicit staging-to-public copy gate; unapprove deletes
-       public bytes; preview tokens have `preview_enabled` +
-       `preview_expires_at`, expire after 30 days, and are rotated/disabled on
-       publish; `noindex` is locked true in anon payloads; month validation is
-       strict `YYYY-MM` with calendar round-trip validation.
-     - Public boundary target: deny-all tables; no anon draft reads except
-       token-gated unexpired preview; no public fact/intake/run/settings access;
-       no `source_private_path` exposure; only approved public photo paths.
-   - Remaining build steps for next newsletter session:
-     - Build public `/newsletter`, `/newsletter/latest`, issue slug, and preview
-       routes with auth bypass, noindex meta, archive navigation, and structured
-       block renderer.
-     - Build `/admin/newsletter` one-pass editor/intake surface: issue creation,
-       fact candidate include/exclude/manual facts, monthly Q&A, photo upload/
-       suggestion/approval/cover controls, preview, publish/unpublish.
-     - Build fact detectors for animal counts, births, production records,
-       processing/yield highs, and other positive noteworthy events; keep the
-       "no finances/no mortalities" rule enforced.
-     - Build AI adapter/Edge Function (`newsletter-harvest`) with static prompt,
-       structured JSON/block output, run logging, and final-editor workflow.
-     - Add migration `146` for monthly automation/`pg_cron` and any required
-       Vault secret references; schedule one coordinated late-month task.
-     - Add TEST validation, public/admin route guards, anon-boundary tests,
-       bucket permission tests, noindex/preview-token tests, and renderer
-       whitelist tests.
-   - Gates: TEST apply may happen inside the lane. PROD storage bucket creation,
-     PROD migrations `144`/`145`/`146`, Edge Function deploy, Vault/API secret,
-     `pg_cron` enablement, commit/push/merge, and final release all require
-     Ronnie approval.
+   - Scope:
+     - Add fact detectors for animal counts, births, production records,
+       processing/yield highs, and other positive noteworthy events. Keep the
+       no-finances/no-mortalities rule enforced.
+     - Build the `newsletter-harvest` Edge Function/AI adapter with fixed prompt,
+       structured JSON/block output, run logging, and admin final-editor flow.
+     - Add migration `146` for ingest/automation helpers, monthly task/cron
+       scheduling, and any DB-side references needed by the Edge Function.
+     - Wire the required AI provider Vault/API secret and monthly `pg_cron`
+       schedule after explicit approval.
+     - Add a normal admin navigation entry to `/admin/newsletter` once Ronnie
+       signs off on placement.
+     - Do a first-production content pass: create a real draft, upload/approve
+       photos, set cover, preview, publish, verify `/newsletter/latest`, then
+       unpublish/republish if the workflow needs adjustment.
+   - Validation target: TEST apply of `144`/`145`/`146` in order for automation
+     work; newsletter static guards; API/unit tests; public/admin Playwright;
+     storage upload/approve/remove browser coverage with real staging->public
+     bytes; PROD catalog checks after any approved apply/deploy; noindex and
+     preview-token hardening checks.
+   - Gates: PROD migration `146`, Edge Function deploy, Vault secret, cron
+     enablement, nav/release push, and first-production publish are explicit
+     Ronnie gates. Do not assume Checkpoint A approval covers automation.
+
+2. Pasture Map post-ship production smoke and warning cleanup
+   - Status: SHIPPED product, small verification/cleanup lane only.
+   - Class: `VERIFY`/`DEFECT`.
+   - Scope:
+     - After Netlify deploy, smoke `/pasture-map` in PROD: area modal single-X
+       save-on-close, group table hover/click record, inline group record beside
+       the full map, rotation chip reorder/path, current->next move with date and
+       actual weight, per-stay delete, Reports grazing-stay metrics, inactive
+       group filter, and parent-pasture color suppression.
+     - If reproducible, clean the non-blocking console warnings seen during
+       Playwright: duplicate `undefined|date` keys in HomeDashboard/
+       LightHomePortal and Leaflet `_leaflet_pos` teardown warnings during rapid
+       navigation.
+   - Validation target: focused production/browser smoke for `/pasture-map` after
+     deploy; focused tests for any warning cleanup; full pasture Playwright only
+     if touched behavior could regress.
+   - Gate: code-only unless a new DB defect is found. New DB work requires a new
+     scoped migration and explicit TEST/PROD gates.
 
 3. Pasture Map open-line Edit fast-follow
    - Class: `ENH`/`DB-GATE`.
@@ -770,18 +674,18 @@ Rules:
 | Decision | Status | Evidence |
 | --- | --- | --- |
 | Font scale | Ratified; shared-token enforcement active, residual legacy drift only by scoped lane | `design_token_contract_static.test.js`, `record_page_shell_static.test.js` |
-| Radius floor (CP0 §A3) | Ratified; 10px floor, `4`–`9` retired on real UI, sub-10 allowlist via `radius-allow` | `radius_floor_static.test.js`, `design_token_contract_static.test.js` |
+| Radius floor (CP0 section A3) | Ratified; 10px floor, `4`-`9` retired on real UI, sub-10 allowlist via `radius-allow` | `radius_floor_static.test.js`, `design_token_contract_static.test.js` |
 | Confirm/Delete stacking | Ratified; top destructive overlay tier | `design_token_contract_static.test.js`, `shared_ui_extraction_contract_static.test.js` |
 | Button height/padding | Ratified; standard button pad `10px 16px` | `design_token_contract_static.test.js` |
 | Save model | Ratified; submit-style vs autosave split | `save_model_contract_static.test.js` |
 | Ordinary text hierarchy | Ratified; Home + parity + CP0 true-black sweep shipped | `homeRedesign.css`, `index.html`, `src/shared/DataTable.css`, `design_token_contract_static.test.js` |
-| Design-law package (CP0) | Ratified 2026-06-16 (CP0-SIGNOFF A1–A12 + Tabs); compliance pass shipped 2026-06-18 | folded into Global Decisions + Design System; residual follow-ups in Build Queue 6 |
-| True-black text (CP0 §A1) | Ratified; `--text-primary`/`--ink`/island `--text` = `#000`; `getReadableText` exempt | `design_token_contract_static.test.js`, island/openable guards |
-| One border gray (CP0 §A2) | Ratified; `--border` == `--border-strong` (one defined gray) | `index.html` token layer |
+| Design-law package (CP0) | Ratified 2026-06-16 (CP0-SIGNOFF A1-A12 + Tabs); compliance pass shipped 2026-06-18 | folded into Global Decisions + Design System; residual follow-ups in Build Queue 6 |
+| True-black text (CP0 section A1) | Ratified; `--text-primary`/`--ink`/island `--text` = `#000`; `getReadableText` exempt | `design_token_contract_static.test.js`, island/openable guards |
+| One border gray (CP0 section A2) | Ratified; `--border` == `--border-strong` (one defined gray) | `index.html` token layer |
 | Program-color tabs (CP0 Tabs) | Selected tab = filled pill in program color; unselected = plain text; header sub-nav adopts it; top green chrome stays | `Header.jsx` sub-nav + `Tabs.jsx`; no dedicated static guard (Build Queue 6) |
-| Closed badge set (CP0 §A4) | `ok·warn·danger·info·neutral`; ≤1 per row; soft signals = colored text | `Badge.jsx`; broiler/pig/cattle batch static guards assert `<Badge>` adoption |
-| One table system (CP0 §A6) | hairline rows, no zebra, right-aligned numbers, status as text first, whole-row openable | `DataTable.jsx`, `DataTable.css` |
-| Color discipline (CP0 §A12) | program accent only on pill/dot/one-figure/brand-button; closed text-color set; species = dot + black label | enforced by the sweep + `design_token_contract`/`openable_hover` guards; no dedicated grep guard (Build Queue 6) |
+| Closed badge set (CP0 section A4) | `ok/warn/danger/info/neutral`; <=1 per row; soft signals = colored text | `Badge.jsx`; broiler/pig/cattle batch static guards assert `<Badge>` adoption |
+| One table system (CP0 section A6) | hairline rows, no zebra, right-aligned numbers, status as text first, whole-row openable | `DataTable.jsx`, `DataTable.css` |
+| Color discipline (CP0 section A12) | program accent only on pill/dot/one-figure/brand-button; closed text-color set; species = dot + black label | enforced by the sweep + `design_token_contract`/`openable_hover` guards; no dedicated grep guard (Build Queue 6) |
 | Universal hover affordance (CP0 WI-6) | tile/card openables lift 3px/300ms + trailing chevron; table rows signal via wash + cell-border + chevron without `<tr>` transform; daily record lists use div-based `.hoverable-tile` cards to get the Home-tile lift | `openable_hover_affordance_static.test.js` |
 
 Locked functional invariants:
@@ -822,10 +726,10 @@ unless Ronnie changes the contract:
   React app tokens.
 - The homepage redesign remains scoped under `.home.theme-crisp`; do not move
   Home-specific non-canonical micro-values globally without an amendment.
-- The public `#webform-container` island adopts the CP0 §A3 10px radius floor on
+- The public `#webform-container` island adopts the CP0 section A3 10px radius floor on
   the app `:root` (`index.html`/`dailys.html`/`equipment.html` aligned 2026-06-17);
   the island's own `--wf-r-*` corner radii are pending the CP5 forms pass.
-- CP0 §A12.1 permitted-uses are extended (2026-06-17) so the primary/brand button
+- CP0 section A12.1 permitted-uses are extended (2026-06-17) so the primary/brand button
   re-tints to the program color via `--brand` on each program's page wrapper; this
   is ratified, not palette drift.
 - `getReadableText()` in `src/lib/styles.js` returns infrastructure contrast
@@ -942,8 +846,8 @@ No operational record workspace should reintroduce legacy `ActivityPanel` or
 ### Supabase Migrations
 
 Current PROD architecture includes all applied migrations through `116`, plus
-`125`, `126`, `127`, `128`, `129`, `130`, `131`, `132`, `133`, `134`, `135`,
-`136`, `137`, `138`, `139`, `140`, `141`, `142`, and `143`. Recent load-bearing
+`125` through `145`, `147`, and `148`. Migration `146` is reserved for the next
+newsletter automation lane and is not written/applied. Recent load-bearing
 migrations:
 
 - `100` processing batch lifecycle RPCs.
@@ -1065,12 +969,11 @@ migrations:
     Clears one area's `pasture_move_impacts` and detaches it from every
     `pasture_move_events` from/to, then resets `baseline_no_history` so state
     re-derives to "no move history". Other areas' impacts are preserved.
-  - PROD-applied + verified 2026-06-25. NOTE: the UI button that called it is
-    being removed in Build Queue item 1 (Ronnie wants per-entry grazing delete);
-    the RPC stays deployed but unused. Append-only ledger background lives in the
-    Pasture Map Load-Bearing Contract below.
-- `144` Newsletter Engine data/RPC boundary (IN BUILD, not PROD-applied):
-  - Planned tables: `newsletter_issues`, `newsletter_fact_candidates`,
+  - PROD-applied + verified 2026-06-25. The UI button and client wrapper that
+    called it are removed; the RPC stays deployed but unused. Append-only ledger
+    background lives in the Pasture Map Load-Bearing Contract below.
+- `144` Newsletter Engine data/RPC boundary:
+  - Adds tables: `newsletter_issues`, `newsletter_fact_candidates`,
     `newsletter_photos`, `newsletter_runs`, and `newsletter_settings`.
   - Deny-all RLS; admin-only SECDEF RPCs for issue/intake/fact/photo/settings
     management; exactly three anon read RPCs for published list, published issue,
@@ -1080,14 +983,42 @@ migrations:
   - Preview tokens are enabled/expiring, rotate on publish/unpublish/regenerate,
     and publish disables pre-publication preview links. Anon `noindex` is
     literal/locked true. Month inputs validate strict calendar `YYYY-MM`.
-- `145` Newsletter storage buckets (IN BUILD, not PROD-applied):
+  - PROD catalog verified 2026-06-26: all five tables exist with RLS enabled;
+    anon EXECUTE is present only on `list_published_newsletters`,
+    `get_published_newsletter`, and `get_newsletter_preview` among the sampled
+    newsletter RPCs.
+- `145` Newsletter storage buckets:
   - Private `newsletter-staging` bucket: admin-only read/write for uploads and
     copied planner photos before public consent.
   - Public `newsletter-public` bucket: public read, admin-only write, populated
     only after admin photo approval; unapprove deletes the public copy.
+  - PROD catalog verified 2026-06-26: `newsletter-staging` exists with
+    `public=false`; `newsletter-public` exists with `public=true`.
 - `146` Newsletter automation (RESERVED, not written/applied):
   - Expected to own monthly `pg_cron`, newsletter harvest/generation scheduling,
     Edge Function/Vault secret references, and any DB-side automation helpers.
+- `147` Pasture Map grazing entry delete and parent overlap:
+  - Adds `delete_pasture_move(p_move_id)` SECDEF, management/admin gated,
+    authenticated EXECUTE only, anon denied.
+  - Per-stay delete removes the selected move and cascades its impacts. If the
+    deleted move has a later move for the same animal group, the RPC clears only
+    that later move's linked departure impacts for the touched areas and
+    preserves the later move event. This prevents completed-stay drift.
+  - `_land_area_summary` suppresses child-derived overlap state for direct
+    parent pastures, so child paddock occupancy/rest does not color the parent
+    fill. Parent-only history now resolves to baseline instead of visible
+    no-history fill when appropriate.
+  - TEST behavior and PROD catalog were verified on 2026-06-26.
+- `148` Pasture Map group records, actual-weight metrics, planned cleanup:
+  - Adds `pasture_move_events.total_weight_lbs` with a positive-value check and
+    updates move/report RPCs to expose actual move-time group weight.
+  - Updates `record_pasture_move` to accept optional `p_total_weight_lbs`;
+    pasture group history/stay metrics use only recorded data for lbs/ac.
+  - Drops the unused `pasture_planned_moves` table and planned-move RPCs. The
+    rotation editor is now the planning source, and the group record move box
+    records current area to next rotation area.
+  - PROD smoke verified on 2026-06-26: weight column exists, record-move weight
+    signature exists, and `pasture_planned_moves` is absent.
 
 Special migration notes:
 
@@ -1115,10 +1046,10 @@ Known document/photo surfaces are locked by static guards:
 - `cattle-feed-pdfs`.
 - `batch-documents`.
 
-Newsletter lane pending buckets (not current PROD until Build Queue item 2
-ships): `newsletter-staging` is private/admin-only for uploads and copied
-planner photos before approval; `newsletter-public` is public-read/admin-write
-and receives only approved newsletter photo bytes.
+Newsletter buckets are current PROD infrastructure as of 2026-06-26:
+`newsletter-staging` is private/admin-only for uploads and copied planner photos
+before approval; `newsletter-public` is public-read/admin-write and receives
+only approved newsletter photo bytes.
 
 Append-only upload expectations:
 
@@ -1144,17 +1075,28 @@ Append-only upload expectations:
   `src/pasture/pastureMap.css`, `src/lib/pastureKml.js`,
   `src/lib/pastureGeometry.js`, `src/lib/pastureMapApi.js`, and
   `src/lib/pastureOffline.js`: Pasture Map import/draw/edit/measure, move
-  ledger, planning/reports, offline vector queue, field tracks, and styling.
+  ledger, group records, rotation planning, reports, offline vector queue, field
+  tracks, and styling.
 - `supabase-migrations/116_pasture_map_land_areas.sql`,
   `127_pasture_map_draw_edit.sql`, `128_pasture_map_move_ledger.sql`,
   `129_pasture_map_planning_reports.sql`, `130_pasture_map_field_tracks.sql`,
   `131_pasture_map_line_style.sql`,
-  `132_pasture_map_line_patterns_and_defaults.sql`, and
-  `135_pasture_map_temp_paddocks.sql`, and
-  `136_pasture_map_light_read.sql`: Pasture Map schema/RPC lanes through
-  temp-paddock lifecycle and Light read-only Map access.
-- `scripts/apply_test_mig_127.cjs` through `scripts/apply_test_mig_132.cjs`:
+  `132_pasture_map_line_patterns_and_defaults.sql`,
+  `135_pasture_map_temp_paddocks.sql`, `136_pasture_map_light_read.sql`,
+  `139_pasture_map_light_farm_team.sql`, `140_pasture_map_rotations.sql`,
+  `141_pasture_map_measurements.sql`, `143_pasture_map_reset_area_history.sql`,
+  `147_pasture_map_grazing_entry_delete_and_parent_overlap.sql`, and
+  `148_pasture_map_group_records_weight_and_planned_move_cleanup.sql`: Pasture
+  Map schema/RPC lanes through group records and actual-weight grazing metrics.
+- `scripts/apply_test_mig_127.cjs` through `scripts/apply_test_mig_132.cjs`,
+  plus `scripts/apply_test_mig_147.cjs` and `scripts/apply_test_mig_148.cjs`:
   TEST apply/smoke helpers for the Pasture Map lanes.
+- `src/newsletter/*`, `src/lib/newsletterApi.js`, `tests/newsletter_public.spec.js`,
+  `tests/static/newsletter_boundary_static.test.js`,
+  `supabase-migrations/144_newsletter_engine.sql`,
+  `supabase-migrations/145_newsletter_public_bucket.sql`, and
+  `scripts/apply_test_mig_144_145.cjs`: Monthly Newsletter Checkpoint A public,
+  admin, API, boundary, migration, and TEST smoke owners.
 - `src/pig/SowsView.jsx`: breeding-pig grouped tables and record pages.
 - `src/lib/activityRegistry.js`: client entity registry, labels, and routes.
 - `src/lib/activityApi.js` and `src/lib/globalActivityApi.js`: Activity RPC
@@ -1230,7 +1172,7 @@ Append-only upload expectations:
   and text inside approved semantic pastel blocks.
 - A text-color cleanup must be typography-only unless the build explicitly says
   it is redesigning the affected block's background.
-- CP0 §A12 program-accent discipline: the locked program palette (pig `#2B4C9B`,
+- CP0 section A12 program-accent discipline: the locked program palette (pig `#2B4C9B`,
   broiler `#C7920A`, layer `#D2601A`, cattle `#8E3328`, sheep `#4CA035`,
   equip/admin `#6B7280`) may appear ONLY on (a) the selected nav/tab pill, (b) a
   small dot in mixed lists, (c) optionally one headline figure, and (d) the
@@ -1244,14 +1186,14 @@ Append-only upload expectations:
 
 - Standard button pad is `10px 16px`.
 - Standard button vertical pad is `10px`.
-- Inputs/selects/textareas use radius `10` (`--radius-sm`, CP0 §A3), border
+- Inputs/selects/textareas use radius `10` (`--radius-sm`, CP0 section A3), border
   `1px var(--border-strong)`, pad `8px 11px`, and brand focus treatment.
 
 ### Radius
 
-- CP0 §A3: 10px is the floor for real UI controls. Canonical radius tokens are
+- CP0 section A3: 10px is the floor for real UI controls. Canonical radius tokens are
   `10`, `12`, `14`, `999` (pill), and `'50%'` (circle); `0` is allowed for
-  intentionally square edges. The values `4`–`9` are retired on real UI.
+  intentionally square edges. The values `4`-`9` are retired on real UI.
 - Genuinely decorative sub-components (legend swatches, accent/LED bars, progress
   bars, dividers, inline-code chips, small color dots) keep a sub-10 radius ONLY
   on a line tagged with the `radius-allow` marker; the floor guard fails any
@@ -1410,6 +1352,10 @@ Workflow/worktable entities:
 
 ### Monthly Newsletter
 
+- Current shipped scope is Checkpoint A: manual public archive + admin editor,
+  migrations `144`/`145`, and newsletter storage buckets. Checkpoint B remains
+  automation: fact detectors, AI generation, `newsletter-harvest`, migration
+  `146`, Vault secret, monthly task, and `pg_cron`.
 - The newsletter is a public no-login web archive at `/newsletter`, with past
   months navigable and a latest-issue route. Public issue pages must be
   `noindex`; this is an invariant, not a setting admins can accidentally drift.
@@ -1476,8 +1422,9 @@ Workflow/worktable entities:
 - Access: `farm_team`, `management`, `admin` can read/view/measure and use the
   Map working controls. Management/admin own permanent area import/classify/
   close/draw/edit, Tracks / Lines cleanup, promotion, and permanent-area
-  lifecycle actions. Farm-team can record/Clear moves, confirm planned moves, and
-  create/edit/archive their own temp paddocks/tracks through migration `135`.
+  lifecycle actions. Farm-team can record moves through the group record move
+  box and create/edit/archive their own temp paddocks/tracks through migration
+  `135`.
   `equipment_tech` and inactive users are excluded. Light is pasture farm-team-
   level through migration `139`: Light keeps the farm-team Map/Field working
   controls and is NOT read-only/Map-only; only management/admin-only actions stay
@@ -1487,26 +1434,29 @@ Workflow/worktable entities:
   clicking a map area opens the accessible Area MODAL (`PastureAreaModal.jsx`:
   role=dialog, aria-modal, focus trap, backdrop) which owns per-area config
   (classification, parent pasture, line style, redraw, archive/restore, admin
-  hard-delete) — there is NO move form in the modal. The slim side panel holds
-  the Animal Groups switcher, current-group Move/Clear, the free-form "Record a
-  move"/"Plan a move" forms, the rotation editor, planned moves, and one bottom
-  Import KML. Tracks / Lines, the classification/review queue, and archived
-  recovery are collapsed sections in Reports. Reviewed permanent paddocks require
-  a parent pasture (UI-enforced via `update_land_area` `p_parent_id`; no DB
-  constraint, no auto-backfill); parentless paddocks surface in a Reports "Needs
-  pasture assignment" section. Field is phone-first execution/offline queue.
-  Reports are a collapsible per-area accordion (pastures collapse over child
-  paddocks via `parent_id`; per-area grazing records; no map view). Light is
+  hard-delete) - there is NO move form in the modal. The modal has one close
+  affordance, the upper-right `X`, and it debounces/saves edits on close.
+  The slim side panel holds the Animal Groups DataTable-style group rows. A
+  group row opens an inline group record beside the map, not a modal. The record
+  order is group details, chip-based rotation editor, current->next move box
+  with date/time and optional actual group weight, then grazing history. The
+  rotation editor owns future planning; the old planned-move table/RPCs and
+  free-form Record/Plan forms are removed. Tracks / Lines, the
+  classification/review queue, and archived recovery are collapsed sections in
+  Reports. Reviewed permanent paddocks require a parent pasture (UI-enforced via
+  `update_land_area` `p_parent_id`; no DB constraint, no auto-backfill);
+  parentless paddocks surface in a Reports "Needs pasture assignment" section.
+  Field is phone-first execution/offline queue. Reports are a collapsible
+  per-area accordion plus animal-group grazing stays/metrics, inactive groups
+  behind an Include inactive groups filter, and per-stay delete. Light is
   pasture farm-team-level on the merged Map and Field.
-- Move ledger / coloring caveat (load-bearing for the active lane): an area's
-  occupancy/rest state is read-derived in `_land_area_summary` from
-  `pasture_move_impacts` (`destination`/`overlap`/`departure`), not stored on
-  `land_areas`. `record_pasture_move` writes an `overlap` impact on every active
-  area whose geometry intersects the destination, so a child paddock's group
-  also marks its containing pasture occupied/resting. A permanent paddock's
-  bright-green stroke is a LOCKED designation color, independent of state (the
-  FILL is the state). The active lane suppresses pasture-from-child overlap
-  coloring and replaces the per-area reset button with per-entry grazing delete.
+- Move ledger / coloring contract: an area's occupancy/rest state is
+  read-derived in `_land_area_summary` from `pasture_move_impacts`
+  (`destination`/`overlap`/`departure`), not stored on `land_areas`.
+  `record_pasture_move` still writes overlap impacts for intersecting areas, but
+  migration `147` suppresses direct-child overlap impacts when deriving parent
+  pasture state. A permanent paddock's bright-green stroke is a LOCKED
+  designation color, independent of state; the FILL is the state.
 - Boundary visibility toggles hide/show pasture, paddock, or temp-paddock
   strokes only. Animal occupancy fills and group markers remain visible. Draft
   lines render on the working Map; Field has a Draft lines toggle; selected draft
@@ -1519,18 +1469,18 @@ Workflow/worktable entities:
   migration gates. Until then, saved Tracks / Lines can be zoomed, deleted, or
   closed into temp paddocks, but not edited in place.
 - Current Pasture Map includes the real-roster redesign, move ledger,
-  animal-color occupancy, planned moves, history/rest/stocking reports, offline
-  vector snapshot/queue, GPS field tracks, line styling/pattern controls,
-  temp-paddock lifecycle, the click-to-open Area modal + Reports accordion,
-  free-form move/plan in the side panel, the per-area grazing-history reset RPC
-  (mig `143`, button being removed), Map group hover preview, and Light pasture
-  farm-team-level Map/Field access. It does not include offline imagery cache,
-  daily-report wiring, or open-line edit.
+  animal-color occupancy, inline group records, chip-based rotation planning,
+  group-record move logging, actual-weight grazing metrics, per-stay grazing
+  delete, history/rest/stocking reports, offline vector snapshot/queue, GPS
+  field tracks, line styling/pattern controls, temp-paddock lifecycle, the
+  single-X Area modal + Reports accordion, and Light pasture farm-team-level
+  Map/Field access. It does not include offline imagery cache, daily-report
+  wiring, open-line edit, or a generic undo stack; corrections are delete the
+  grazing stay and re-record the move.
 - Future Pasture Map lanes should preserve the shipped Map / Field / Reports IA,
   the click-to-open Area modal, the Reports accordion, and the provider-neutral
   geometry/RPC model unless a new Ronnie-approved decision explicitly reopens
-  any of them. The active lane (Build Queue item 1) reworks groups, grazing-
-  history editing, and parent-pasture coloring.
+  any of them.
 
 ### Daily Reports
 
@@ -1612,7 +1562,7 @@ Workflow/worktable entities:
   scoped to the PROCESSED table only; active/planned batches stay pinned above
   the controls. Filter/sort semantics live in the pure module
   `src/lib/broilerBatchFilters.js` (processing-date-desc default). Batch
-  Comparison was removed — do not reintroduce it.
+  Comparison was removed - do not reintroduce it.
 - Login-gated `/weighins` cannot read or mutate `app_store.ppp-v4` directly.
 - Week 4/6 completion uses `stamp_broiler_batch_avg` RPC.
 - Broiler batch record Week 4 and Week 6 weight fields are read-only display
@@ -1808,7 +1758,8 @@ Focused starting points:
 | Record pages | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js` |
 | Home / dashboard alerts | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/static/home_animal_history_static.test.js`, `src/lib/animalHistory.test.js`, `tests/static/light_user_portal_static.test.js` |
 | Production | `src/lib/production.test.js`, `tests/static/production_page_static.test.js` |
-| Pasture Map | `src/lib/pastureKml.test.js`, `src/lib/pastureGeometry.test.js`, `src/lib/pasturePlannerGroups.test.js`, `tests/static/pasture_map_static.test.js`, `tests/pasture_map_p2_map.spec.js`, `tests/pasture_map_placement.spec.js`, `tests/pasture_map_setup.spec.js`, `tests/pasture_map_tweaks2.spec.js`, `tests/pasture_map_import.spec.js`, `tests/pasture_map_cp2.spec.js`, `tests/pasture_map_cp3.spec.js`, `tests/pasture_map_cp4.spec.js`, `tests/pasture_map_cp5.spec.js`, `tests/pasture_map_cp6.spec.js`, `tests/pasture_map_cp7.spec.js`, `playwright.pasture.config.js` |
+| Newsletter | `tests/static/newsletter_boundary_static.test.js`, `src/lib/newsletterApi.test.js`, `src/newsletter/NewsletterBlocks.test.js`, `tests/newsletter_public.spec.js`, `scripts/apply_test_mig_144_145.cjs` |
+| Pasture Map | `src/lib/pastureKml.test.js`, `src/lib/pastureGeometry.test.js`, `src/lib/pasturePlannerGroups.test.js`, `tests/static/pasture_map_static.test.js`, `tests/pasture_map_p2_map.spec.js`, `tests/pasture_map_placement.spec.js`, `tests/pasture_map_reports_records.spec.js`, `tests/pasture_map_reset_history.spec.js`, `tests/pasture_map_light_access.spec.js`, `tests/pasture_map_setup.spec.js`, `tests/pasture_map_tweaks2.spec.js`, `tests/pasture_map_import.spec.js`, `tests/pasture_map_cp2.spec.js`, `tests/pasture_map_cp3.spec.js`, `tests/pasture_map_cp4.spec.js`, `tests/pasture_map_cp5.spec.js`, `tests/pasture_map_cp6.spec.js`, `tests/pasture_map_cp7.spec.js`, `playwright.pasture.config.js`, `scripts/apply_test_mig_147.cjs`, `scripts/apply_test_mig_148.cjs` |
 | Breeding pigs | `tests/static/breeding_pigs_parity_static.test.js` |
 | Feed planning | `src/lib/feedPlanner.test.js`, `src/lib/feedOrderBasis.test.js`, `tests/static/feed_order_board_static.test.js` |
 | Pig | `src/lib/pig*.test.js`, `src/lib/pigBatchGridMetrics.test.js`, `tests/static/pig_batches_planned_trips_static.test.js`, `tests/static/weighin_session_record_page_static.test.js`, `tests/pig_*.spec.js` |
