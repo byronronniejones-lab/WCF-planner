@@ -33,6 +33,8 @@ import {
   regenerateNewsletterPreviewToken,
   getNewsletterSettings,
   updateNewsletterSettings,
+  runNewsletterHarvest,
+  listNewsletterRunsAdmin,
   uploadNewsletterStagingPhoto,
   getNewsletterStagingSignedUrl,
   newsletterPublicPhotoUrl,
@@ -349,6 +351,7 @@ function IssueEditor({issueId, onBack}) {
   const [intake, setIntake] = useState({});
   const [manualTitle, setManualTitle] = useState('');
   const [thumbs, setThumbs] = useState({}); // photoId -> url
+  const [runs, setRuns] = useState([]);
   const fileRef = useRef(null);
 
   const applyIssue = useCallback((data) => {
@@ -363,6 +366,7 @@ function IssueEditor({issueId, onBack}) {
     try {
       const data = await getNewsletterIssueAdmin(sb, issueId);
       applyIssue(data);
+      setRuns(await listNewsletterRunsAdmin(sb, issueId).catch(() => []));
     } catch (e) {
       setLoadError(friendlyNewsletterError(e));
     } finally {
@@ -482,6 +486,24 @@ function IssueEditor({issueId, onBack}) {
   const regenPreview = () =>
     withBusy(async () => applyIssue(await regenerateNewsletterPreviewToken(sb, issueId)), 'Preview link regenerated.');
 
+  // Automation: harvest planner facts + generate the AI/template draft via the
+  // newsletter-harvest Edge Function (server-side; the AI key never reaches the
+  // browser). Both reload the issue + run history afterward.
+  const reloadAfterRun = async () => {
+    applyIssue(await getNewsletterIssueAdmin(sb, issueId));
+    setRuns(await listNewsletterRunsAdmin(sb, issueId).catch(() => []));
+  };
+  const harvestFacts = () =>
+    withBusy(async () => {
+      await runNewsletterHarvest(sb, {issueId, steps: ['harvest']});
+      await reloadAfterRun();
+    }, 'Facts harvested from planner data.');
+  const generateDraft = () =>
+    withBusy(async () => {
+      await runNewsletterHarvest(sb, {issueId, steps: ['draft'], overwrite: true});
+      await reloadAfterRun();
+    }, 'Draft generated from included facts — review and edit below.');
+
   if (loading) return <div className="nla-loading">Loading issue…</div>;
   if (loadError)
     return (
@@ -534,9 +556,20 @@ function IssueEditor({issueId, onBack}) {
           <section className="nla-section">
             <div className="nla-section-head">
               <h3>Content blocks</h3>
-              <button type="button" className="nla-btn nla-btn-primary" disabled={busy} onClick={saveDraft}>
-                Save draft
-              </button>
+              <span className="nla-block-actions">
+                <button
+                  type="button"
+                  className="nla-btn"
+                  disabled={busy}
+                  onClick={generateDraft}
+                  title="Generate a starting draft from the included facts (you can edit it below)"
+                >
+                  Generate draft
+                </button>
+                <button type="button" className="nla-btn nla-btn-primary" disabled={busy} onClick={saveDraft}>
+                  Save draft
+                </button>
+              </span>
             </div>
             {blocks.length === 0 && <p className="nla-muted">No blocks yet. Add one below.</p>}
             {blocks.map((block, idx) => (
@@ -616,7 +649,18 @@ function IssueEditor({issueId, onBack}) {
           </section>
 
           <section className="nla-section">
-            <h3>Facts</h3>
+            <div className="nla-section-head">
+              <h3>Facts</h3>
+              <button
+                type="button"
+                className="nla-btn-sm"
+                disabled={busy}
+                onClick={harvestFacts}
+                title="Scan planner data for this month's noteworthy facts"
+              >
+                Harvest facts
+              </button>
+            </div>
             <p className="nla-muted">
               Toggle which harvested facts inform the issue. No finances or mortalities are harvested.
             </p>
@@ -667,6 +711,23 @@ function IssueEditor({issueId, onBack}) {
               </div>
             ))}
           </section>
+
+          {runs.length > 0 && (
+            <section className="nla-section">
+              <h3>Recent runs</h3>
+              <ul className="nla-facts">
+                {runs.slice(0, 6).map((r) => (
+                  <li key={r.id} className="nla-fact">
+                    <span>
+                      <strong>{r.runType}</strong>
+                      {r.provider ? <span className="nla-muted"> · {r.provider}</span> : null}
+                      <span className={`nla-tag${r.status === 'error' ? ' nla-danger' : ''}`}>{r.status}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
     </div>

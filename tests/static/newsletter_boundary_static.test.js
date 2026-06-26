@@ -184,3 +184,41 @@ describe('migration 144 preview hardening', () => {
     expect(body).toMatch(/NEWSLETTER_VALIDATION: preview is only available for draft issues/);
   });
 });
+
+describe('migration 146 automation boundary', () => {
+  const sql = read('supabase-migrations/146_newsletter_automation.sql');
+
+  it('grants NOTHING to anon (the anon surface stays mig 144s three RPCs)', () => {
+    expect(sql).not.toMatch(/GRANT EXECUTE ON FUNCTION[^;]*\bTO\b[^;]*\banon\b/);
+  });
+
+  it('keeps the Edge-Function ingest RPCs service_role-only', () => {
+    for (const fn of [
+      'ensure_newsletter_issue',
+      'replace_newsletter_harvest_facts',
+      'get_newsletter_generation_input',
+      'apply_newsletter_ai_draft',
+      'log_newsletter_run',
+      'create_newsletter_reminder_task',
+    ]) {
+      expect(sql, `${fn} granted to service_role`).toMatch(
+        new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^)]*\\) TO service_role`),
+      );
+      // ...and explicitly revoked from anon + authenticated.
+      expect(sql).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\)[\\s\\S]*?authenticated`));
+    }
+  });
+
+  it('leaves the monthly cron schedule GATED (not executed at apply time)', () => {
+    // The only cron.schedule reference must live inside a SQL comment block; no
+    // executable top-level `SELECT cron.schedule(` may run on TEST/PROD apply.
+    expect(sql).not.toMatch(/^\s*SELECT\s+cron\.schedule\(/m);
+    expect(sql).toMatch(/--[\s\S]*cron\.schedule\('newsletter-monthly'/);
+  });
+
+  it('does not add an apply-time Vault preflight (TEST apply must not need secrets)', () => {
+    // invoke_newsletter_cron reads Vault at CALL time inside its body only.
+    const preflightDoBlocks = sql.match(/DO \$preflight\$/g) || [];
+    expect(preflightDoBlocks).toHaveLength(0);
+  });
+});

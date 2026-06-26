@@ -11,6 +11,8 @@ import {
   NEWSLETTER_PUBLIC_BUCKET,
   unapproveNewsletterPhoto,
   removeNewsletterPhoto,
+  runNewsletterHarvest,
+  listNewsletterRunsAdmin,
 } from './newsletterApi.js';
 
 // Minimal fake Supabase client for the storage-cleanup paths. `removeError`
@@ -113,5 +115,48 @@ describe('checked public/staging photo deletion', () => {
       {bucket: NEWSLETTER_PUBLIC_BUCKET, paths: [PHOTO.storagePath]},
       {bucket: NEWSLETTER_STAGING_BUCKET, paths: [PHOTO.storagePath]},
     ]);
+  });
+});
+
+describe('automation wrappers (mig 146 + Edge Function)', () => {
+  it('runNewsletterHarvest invokes the function in admin mode with the requested steps', async () => {
+    const calls = [];
+    const sb = {
+      functions: {
+        invoke: async (name, opts) => {
+          calls.push({name, opts});
+          return {data: {ok: true, harvest: {factCount: 3}}, error: null};
+        },
+      },
+    };
+    const res = await runNewsletterHarvest(sb, {issueId: 'nli-2026-05', steps: ['harvest']});
+    expect(res).toEqual({ok: true, harvest: {factCount: 3}});
+    expect(calls[0]).toEqual({
+      name: 'newsletter-harvest',
+      opts: {body: {mode: 'admin', issueId: 'nli-2026-05', steps: ['harvest'], overwrite: true}},
+    });
+  });
+
+  it('runNewsletterHarvest surfaces an Edge error body', async () => {
+    const sb = {
+      functions: {
+        invoke: async () => ({
+          data: null,
+          error: {message: 'Edge Function returned a non-2xx', context: {json: async () => ({error: 'boom'})}},
+        }),
+      },
+    };
+    await expect(runNewsletterHarvest(sb, {issueId: 'x'})).rejects.toThrow(/boom/);
+  });
+
+  it('runNewsletterHarvest treats an {ok:false} body as a failure', async () => {
+    const sb = {functions: {invoke: async () => ({data: {ok: false, error: 'no assignee'}, error: null})}};
+    await expect(runNewsletterHarvest(sb, {issueId: 'x'})).rejects.toThrow(/no assignee/);
+  });
+
+  it('listNewsletterRunsAdmin returns an array (defensive on null)', async () => {
+    expect(await listNewsletterRunsAdmin({rpc: async () => ({data: null, error: null})}, 'i')).toEqual([]);
+    const rows = [{id: 'nlr-1', runType: 'harvest', status: 'ok'}];
+    expect(await listNewsletterRunsAdmin({rpc: async () => ({data: rows, error: null})}, 'i')).toEqual(rows);
   });
 });
