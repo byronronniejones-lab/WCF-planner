@@ -169,6 +169,13 @@ test.describe('admin newsletter (admin)', () => {
     await expect(page.getByText('Preview is disabled while published')).toBeVisible();
     await expect(page.getByRole('link', {name: 'Open preview'})).toHaveCount(0);
     await expect(page.getByRole('button', {name: 'Regenerate link'})).toHaveCount(0);
+
+    // CP-B automation controls render in the one-pass editor: Harvest facts
+    // (facts section) + Generate draft (content section). The buttons trigger
+    // the newsletter-harvest Edge Function; full invocation needs the deploy
+    // gate, so this asserts the wiring is present, not the server round-trip.
+    await expect(page.getByRole('button', {name: 'Harvest facts'})).toBeVisible();
+    await expect(page.getByRole('button', {name: 'Generate draft'})).toBeVisible();
     await cleanShot(page, 'admin-editor-desktop');
   });
 });

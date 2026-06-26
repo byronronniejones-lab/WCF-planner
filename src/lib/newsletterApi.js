@@ -226,6 +226,39 @@ export async function regenerateNewsletterPreviewToken(sb, id) {
   return data;
 }
 
+// ── Automation (mig 146 + newsletter-harvest Edge Function) ──────────────────
+
+// Trigger the server-side harvest / AI-draft for an issue. The Edge Function
+// authenticates the admin (rpc is_admin on the caller JWT), runs the requested
+// steps with the service role, and returns a summary. The AI provider key never
+// leaves the function; this only passes the issue id + which steps to run.
+//   steps: ['harvest'] | ['draft'] | ['harvest','draft']
+//   overwrite: when running 'draft', replace existing draft blocks (default true)
+export async function runNewsletterHarvest(sb, {issueId, steps = ['harvest', 'draft'], overwrite = true}) {
+  const {data, error} = await sb.functions.invoke('newsletter-harvest', {
+    body: {mode: 'admin', issueId, steps, overwrite},
+  });
+  if (error) {
+    // Edge errors carry the HTTP body on error.context in supabase-js v2.
+    let detail = error.message || String(error);
+    try {
+      const body = error.context && (await error.context.json());
+      if (body && body.error) detail = body.error;
+    } catch (_e) {
+      /* keep the generic message */
+    }
+    throw new Error(`runNewsletterHarvest: ${detail}`);
+  }
+  if (data && data.ok === false) throw new Error(`runNewsletterHarvest: ${data.error || 'failed'}`);
+  return data || {};
+}
+
+export async function listNewsletterRunsAdmin(sb, issueId) {
+  const {data, error} = await sb.rpc('list_newsletter_runs_admin', {p_issue_id: issueId});
+  if (error) throw new Error(`listNewsletterRunsAdmin: ${error.message || String(error)}`);
+  return Array.isArray(data) ? data : [];
+}
+
 export async function getNewsletterSettings(sb) {
   const {data, error} = await sb.rpc('get_newsletter_settings');
   if (error) throw new Error(`getNewsletterSettings: ${error.message || String(error)}`);
