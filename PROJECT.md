@@ -8,13 +8,13 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-27.
-Current product checkpoint: `124265e`
-(`fix(processing): normalize batch status display labels`).
+Current product checkpoint: `886579c`
+(`fix(pig): display zero-head active batches as planned`).
 Latest shipped product merges include newsletter automation B (`41153bc`),
 Pasture Map group records (`73a8432`), and Pasture Map CC#1
 (`b0917a9`).
-Current docs checkpoint: this 2026-06-27 processing status nomenclature
-hotfix wrap.
+Current docs checkpoint: this 2026-06-27 pig zero-head processing status
+correction wrap.
 Production URL: https://wcfplanner.com.
 Netlify auto-deploys from GitHub `main`.
 
@@ -68,9 +68,10 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: latest product merge on `main` is `73a8432` (`Merge pasture group
-  records workflow`). `origin/main` is pushed. The immediately prior shipped
-  newsletter merge is `7d41d7f` (PR #40, `feature/newsletter-engine`).
+- Source: latest product commit on `main` is `886579c`
+  (`fix(pig): display zero-head active batches as planned`). `origin/main` is
+  pushed. The immediately prior processing-status product hotfix is `124265e`
+  (`fix(processing): normalize batch status display labels`).
 - Active lanes / PR gates: Pasture Map CC#1 is built locally on
   `fix/pasture-prod-smoke-warning-cleanup` and is being committed/pushed from
   this wrap. It still needs review/merge and, separately, explicit PROD approval
@@ -118,14 +119,15 @@ Design/function invariants that govern cross-surface behavior live in
   and 0 live dependencies. Counts are a checkpoint, not a hardcoded import
   target; the importer must self-count against live API at cutover. Ronnie
   decided comments must import but Asana system activity/stories must not.
-- Processing status nomenclature hotfix (`124265e`): visible animal processing
-  status labels are now normalized across Broiler, Cattle, Pig, and Sheep to
-  `Planned`, `In Process`, and `Complete` through
+- Processing status nomenclature hotfixes (`124265e`, `886579c`): visible
+  animal processing status labels are now normalized across Broiler, Cattle,
+  Pig, and Sheep to `Planned`, `In Process`, and `Complete` through
   `src/lib/processingStatusDisplay.js`. Stored/source values are intentionally
   unchanged (`planned`, `scheduled`, `active`, `processed`, `complete`) so this
-  is a display-language hotfix, not a data migration. This was done to give the
-  future Processing Calendar one uniform vocabulary while preserving each
-  program's current workflow semantics.
+  is display language, not a data migration. Pig is the exception where raw
+  `active` alone is not enough: active feeder batches with `0` started and `0`
+  current head display `Planned`; active feeder batches with started/current
+  pigs display `In Process`; `processed` displays `Complete`.
 - Newsletter PROD state: Checkpoint A is merged and pushed. Public no-login
   archive routes live under `/newsletter`, including `/newsletter/latest`,
   issue slugs, and token preview. Admin manual issue editing lives at
@@ -194,6 +196,18 @@ Design/function invariants that govern cross-surface behavior live in
 The following work is merged to `main` and pushed. Netlify deploys from `main`.
 The current source checkpoint is listed in the header above.
 
+- Pig zero-head active batch display correction (`886579c`, pushed
+  2026-06-27):
+  - Fixed the pig batch UI so active feeder batches with no pigs started/current
+    display `Planned` instead of `In Process` (for example future placeholder
+    batches like P-27-01).
+  - Pig batch table rows, pig batch record page badges, and pig home dashboard
+    badges/counts now use `pigBatchProcessingStatusLabel` /
+    `pigBatchProcessingStatusVariant` from
+    `src/lib/processingStatusDisplay.js`.
+  - Validation: focused Vitest/static suite passed (`84` tests), targeted
+    Prettier check passed, `npm run lint` passed with existing warnings only,
+    and `npm run build` passed.
 - Pasture Map group records workflow (`73a8432`, pushed 2026-06-26):
   - Area modal dismissal was simplified to one upper-right `X`; removed the
     extra area-detail `X`, Close, Save Area, Zoom to pasture, and Clear
@@ -1521,17 +1535,21 @@ Workflow/worktable entities:
   and `Complete`. Use `src/lib/processingStatusDisplay.js` for display mapping:
   `planned`/`scheduled` -> `Planned`, `active` -> `In Process`, and
   `processed`/`complete` -> `Complete`. Do not migrate stored program values
-  just to change labels.
+  just to change labels. Pig batch displays must use the pig-specific helper
+  because raw `active` can mean either a future zero-head placeholder
+  (`Planned`) or pigs already in the feeder workflow (`In Process`).
 - Program meaning for that vocabulary:
   - Broiler stores `planned` until hatch/start, `active` while birds are in the
     batch/on farm, and `processed` after completion.
   - Cattle stores `scheduled` for planned processor reservations/forecast rows,
     `active` after Send-to-Processor attaches cattle, and `complete` after all
     hanging weights/Mark Complete.
-  - Pig stores feeder batches as `active` while pigs remain in the workflow and
-    `processed` after Mark Complete. Future `Planned` Processing Calendar rows
-    should derive from planned processing trips/no-pig placeholders, not from a
-    new feeder-batch status.
+  - Pig stores feeder batches as `active` for both future zero-head placeholders
+    and feeder batches with pigs underway; display `Planned` when started/current
+    head are both zero and `In Process` once pigs exist in the workflow.
+    `processed` displays `Complete` after Mark Complete. Future `Planned`
+    Processing Calendar rows should derive from planned processing trips/no-pig
+    placeholders, not from a new feeder-batch status.
   - Sheep stores `planned` and `complete`; there is no explicit sheep
     in-process source state yet.
 - Processing Calendar must be low-friction for Asana users: table/list rows and
