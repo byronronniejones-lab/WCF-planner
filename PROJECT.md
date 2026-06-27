@@ -8,13 +8,13 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-27.
-Current product checkpoint: `886579c`
-(`fix(pig): display zero-head active batches as planned`).
+Current product checkpoint: `1d72e69`
+(`Merge pull request #43 from feature/pasture-open-line-edit`).
 Latest shipped product merges include newsletter automation B (`41153bc`),
 Pasture Map group records (`73a8432`), and Pasture Map CC#1
 (`b0917a9`).
-Current docs checkpoint: this 2026-06-27 Processing Calendar import
-reconciliation planning lock.
+Current docs checkpoint: this 2026-06-27 Processing Calendar full planning
+lock.
 Production URL: https://wcfplanner.com.
 Netlify auto-deploys from GitHub `main`.
 
@@ -68,10 +68,11 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`.
-- Source: latest product commit on `main` is `886579c`
-  (`fix(pig): display zero-head active batches as planned`). `origin/main` is
-  pushed. The immediately prior processing-status product hotfix is `124265e`
-  (`fix(processing): normalize batch status display labels`).
+- Source: latest product merge on `main` is `1d72e69`
+  (`Merge pull request #43 from feature/pasture-open-line-edit`). `origin/main`
+  is pushed. The immediately prior Processing Calendar planning docs checkpoint
+  is `d006164`; the latest processing-status product hotfix is `886579c`
+  (`fix(pig): display zero-head active batches as planned`).
 - Active lanes / PR gates: Pasture Map CC#1 is built locally on
   `fix/pasture-prod-smoke-warning-cleanup` and is being committed/pushed from
   this wrap. It still needs review/merge and, separately, explicit PROD approval
@@ -119,11 +120,12 @@ Design/function invariants that govern cross-surface behavior live in
   and 0 live dependencies. Counts are a checkpoint, not a hardcoded import
   target; the importer must self-count against live API at cutover. Ronnie
   decided comments must import but Asana system activity/stories must not.
-  On 2026-06-27 Ronnie began locking the Processing Calendar build plan; Build
-  Queue item 2 is the single source of truth. Locked topics now include program
-  sectioning, row-title batch identity, status semantics, milestones, and import
-  reconciliation. The exact streamlined 2026 fields/dropdowns still need
-  one-by-one decisions.
+  On 2026-06-27 Ronnie locked the Processing Calendar build plan; Build Queue
+  item 2 is the single source of truth. The plan now covers program sectioning,
+  row-title batch identity, status semantics, the streamlined 2026 field set,
+  template behavior, milestones, import reconciliation, permissions, table/
+  drawer behavior, comments, attachments, subtasks, Activity, and historical
+  editability.
 - Processing status nomenclature hotfixes (`124265e`, `886579c`): visible
   animal processing status labels are now normalized across Broiler, Cattle,
   Pig, and Sheep to `Planned`, `In Process`, and `Complete` through
@@ -656,12 +658,13 @@ This is the canonical home for outstanding build/design work.
      Ronnie gates. Do not assume Checkpoint A approval covers automation.
 
 2. Processing Calendar Asana import and native workflow
-   - Status: PLANNING CONSENSUS ONLY. No schema/importer/UI work is approved
-     yet. This Build Queue item is the single source of truth for the
-     Processing Calendar build plan. Program sectioning, batch identity, status
-     semantics, milestones, and import reconciliation are locked from the
-     2026-06-27 planning session. The exact streamlined 2026 field/dropdown set
-     still needs to be decided one field at a time.
+   - Status: PLANNING LOCKED / BUILD NOT STARTED. No schema/importer/UI work is
+     approved yet. This Build Queue item is the single source of truth for the
+     Processing Calendar build plan; do not duplicate the detailed plan in later
+     sections. The 2026-06-27 planning session locked program sectioning, row
+     identity, the streamlined 2026 field/dropdown set, template behavior,
+     statuses, milestones, reconciliation, permissions, table/drawer behavior,
+     comments, attachments, subtasks, Activity, and historical editability.
    - Class: `ENH`/`DB-GATE`/`SECURITY`/`STORAGE`/`DATA-IMPORT`.
    - Source/design: `design_handoff_processing_calendar` contains the prototype
      handoff, CSV, README, and support file. The CSV is not sufficient for
@@ -674,100 +677,217 @@ This is the canonical home for outstanding build/design work.
      on 52 top-level records, 71 attachments, and 0 live dependencies. The
      importer must self-audit current live counts at cutover; do not hardcode
      these counts as permanent truth.
-   - Build plan locked so far:
+   - Domain/source model:
      - Build a standalone Processing domain with its own tables and
-       `asana_gid` provenance; do not mutate cattle/sheep/pig/broiler source
+       `asana_gid` provenance. Do not mutate cattle/sheep/pig/broiler source
        tables during import. Link to existing program records only when a
        confident match exists.
      - Treat the Asana import as one-time, idempotent, and re-runnable unless
        Ronnie explicitly asks for ongoing sync.
-     - Group program by Asana Section, not the broad `Farm Programs` field.
-       The table is sectioned by program, so Processing does not need a separate
-       future program dropdown field. Preserve `Farm Programs` as imported
-       historical snapshot data only if present.
+     - Use a server-side/service-role importer. Store the Asana token only in
+       Supabase Vault. Preserve original timestamps and historical author
+       display names. Suppress notifications during import.
+     - Keep internal source/match provenance for idempotency, duplicate
+       prevention, reconciliation reports, and debugging. Do not show provenance
+       or import details in the normal drawer unless an admin/debug
+       reconciliation surface is explicitly built later.
+   - Record types:
+     - `planner_batch`: real Processing row backed by a Broiler, Cattle, Pig, or
+       Sheep workflow record.
+     - `asana_historical`: imported Asana-only historical batch with no planner
+       match. It is searchable/viewable but does not create animal batches
+       inside the four program workflows.
+     - `milestone`: manual placeholder for planning only.
+     - `import_exception`: unmatched 2026 Asana row requiring Ronnie review
+       before it can enter the normal planner.
+   - Program and row identity:
+     - The Processing table is sectioned by program. Program comes from Asana
+       Section (`WCF Broiler Processing`, `WCF Cattle Processing`, `WCF Pig
+       Processing`, `WCF Lamb Processing`) and from the owning planner program
+       for native records. Do not add a separate future program dropdown. The
+       Asana `Farm Programs` dropdown is imported historical snapshot data only
+       if present.
      - Batch identity lives in the row/tile title. Do not add a separate future
        `Batch Name` custom-field column. Planner-owned rows show the owning
-       program's batch id/name; unmatched Asana-only legacy rows show the
-       imported Asana task name as their historical title. Preserve any imported
-       `Batch Name (Farms)` value only in the historical field snapshot if it
-       exists.
-     - Use the uniform display status vocabulary `Planned`, `In Process`, and
-       `Complete`, backed by `processingStatusDisplay.js`; do not migrate raw
-       program status values for this label change. Broiler displays `Planned`
-       until hatch/start, `In Process` while birds are in the batch/on farm, and
-       `Complete` after processing. Cattle displays planned reservations/
-       forecast rows as `Planned`, Send-to-Processor attached cattle as
-       `In Process`, and hanging-weights/Mark Complete rows as `Complete`. Pig
-       raw `active` displays `Planned` when started/current head are both zero
-       and `In Process` once pigs exist in the workflow; `processed` displays
-       `Complete`. Sheep currently uses `Planned` and `Complete`; no explicit
-       sheep in-process source state is locked yet.
-     - Milestones are manual planning placeholders, not animal batches. Ronnie
-       will manually delete them when they are superseded. Do not build linking,
-       auto-satisfaction, or conversion-to-batch logic.
-     - Real batch dates/counts shown in Processing are read-only because the
-       owning program workflow controls those changes. Milestone dates remain
-       editable in Processing.
-     - Manual completion of a main Processing record must not auto-complete
-       subtasks. All subtasks complete may show "ready to complete" but cannot
-       change the main status by itself.
+       program's batch id/name. Unmatched Asana-only historical rows show the
+       imported Asana task name as their title. Preserve `Batch Name (Farms)`
+       only in the historical snapshot if present.
+   - Import/reconciliation rules:
      - Reconcile before importing rows. Every Asana top-level batch must be
-       accounted for, but no extra duplicate rows should be created beside
-       planner-owned records:
-       - 2026-and-forward rows are planner-owned. Attach matching Asana history
-         (comments, subtasks, attachments, field snapshots) to the planner row
-         instead of creating a second Asana copy.
-       - Pre-2026 rows that already exist in planner historical data stay
-         planner-owned with legacy/historical snapshots; do not force old
-         records into the streamlined 2026 field framework.
-       - Asana-only batches with no planner match import as historical
-         Processing records. They are searchable/viewable, but they do not
-         create animal batches inside the four program workflows.
-       - Unmatched 2026 Asana rows are reconciliation exceptions for human
-         review, not silent auto-created normal rows.
-       - Subtasks attach inside their parent Processing record and never count
-         as batch rows.
-     - Use per-record field snapshots plus active/retired template fields so
-       deleted fields hide on future batches but remain visible on past/imported
-       batches where they existed.
-     - Preserve real Asana field types/options: `Processor` is enum, `Farm`
-       includes GOF/WCF, `Year` enum is 2023-2027, actual dates reach 2022,
-       `Status (Animal Master)` has the real Asana option set, and
-       `Farm Programs` is a broad global field. Derive display year from
-       processing date when `Year` is null so 2022 records do not disappear.
-     - Use a server-side/service-role importer, store the Asana token only in
-       Supabase Vault, preserve original timestamps and historical comment
-       author display names, and suppress notifications during import.
-     - Import real Asana comments. Do not import Asana system activity/stories,
-       field-change logs, likes, follower/rule events, or status-change noise.
-       Native WCF Activity should begin from cutover forward.
-     - Recursively fetch subtasks. Flatten nested subtasks for v1 unless Ronnie
-       asks for nested checklist UI.
-     - Copy Asana-hosted attachments into WCF/Supabase Storage if Ronnie
-       approves the Storage/Vault gates; do not rely on temporary Asana links
-       for durable records.
-     - Conform to CP0/design-system contracts while intentionally preserving
-       Asana transition familiarity: list/table feel, right-side drawer/panel
-       record details, and the locked row hover/open affordance (lift, slight
-       shadow, chevron). Light users are excluded by default.
-   - Remaining blocker questions Codex must ask Ronnie one at a time before
-     the build prompt:
-     1. Whether imported records are editable or historical-locked after
-        import.
-     2. Whether attachments must be copied into Storage.
-     3. Permissions by role for view/edit/templates/comments/milestones.
-     4. The exact streamlined future field/dropdown set per animal program,
-        including which fields are global across all four program tables/drawers
-        and which are animal-group-specific.
+       accounted for, but no duplicate Asana row should sit beside a
+       planner-owned row.
+     - High-confidence exact batch-id matches can auto-link. Fuzzy/uncertain
+       matches go to review. Never auto-match across programs.
+     - Primary match keys are program section plus normalized batch id/name.
+       Supporting signals are processing date, year derived from processing
+       date, number processed/count, `Batch Name (Farms)`, and task title
+       fallback.
+     - Store Asana gid, matched planner source type/id, match
+       confidence/status, and match evidence internally.
+     - 2026-and-forward real batch rows are planner-owned. Attach matching
+       Asana comments, subtasks, attachments, and field snapshots to the planner
+       row instead of creating a second row.
+     - Pre-2026 rows that already exist in planner historical data stay
+       planner-owned with legacy/historical snapshots. Do not force old records
+       into the streamlined 2026 field framework.
+     - Asana-only pre-2026 batches with no planner match import as
+       `asana_historical` records.
+     - Unmatched 2026 Asana rows are `import_exception` records for human review
+       in the reconciliation report only. Ronnie must answer/resolve them in
+       chat/review before they are put into the planner; do not silently create
+       normal rows.
+     - Subtasks attach inside their parent Processing record and never count as
+       batch rows.
+   - Streamlined 2026 fields/dropdowns:
+     - `Processing Date` is the only date field in the 2026 UI. Real batch
+       Processing Date is source-owned/read-only in Processing. Milestone
+       Processing Date is editable. Preserve Asana `Start Date`, `Due Date`,
+       `Planned Processing Date (SF)`, `Actual Processing Date (SF)`, and
+       `Product Pick-up Date` only in historical snapshots when imported.
+       `Product Pick-up Date` is nixed from the future framework.
+     - `Status` is the uniform display vocabulary `Planned`, `In Process`, and
+       `Complete`, backed by `processingStatusDisplay.js`; do not migrate raw
+       program status values for this label change. Badge variants are
+       `Planned` -> `warn`, `In Process` -> `ok`, `Complete` -> `neutral`.
+     - `Processor` is a global controlled dropdown for all programs. Current
+       default option is `Atlanta Poultry Processing`; admins/templates can add
+       options later. Processor is optional for early planning but required
+       before `Complete`. If an imported processor text does not match an
+       option, preserve it and flag for mapping.
+     - `Number Processed` comes from the owning batch/program data and is
+       read-only in Processing. Do not create an editable Processing count
+       field.
+     - Broiler keeps `Customer` as a default controlled multi-select field with
+       options `Sonny's`, `Coastal Pastures - CONFIRMED`, and
+       `Coastal Pastures - POTENTIAL`. Template/admin can add Customer or
+       similar fields to other programs later.
+     - Broiler shows read-only `Time On Farm`, derived from
+       `Processing Date - (hatch date + 1)`. `Farm Arrival Date` is Broiler-only
+       context derived as hatch date + 1, not a global field.
+     - Cattle, Sheep, and Pig show read-only Age when the owning program can
+       derive it.
+     - `Year` is not a field; derive year filters/sort from Processing Date.
+     - Nixed future fields: program dropdown, `Batch Name` custom field, `Farm`,
+       `Product Pick-up Date`, `Condemed`, `Status (Animal Master)`, main-record
+       assignee/owner, stored `Time Remaining Until Processing`, Asana native
+       `Start Date`, Asana native `Due Date`, and Asana formula fields except
+       where replaced by derived Broiler Time On Farm or animal Age.
+   - Status and completion semantics:
+     - Broiler displays `Planned` until hatch/start, `In Process` while birds
+       are in the batch/on farm, and `Complete` after processing.
+     - Cattle displays planned reservations/forecast rows as `Planned`,
+       Send-to-Processor attached cattle as `In Process`, and
+       hanging-weights/Mark Complete rows as `Complete`.
+     - Pig raw `active` displays `Planned` when started/current head are both
+       zero and `In Process` once pigs exist in the workflow; `processed`
+       displays `Complete`.
+     - Sheep currently uses `Planned` and `Complete`; no explicit sheep
+       in-process source state is locked yet.
+     - A Processing record cannot be marked `Complete` unless Processor is
+       selected, Processing Date exists, source-owned Number Processed/
+       completion data exists where that program supports it, and all subtasks
+       are complete. The UI must block completion and clearly list missing
+       requirements.
+     - Subtasks do not auto-complete the main record. Manual completion remains
+       a separate status action, but incomplete subtasks block that action.
+   - Milestones:
+     - Milestones are manual planning placeholders, not animal batches. Ronnie
+       manually deletes them when they are superseded. Do not build linking,
+       auto-satisfaction, or conversion-to-batch logic.
+     - Required milestone fields are program section, title, Processing Date,
+       and default status `Planned`.
+     - Milestones do not receive automatic subtasks or template checklists.
+       Optional processor/customer/comments may be added manually if useful.
+   - Templates:
+     - Templates are per program and are admin-only to edit.
+     - System/core fields cannot be deleted or broken by templates: row title/
+       batch identity, program section, status, Processing Date, Number
+       Processed/source metrics, Processor, source link/provenance, comments,
+       attachments, Activity, and completion rules.
+     - Template field and checklist edits apply to future records only by
+       default. Existing records keep their field/checklist snapshots. Imported
+       Asana records keep imported snapshots.
+     - Existing records can receive current template additions only through an
+       explicit action such as `Apply Current Template`. Applying a template
+       adds missing current fields/subtasks; it does not delete imported/custom
+       fields, imported/custom subtasks, or completed subtasks, and it does not
+       auto-complete the main record.
+     - Retired fields and retired dropdown options hide from future records but
+       remain readable on records that used them.
+     - Field type changes after records exist must be blocked or create a new
+       version; do not mutate old values into a new incompatible type.
+   - Subtasks/comments/attachments/Activity:
+     - Main-record assignee/owner is nixed. Assignees live only on subtasks.
+       Import Asana task-level assignee as historical snapshot/provenance only.
+     - Subtasks keep label/name, assignee, completion state, and relevant API
+       date/completion metadata. Recursively fetch subtasks; flatten nested
+       subtasks for v1 unless Ronnie asks for nested checklist UI.
+     - Import real Asana comments into the normal Comments thread and mark them
+       `Imported from Asana`. Preserve original author display name and
+       timestamp. Do not import Asana system activity/stories, field-change
+       logs, likes, follower/rule events, or automation noise.
+     - All Asana attachments must transfer. Copy bytes into WCF/Supabase
+       Storage; do not rely on Asana links. Preserve filename, size/content type
+       if available, Asana attachment gid, linked record, and original timestamp
+       when available. Attachments belong to the Processing record for v1.
+     - Native WCF Activity starts after cutover and logs everything: created,
+       status changes, blocked completion attempts where useful, field changes,
+       template application, subtask add/rename/complete/reopen/reassign/delete,
+       attachment add/remove, milestone create/delete, and comment changes if
+       comment editing exists.
+   - Editability and permissions:
+     - Light users have no Processing Calendar access.
+     - Admin has full access including template editing.
+     - Management and Farm Team have the same operational permissions and no
+       template editing: view/open drawers, edit operational Processing-owned
+       fields, create/delete milestones, mark complete/reopen subject to
+       completion rules, manage/reassign subtasks, comment, upload/remove
+       attachments, and apply current templates to existing records.
+     - Real planner-owned Processing records cannot be deleted from Processing.
+       Milestones can be deleted by Admin, Management, and Farm Team. Imported
+       historical records should not be casually deleted; prefer archive/hide,
+       with hard delete admin-only if ever added.
+     - Pre-2026 records are historical/read-only except comments. Imported
+       snapshots, fields, subtasks, and source facts stay locked.
+     - 2026-and-forward records use field-based editability: source-owned facts
+       are read-only; Processing-owned operational fields are editable by
+       allowed roles; milestones are editable because they are Processing-owned.
+   - Table, filters, and drawer:
+     - Default view shows current year only, with a derived Year dropdown to
+       choose prior years. Year is computed from Processing Date. Completed
+       rows show by default and are designated by status badge/color.
+     - Program sections are the primary table structure. Default sort is
+       Processing Date ascending within each program section.
+     - Useful filters/search: year, status, processor, Broiler customer, record
+       type, show/hide completed, and batch/title search.
+     - Default table row fields: batch/title, status, Processing Date,
+       Processor, Number Processed/source count metric, Customer in Broiler
+       only, Broiler Time On Farm or Cattle/Pig/Sheep Age, and simple subtask
+       count such as `6/10`. Do not show attachment or comment indicators in
+       the table.
+     - No inline table edits. Rows open the drawer.
+     - Drawer is required and is where editing/details live. Drawer shows
+       header/title/status, current fields, derived/source data, subtasks,
+       comments, attachments, and Activity. 2026-and-forward drawers show only
+       the current streamlined field framework. Historical/imported pre-2026
+       drawers may show historical/imported field snapshots.
+     - Do not show provenance/reconciliation/import details in the normal
+       drawer; keep that internal or in a future admin/debug reconciliation
+       surface.
+     - Preserve Asana transition familiarity: list/table feel, right-side
+       drawer/panel record details, and the locked row hover/open affordance
+       (lift, slight shadow, chevron). Conform to CP0/design-system contracts;
+       do not ship flat background-only table hover.
    - Validation target: API dry-run inventory with live count reconciliation;
      TEST-only schema/import first; idempotent re-run proof; no duplicate
      planner-vs-Asana rows; imported task, field, subtask, comment, attachment,
      milestone, and author-display spot checks; static design/RLS/permission
      guards; focused browser coverage for list filters, record pages, comments,
-     subtasks, templates, milestones, and hover/openable table behavior. The
-     importer must emit a reconciliation report with matched planner rows,
-     Asana-only historical records, milestones, 2026 exceptions, duplicates
-     blocked, and attached subtask/comment/attachment counts.
+     subtasks, templates, milestones, Activity, attachments, completion blockers,
+     role permissions, historical lock behavior, and hover/openable table
+     behavior. The importer must emit a reconciliation report with matched
+     planner rows, Asana-only historical records, milestones, 2026 exceptions,
+     duplicates blocked, and attached subtask/comment/attachment counts.
    - Gates: TEST migration/import may happen only inside an approved lane. PROD
      migration apply, Vault secret add/rotate, Storage bucket creation/change,
      Asana import cutover, Edge Function/deploy work if any, commit, push, and
