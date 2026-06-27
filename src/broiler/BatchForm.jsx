@@ -12,7 +12,7 @@
 // ============================================================================
 import React from 'react';
 import {sb} from '../lib/supabase.js';
-import {fmt, toISO, addDays} from '../lib/dateUtils.js';
+import {fmt, fmtMDY} from '../lib/dateUtils.js';
 import {S, getReadableText} from '../lib/styles.js';
 import {getProgramColor} from '../lib/programColors.js';
 import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
@@ -51,6 +51,11 @@ const weighInSourcedValueBox = {
 };
 
 const weighInSourcedHint = {fontSize: 11, color: 'var(--ink-faint)', marginTop: 3};
+const readOnlyValueBox = {
+  ...weighInSourcedValueBox,
+  justifyContent: 'space-between',
+  color: 'var(--text-primary)',
+};
 
 const broilerControl = {
   ...recordControl,
@@ -337,6 +342,8 @@ export default function BatchForm({
   const hatchSuggestions = suggestHatchDates(targetHatch);
   const hatchWarn = isNearHoliday(form.hatchDate);
   const procWarn = form.processingDate && isNearHoliday(form.processingDate);
+  const lockedBrooderIn = form.brooderIn || tl?.brooderIn || '';
+  const lockedBrooderOut = form.brooderOut || tl?.brooderOut || '';
   const week4WeightDisplay = broilerRecordedWeekWeight(weighInWeekAverages?.week4Lbs, form.week4Lbs);
   const week6WeightDisplay = broilerRecordedWeekWeight(weighInWeekAverages?.week6Lbs, form.week6Lbs);
   // Legacy hatcheries appended only when admin toggles "Show legacy" on a
@@ -779,22 +786,17 @@ export default function BatchForm({
               <>
                 <div>
                   <label style={broilerLabel}>Date In Brooder</label>
-                  <input
-                    style={broilerControl}
-                    type="date"
-                    value={form.brooderIn}
-                    onChange={(e) => upd('brooderIn', e.target.value)}
-                  />
-                  <div style={broilerHelp}>Defaults to hatch date + 1 day</div>
+                  <div data-broiler-brooder-in-readonly="1" style={readOnlyValueBox}>
+                    {fmtMDY(lockedBrooderIn)}
+                  </div>
+                  <div style={broilerHelp}>Locked from the Schedule dates.</div>
                 </div>
                 <div>
                   <label style={broilerLabel}>Date Out of Brooder</label>
-                  <input
-                    style={broilerControl}
-                    type="date"
-                    value={form.brooderOut}
-                    onChange={(e) => upd('brooderOut', e.target.value)}
-                  />
+                  <div data-broiler-brooder-out-readonly="1" style={readOnlyValueBox}>
+                    {fmtMDY(lockedBrooderOut)}
+                  </div>
+                  <div style={broilerHelp}>Locked from the Schedule dates.</div>
                 </div>
                 <div>
                   <label style={broilerLabel}>4-Week Weight (lbs)</label>

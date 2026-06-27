@@ -335,6 +335,14 @@ describe('BatchForm — embedded mode + record-page overrides', () => {
     expect(formSrc).not.toContain("upd('week4Lbs'");
     expect(formSrc).not.toContain("upd('week6Lbs'");
   });
+  it('renders Brooder date fields as locked schedule-sourced values', () => {
+    expect(formSrc).toContain('data-broiler-brooder-in-readonly="1"');
+    expect(formSrc).toContain('data-broiler-brooder-out-readonly="1"');
+    expect(formSrc).toContain('lockedBrooderIn');
+    expect(formSrc).toContain('lockedBrooderOut');
+    expect(formSrc).not.toContain("upd('brooderIn'");
+    expect(formSrc).not.toContain("upd('brooderOut'");
+  });
 });
 
 describe('BroilerListView — navigation-only hub + router', () => {
