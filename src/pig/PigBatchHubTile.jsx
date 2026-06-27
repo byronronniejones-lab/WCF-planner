@@ -1,5 +1,6 @@
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import Badge from '../shared/Badge.jsx';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 
 // Shared column template for the unified Pig Batches inspection grid. The hub
 // header row (PigBatchesView) and every batch row (this component) consume the
@@ -115,7 +116,7 @@ export default function PigBatchHubTile({group, metrics, statusColor, onOpen}) {
       </span>
 
       <span style={{justifySelf: 'start'}}>
-        <Badge variant={group.status === 'processed' ? 'neutral' : 'ok'}>{group.status}</Badge>
+        <Badge variant={group.status === 'processed' ? 'neutral' : 'ok'}>{processingStatusLabel(group.status)}</Badge>
       </span>
 
       <MetricCell value={rowMetrics.started} />

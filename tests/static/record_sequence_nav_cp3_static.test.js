@@ -25,7 +25,7 @@ const SURFACES = [
     name: 'cattle.processing',
     list: 'src/cattle/CattleBatchesView.jsx',
     listContains: [
-      // Processed batches are collapsed behind Show Processed Batches; they
+      // Complete batches are collapsed behind Show Complete Batches; they
       // only join the sequence when that section is expanded. The redesign
       // passes the FILTERED+SORTED visible rows (scheduledVisible / activeVisible
       // / completedVisible) so nav stepping matches what the operator sees.

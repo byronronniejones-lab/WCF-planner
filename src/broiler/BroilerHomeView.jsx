@@ -333,7 +333,7 @@ export default function BroilerHomeView({Header, loadUsers}) {
       >
         {/* Key stats */}
         <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10}}>
-          <StatTile label="Active Batches" val={activeBr.length} />
+          <StatTile label="In Process Batches" val={activeBr.length} />
           <StatTile
             label="Birds on Farm"
             val={broilerOnFarmCounts.onFarmBirds.toLocaleString()}
@@ -557,7 +557,7 @@ export default function BroilerHomeView({Header, loadUsers}) {
             <div
               style={{fontSize: 13, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 8, letterSpacing: 0.3}}
             >
-              PERFORMANCE TRENDS — LAST {trend10.length} PROCESSED BATCHES
+              PERFORMANCE TRENDS — LAST {trend10.length} COMPLETE BATCHES
             </div>
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12}}>
               <div

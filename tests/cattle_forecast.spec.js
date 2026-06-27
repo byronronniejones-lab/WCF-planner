@@ -844,7 +844,7 @@ test('forecast: admin can save settings + open Include Heifers modal', async ({p
 // --------------------------------------------------------------------------
 // Test 6 — Batches tab: four sections, no + New Batch.
 // --------------------------------------------------------------------------
-test('batches: four sections (planned / scheduled / active / processed); + New Batch removed', async ({
+test('batches: four sections (planned / scheduled / in process / complete); + New Batch removed', async ({
   page,
   cattleForecastScenario,
 }) => {
@@ -864,15 +864,15 @@ test('batches: four sections (planned / scheduled / active / processed); + New B
   // should be absent.
   await expect(page.locator('[data-scheduled-section]')).toHaveCount(0);
 
-  // Active section header rendered with count parenthesized; seed has zero
-  // active batches by default.
-  await expect(page.getByText(/^Active \(0\)/)).toBeVisible();
+  // In Process section header rendered with count parenthesized; seed has zero
+  // active stored batches by default.
+  await expect(page.getByText(/^In Process \(0\)/)).toBeVisible();
 
-  // Processed section header (collapsed). UI label is "Processed"; the
+  // Complete section header (collapsed). UI label is "Complete"; the
   // underlying DB status value stays 'complete'.
   const processedSection = page.locator('[data-batches-section="processed"]');
   await expect(processedSection).toBeVisible();
-  await expect(processedSection).toContainText('Show Processed Batches');
+  await expect(processedSection).toContainText('Show Complete Batches');
 
   // Expand Planned — should show at least one virtual planned batch tile.
   await plannedSection.locator('> div').first().click();
@@ -1085,7 +1085,7 @@ test('complete batch record page: weights visible + disabled; reopen unlocks edi
   // Name input is not present while complete
   await expect(page.locator('[data-rename-input="' + batchId + '"]')).toHaveCount(0);
 
-  // Reopen to active
+  // Reopen to In Process
   await page.locator('[data-reopen="' + batchId + '"]').click();
   await expect
     .poll(

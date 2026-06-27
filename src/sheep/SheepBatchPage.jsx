@@ -10,6 +10,7 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 import RecordPageLoadError from '../shared/RecordPageLoadError.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import Badge from '../shared/Badge.jsx';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 /* eslint-disable no-unused-vars -- shell primitives are used in JSX only */
 import {
   RecordPageFrame,
@@ -361,7 +362,7 @@ export default function SheepBatchPage({sb, fmt, authState, Header}) {
             {batch.name}
           </RecordTitle>
           <Badge variant={isComplete ? 'ok' : 'warn'} style={{textTransform: 'uppercase'}}>
-            {batch.status}
+            {processingStatusLabel(batch.status)}
           </Badge>
           <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>
             {rows.length} {rows.length === 1 ? 'sheep' : 'sheep'}

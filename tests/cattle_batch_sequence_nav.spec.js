@@ -78,7 +78,7 @@ test.describe('Cattle processing-batch record-page sequence navigation', () => {
 
     await page.goto('/cattle/batches');
     await expect(page.locator('[data-batch-row="cb-active"]')).toBeVisible({timeout: 15_000});
-    // Show Processed Batches stays collapsed, so the processed batch is not in
+    // Show Complete Batches stays collapsed, so the complete batch is not in
     // the visible sequence — clicking the lone active batch shows no controls.
     await page.locator('[data-batch-row="cb-active"]').click();
 

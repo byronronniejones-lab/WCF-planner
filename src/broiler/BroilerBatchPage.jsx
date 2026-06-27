@@ -21,6 +21,7 @@ import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx
 import RecordSequenceNav from '../shared/RecordSequenceNav.jsx';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
 import {loadBroilerBatchWeekAverages} from '../lib/broiler.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import BatchForm from './BatchForm.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -223,7 +224,7 @@ export default function BroilerBatchPage({
           </RecordTitle>
           {/* WI-4: lifecycle status → Badge. active→ok, planned→warn, processed→neutral. */}
           <Badge variant={batch.status === 'active' ? 'ok' : batch.status === 'planned' ? 'warn' : 'neutral'}>
-            {batch.status}
+            {processingStatusLabel(batch.status)}
           </Badge>
           {batch.breed && <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>Breed: {batch.breed}</span>}
           {batch.hatchery && <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>Hatchery: {batch.hatchery}</span>}

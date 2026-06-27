@@ -39,6 +39,7 @@ import {
   recalculateProjections,
 } from '../lib/pigForecast.js';
 import {ANIMAL_ICON_KEYS} from '../lib/plannerIcons.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import PlannerIcon from '../components/PlannerIcon.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
@@ -592,7 +593,7 @@ export default function PigBatchPage({Header, group, view, recordSeq = null, rec
                     {g.startDate && (
                       <span style={{color: 'var(--text-secondary)', fontSize: 11}}>Started {fmt(g.startDate)}</span>
                     )}
-                    <Badge variant={statusVariant(g.status)}>{g.status}</Badge>
+                    <Badge variant={statusVariant(g.status)}>{processingStatusLabel(g.status)}</Badge>
                     <div style={{marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap'}}>
                       {g.status === 'active' ? (
                         <button
@@ -608,7 +609,7 @@ export default function PigBatchPage({Header, group, view, recordSeq = null, rec
                             fontFamily: 'inherit',
                           }}
                         >
-                          Mark Processed
+                          Mark Complete
                         </button>
                       ) : (
                         <button
@@ -624,7 +625,7 @@ export default function PigBatchPage({Header, group, view, recordSeq = null, rec
                             fontFamily: 'inherit',
                           }}
                         >
-                          Reactivate
+                          Reopen to In Process
                         </button>
                       )}
                       <button
@@ -1150,7 +1151,7 @@ export default function PigBatchPage({Header, group, view, recordSeq = null, rec
                         }}
                       >
                         <strong style={{fontSize: 12, color: 'var(--ink)'}}>{sb.name}</strong>
-                        <Badge variant={statusVariant(sb.status)}>{sb.status}</Badge>
+                        <Badge variant={statusVariant(sb.status)}>{processingStatusLabel(sb.status)}</Badge>
                         {sft.started > 0 && (
                           <span style={{fontSize: 11, color: 'var(--ink)'}}>
                             Started: <strong>{sft.started}</strong>
@@ -1216,7 +1217,7 @@ export default function PigBatchPage({Header, group, view, recordSeq = null, rec
                                 fontFamily: 'inherit',
                               }}
                             >
-                              Mark Processed
+                              Mark Complete
                             </button>
                           ) : (
                             <button
@@ -1232,7 +1233,7 @@ export default function PigBatchPage({Header, group, view, recordSeq = null, rec
                                 fontFamily: 'inherit',
                               }}
                             >
-                              Reactivate
+                              Reopen to In Process
                             </button>
                           )}
                           <button

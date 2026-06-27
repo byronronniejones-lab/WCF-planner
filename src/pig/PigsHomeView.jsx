@@ -12,6 +12,7 @@ import {fmt, fmtS, todayISO, addDays} from '../lib/dateUtils.js';
 import {S} from '../lib/styles.js';
 import {calcBreedingTimeline, calcCycleStatus, buildCycleSeqMap, PIG_GROUP_COLORS, PIG_GROUPS} from '../lib/pig.js';
 import {programDotStyle} from '../lib/programColors.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 import Badge from '../shared/Badge.jsx';
 import UsersModal from '../auth/UsersModal.jsx';
 import {useAuth} from '../contexts/AuthContext.jsx';
@@ -296,7 +297,7 @@ export default function PigsHomeView({Header, loadUsers}) {
           <StatTile label="Pigs on Farm" val={pigsOnFarm > 0 ? pigsOnFarm.toLocaleString() : '\u2014'} />
           <StatTile label="Active Sows" val={activeSows} sub={activeBoars + ' boar' + (activeBoars !== 1 ? 's' : '')} />
           <StatTile label="Active Cycles" val={activeCycles2.length} />
-          <StatTile label="Active Batches" val={activeFeeders.length} />
+          <StatTile label="In Process Batches" val={activeFeeders.length} />
           <StatTile label="Avg Born / Litter" val={avgLitterBorn != null ? fmtN(avgLitterBorn, 1) : '\u2014'} />
           <StatTile label="Avg Alive / Litter" val={avgLitterAlive != null ? fmtN(avgLitterAlive, 1) : '\u2014'} />
           <StatTile
@@ -556,7 +557,7 @@ export default function PigsHomeView({Header, loadUsers}) {
             <div
               style={{fontSize: 13, fontWeight: 600, color: 'var(--ink-muted)', marginBottom: 8, letterSpacing: 0.3}}
             >
-              ACTIVE FEEDER BATCHES
+              IN PROCESS FEEDER BATCHES
             </div>
             <div style={{display: 'flex', flexDirection: 'column', gap: 14}}>
               {feederBatchStats.map(
@@ -606,7 +607,7 @@ export default function PigsHomeView({Header, loadUsers}) {
                         }}
                       >
                         <span style={{fontSize: 15, fontWeight: 700, color: 'var(--text-primary)'}}>{g.batchName}</span>
-                        <Badge variant="ok">Active</Badge>
+                        <Badge variant="ok">{processingStatusLabel('active')}</Badge>
                         {daysOld != null && (
                           <span style={{fontSize: 11, color: 'var(--text-secondary)'}}>
                             {Math.floor(daysOld / 30) + 'm ' + Math.floor((daysOld % 30) / 7) + 'w old'}

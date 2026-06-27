@@ -36,6 +36,7 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {buildBroilerBatchExportColumns} from '../lib/operationalExportColumns.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 import {
   listSavedViews,
@@ -63,12 +64,12 @@ const BROILER_BATCHES_SURFACE_KEY = 'broiler.batches';
 // from broilerBatchFilters.js as labeled key:dir pairs. Default is processed
 // newest-first (processing date descending).
 const BROILER_SORT_OPTIONS = [
-  {value: 'processingDate:desc', key: 'processingDate', dir: 'desc', label: 'Processed date (newest)'},
-  {value: 'processingDate:asc', key: 'processingDate', dir: 'asc', label: 'Processed date (oldest)'},
+  {value: 'processingDate:desc', key: 'processingDate', dir: 'desc', label: 'Process date (newest)'},
+  {value: 'processingDate:asc', key: 'processingDate', dir: 'asc', label: 'Process date (oldest)'},
   {value: 'batchName:asc', key: 'batchName', dir: 'asc', label: 'Name ↑'},
   {value: 'batchName:desc', key: 'batchName', dir: 'desc', label: 'Name ↓'},
   {value: 'status:asc', key: 'status', dir: 'asc', label: 'Status (planned first)'},
-  {value: 'status:desc', key: 'status', dir: 'desc', label: 'Status (processed first)'},
+  {value: 'status:desc', key: 'status', dir: 'desc', label: 'Status (complete first)'},
   {value: 'startDate:asc', key: 'startDate', dir: 'asc', label: 'Hatch date (oldest)'},
   {value: 'startDate:desc', key: 'startDate', dir: 'desc', label: 'Hatch date (newest)'},
   {value: 'birdCount:desc', key: 'birdCount', dir: 'desc', label: 'Birds ↓'},
@@ -149,19 +150,32 @@ function broilerBatchHref(b) {
 function recordBroilerStatusChange(b, from, to) {
   const name = b && b.name ? b.name : null;
   if (!name) return;
+  const fromLabel = processingStatusLabel(from);
+  const toLabel = processingStatusLabel(to);
   try {
     recordActivityEvent(sb, {
       entityType: 'broiler.batch',
       entityId: name,
       eventType: 'status.changed',
       entityLabel: name,
-      body: 'Broiler batch ' + name + ' status changed from ' + from + ' to ' + to,
+      body: 'Broiler batch ' + name + ' status changed from ' + fromLabel + ' to ' + toLabel,
       payload: {
         record: 'broiler.batch',
         name,
         breed: (b && b.breed) || null,
         hatchery: (b && b.hatchery) || null,
-        changes: [{field: 'status', label: 'Status', from, to, old_present: !!from, new_present: !!to}],
+        changes: [
+          {
+            field: 'status',
+            label: 'Status',
+            from,
+            to,
+            from_label: fromLabel,
+            to_label: toLabel,
+            old_present: !!from,
+            new_present: !!to,
+          },
+        ],
       },
     }).catch(() => {});
   } catch (_e) {
@@ -625,7 +639,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
             letterSpacing: 0.3,
           }}
         >
-          ACTIVE / PLANNED ({activeRows.length})
+          IN PROCESS / PLANNED ({activeRows.length})
         </div>
         <div style={{...S.card, overflowX: 'auto'}}>
           <table style={{width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 900}}>
@@ -670,7 +684,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                   <td colSpan={15} style={{padding: '2.5rem', textAlign: 'center', color: 'var(--ink-faint)'}}>
                     {totalCount === 0
                       ? 'No batches yet — click "+ Add Batch" to get started'
-                      : 'No active or planned batches — see processed below'}
+                      : 'No in-process or planned batches — see complete below'}
                   </td>
                 </tr>
               )}
@@ -819,10 +833,10 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                         );
                       })()}
                     </td>
-                    {/* WI-4: lifecycle status → Badge. active→ok, planned→warn, processed→neutral. */}
+                    {/* WI-4: lifecycle status → Badge. active->ok, planned->warn, processed->neutral. */}
                     <td style={{padding: '8px 10px'}}>
                       <Badge variant={autoSt === 'active' ? 'ok' : autoSt === 'planned' ? 'warn' : 'neutral'}>
-                        {autoSt}
+                        {processingStatusLabel(autoSt)}
                       </Badge>
                     </td>
                     <td style={{padding: '8px 10px', whiteSpace: 'nowrap'}}>
@@ -844,7 +858,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                             marginRight: 8,
                           }}
                         >
-                          Archive
+                          Mark Complete
                         </button>
                       )}
                       {isAdmin && (
@@ -888,7 +902,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
             marginBottom: 10,
           }}
         >
-          PROCESSED BATCHES
+          COMPLETE BATCHES
         </div>
         {/* Compact icon-panel toolbar — Cattle Herds parity (controls the processed table below) */}
         <div
@@ -942,7 +956,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
               type="button"
               data-broiler-batches-columns-toggle="1"
               aria-label="Columns"
-              title="Columns shown in the processed table"
+              title="Columns shown in the complete table"
               aria-expanded={openToolPanel === 'columns'}
               onClick={() => toggleToolPanel('columns')}
               style={toolButtonS(openToolPanel === 'columns')}
@@ -978,7 +992,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                     marginBottom: 6,
                   }}
                 >
-                  Columns shown in the processed table ({visibleColumns.length}/{BROILER_PROCESSED_COLUMNS.length})
+                  Columns shown in the complete table ({visibleColumns.length}/{BROILER_PROCESSED_COLUMNS.length})
                 </div>
                 <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px'}}>
                   {BROILER_PROCESSED_COLUMNS.map((c) => (
@@ -1217,7 +1231,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
         {openToolPanel === 'filters' && (
           <div data-broiler-batches-filters style={toolPanelS}>
             <div style={{fontSize: 11, color: 'var(--ink-muted)', fontWeight: 600}}>
-              Filters apply to the processed batches below
+              Filters apply to the complete batches below
             </div>
             <div style={{display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end'}}>
               <label style={filterLabelS}>
@@ -1400,7 +1414,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
         )}
 
         <div style={{fontSize: 12, color: 'var(--ink-muted)', marginBottom: 10}} data-broiler-count>
-          {activeRows.length} active/planned · showing {visibleCount} of {processedTotal} processed
+          {activeRows.length} in process/planned · showing {visibleCount} of {processedTotal} complete
           {filterCount > 0 && ' - ' + filterCount + ' filter' + (filterCount === 1 ? '' : 's')}
         </div>
 
@@ -1721,7 +1735,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
               {
                 key: 'status',
                 label: 'Status',
-                render: () => <Badge variant="neutral">processed</Badge>,
+                render: () => <Badge variant="neutral">{processingStatusLabel('processed')}</Badge>,
               },
               {
                 key: 'actions',
@@ -1758,7 +1772,7 @@ function BroilerListHub({Header, loadUsers, openAdd, openEdit, persist, del, con
                           fontFamily: 'inherit',
                         }}
                       >
-                        Reactivate
+                        Reopen to In Process
                       </button>
                     )}
                     {isAdmin && (

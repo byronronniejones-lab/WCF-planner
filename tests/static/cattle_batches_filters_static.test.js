@@ -158,13 +158,13 @@ describe('CattleBatches filtered-vs-empty states', () => {
     expect(batchesView).toContain('data-cattle-batches-scheduled-empty-filtered');
     expect(batchesView).toContain('data-cattle-batches-active-empty-filtered');
     expect(batchesView).toContain('data-cattle-batches-processed-empty-filtered');
-    // True-empty active message is preserved.
-    expect(batchesView).toContain('No active batches. Cattle enter an active batch only via');
+    // True-empty in-process message is preserved.
+    expect(batchesView).toContain('No in-process batches. Cattle enter an in-process batch only via');
   });
 
   it('keeps the pipeline sections + the existing scheduled/processed contract intact', () => {
     expect(batchesView).toContain('data-scheduled-section');
-    expect(batchesView).toContain('Show Processed Batches');
+    expect(batchesView).toContain('Show Complete Batches');
     expect(batchesView).toContain("completed = batches.filter((b) => b.status === 'complete')");
   });
 });

@@ -39,6 +39,7 @@ import {
 import {CATTLE_HERD_KEYS, cowTagSet} from '../lib/cattleHerdFilters.js';
 import {getProgramColor} from '../lib/programColors.js';
 import {getReadableText} from '../lib/styles.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import Badge from '../shared/Badge.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -1267,7 +1268,7 @@ function MonthBucketTile({
                           variant={rb.status === 'complete' ? 'neutral' : 'info'}
                           style={{textTransform: 'uppercase'}}
                         >
-                          {rb.status}
+                          {processingStatusLabel(rb.status)}
                         </Badge>
                         <span style={{color: 'var(--ink-muted)'}}>
                           {cows.length} {cows.length === 1 ? 'cow' : 'cows'}
@@ -1726,7 +1727,7 @@ function PastActuals({batches, fmt}) {
             >
               <strong>{rb.name}</strong>
               <Badge variant={rb.status === 'complete' ? 'neutral' : 'info'} style={{textTransform: 'uppercase'}}>
-                {rb.status}
+                {processingStatusLabel(rb.status)}
               </Badge>
               <span style={{color: 'var(--ink-muted)'}}>
                 {cows.length} {cows.length === 1 ? 'cow' : 'cows'}

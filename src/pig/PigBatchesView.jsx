@@ -12,6 +12,7 @@ import {recordActivityEvent} from '../lib/activityApi.js';
 import {fmtS} from '../lib/dateUtils.js';
 import {S, getReadableText} from '../lib/styles.js';
 import {getProgramColor} from '../lib/programColors.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 import {
   calcBreedingTimeline,
   calcCycleStatus,
@@ -717,6 +718,8 @@ export default function PigBatchesView({
   // Never blocks the archive/unarchive mutation (try/catch + swallowed reject).
   function recordBatchStatusChange(group, from, to, subCascadeCount) {
     if (!group) return;
+    const fromLabel = processingStatusLabel(from);
+    const toLabel = processingStatusLabel(to);
     try {
       recordActivityEvent(sb, {
         entityType: 'pig.batch',
@@ -727,14 +730,25 @@ export default function PigBatchesView({
           'Batch ' +
           (group.batchName || group.id) +
           ' status changed from ' +
-          from +
+          fromLabel +
           ' to ' +
-          to +
+          toLabel +
           (subCascadeCount
             ? ' (' + subCascadeCount + ' sub-batch' + (subCascadeCount === 1 ? '' : 'es') + ' cascaded)'
             : ''),
         payload: {
-          changes: [{field: 'status', label: 'Status', from, to, old_present: true, new_present: true}],
+          changes: [
+            {
+              field: 'status',
+              label: 'Status',
+              from,
+              to,
+              from_label: fromLabel,
+              to_label: toLabel,
+              old_present: true,
+              new_present: true,
+            },
+          ],
           subCascadeCount: subCascadeCount || 0,
         },
       }).catch(() => {});
@@ -744,7 +758,7 @@ export default function PigBatchesView({
   }
   function archiveBatch(batchId) {
     window._wcfConfirm(
-      'Mark this batch as processed? It will be hidden from the webform.',
+      'Mark this batch complete? It will be hidden from the webform.',
       () => {
         const target = feederGroups.find((g) => g.id === batchId) || null;
         const subCascadeCount = target ? (target.subBatches || []).filter((s) => s.status !== 'processed').length : 0;
@@ -756,7 +770,7 @@ export default function PigBatchesView({
         persistFeeders(nb);
         recordBatchStatusChange(target, 'active', 'processed', subCascadeCount);
       },
-      'Mark Processed',
+      'Mark Complete',
     );
   }
   function unarchiveBatch(batchId) {
@@ -1091,7 +1105,7 @@ export default function PigBatchesView({
                         fontFamily: 'inherit',
                       }}
                     >
-                      {showArchBatches ? 'Hide processed' : 'Show processed'} (
+                      {showArchBatches ? 'Hide complete' : 'Show complete'} (
                       {feederGroups.filter((g) => g.status === 'processed').length})
                     </button>
                   )}
@@ -1350,7 +1364,7 @@ export default function PigBatchesView({
                     <select value={feederForm.status} onChange={(e) => updFeeder('status', e.target.value)}>
                       {['active', 'processed'].map((s) => (
                         <option key={s} value={s}>
-                          {s === 'processed' ? 'Processed' : 'Active'}
+                          {processingStatusLabel(s)}
                         </option>
                       ))}
                     </select>
@@ -1932,8 +1946,8 @@ export default function PigBatchesView({
                 }}
               >
                 <option value="all">All statuses</option>
-                <option value="active">Active</option>
-                <option value="processed">Processed</option>
+                <option value="active">{processingStatusLabel('active')}</option>
+                <option value="processed">{processingStatusLabel('processed')}</option>
               </select>
               <select
                 data-pig-batches-filter-subbatches

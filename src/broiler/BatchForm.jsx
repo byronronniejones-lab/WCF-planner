@@ -15,6 +15,7 @@ import {sb} from '../lib/supabase.js';
 import {fmt, toISO, addDays} from '../lib/dateUtils.js';
 import {S, getReadableText} from '../lib/styles.js';
 import {getProgramColor} from '../lib/programColors.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 import {recordControl, recordTextarea, recordFieldLabel, recordCheckbox} from '../shared/recordPageControls.jsx';
 import {
   BROODERS,
@@ -567,7 +568,7 @@ export default function BatchForm({
                 <select style={recordControl} value={form.status} onChange={(e) => upd('status', e.target.value)}>
                   {STATUSES.map((s) => (
                     <option key={s} value={s}>
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                      {processingStatusLabel(s)}
                     </option>
                   ))}
                 </select>

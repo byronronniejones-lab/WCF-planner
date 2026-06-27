@@ -11,6 +11,7 @@ import {loadForecastSettings, loadHeiferIncludes, loadHidden} from '../lib/cattl
 import {csvFilename, downloadCsv, rowsToCsv} from '../lib/csvExport.js';
 import {printRows} from '../lib/printExport.js';
 import {buildProcessingBatchExportColumns} from '../lib/operationalExportColumns.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 import {
   listSavedViews,
@@ -32,7 +33,7 @@ import CattleBatchPage from './CattleBatchPage.jsx';
 const CATTLE_BATCHES_SURFACE_KEY = 'cattle.batches';
 const EXTENDED_LIST_CONTROLS_ENABLED = false;
 
-const CATTLE_BATCH_STATUS_LABELS = {scheduled: 'Scheduled', active: 'Active', complete: 'Processed'};
+const CATTLE_BATCH_STATUS_LABELS = {scheduled: 'Planned', active: 'In Process', complete: 'Complete'};
 const CATTLE_BATCH_SORT_LABELS = {
   batchName: 'Batch name',
   status: 'Status',
@@ -279,7 +280,7 @@ const CattleBatchesHub = ({
   const completedVisible = completedPairs.map((p) => p.raw);
 
   // Visible/rendered order for record sequence nav (scheduled → active → then
-  // processed ONLY when the Show Processed Batches section is expanded).
+  // complete ONLY when the Show Complete Batches section is expanded).
   // Virtual/planned forecast tiles are excluded — they don't route. This is the
   // filtered + sorted set, so nav stepping matches what the operator sees.
   const batchSeqRows = [...scheduledVisible, ...activeVisible, ...(showCompleted ? completedVisible : [])];
@@ -557,7 +558,7 @@ const CattleBatchesHub = ({
           <div style={{fontSize: 16, fontWeight: 700, color: 'var(--ink)'}} data-cattle-batches-root>
             Processing Batches{' '}
             <span style={{fontSize: 13, fontWeight: 400, color: 'var(--ink-muted)'}}>
-              {scheduledList.length} scheduled · {active.length} active · {completed.length} processed
+              {scheduledList.length} planned · {active.length} in process · {completed.length} complete
             </span>
           </div>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
@@ -1012,7 +1013,7 @@ const CattleBatchesHub = ({
                 marginBottom: 8,
               }}
             >
-              Scheduled ({scheduledVisible.length}
+              Planned ({scheduledVisible.length}
               {scheduledVisible.length !== scheduledList.length ? ' of ' + scheduledList.length : ''})
             </div>
             {scheduledVisible.length === 0 ? (
@@ -1020,7 +1021,7 @@ const CattleBatchesHub = ({
                 data-cattle-batches-scheduled-empty-filtered
                 style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}
               >
-                No scheduled batches match the current filters.
+                No planned batches match the current filters.
               </div>
             ) : (
               <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
@@ -1048,7 +1049,7 @@ const CattleBatchesHub = ({
                   >
                     <strong style={{color: 'var(--text-primary)'}}>{sb2.name}</strong>
                     <Badge variant="warn" style={{textTransform: 'uppercase'}}>
-                      Scheduled
+                      {processingStatusLabel(sb2.status)}
                     </Badge>
                     <span style={{color: 'var(--ink-muted)'}}>
                       {sb2.animalIds.length} {sb2.animalIds.length === 1 ? 'cow' : 'cows'} forecast
@@ -1080,7 +1081,7 @@ const CattleBatchesHub = ({
                 marginBottom: 8,
               }}
             >
-              Active ({activeVisible.length}
+              In Process ({activeVisible.length}
               {activeVisible.length !== active.length ? ' of ' + active.length : ''})
             </div>
             {active.length === 0 ? (
@@ -1095,8 +1096,8 @@ const CattleBatchesHub = ({
                   fontSize: 13,
                 }}
               >
-                No active batches. Cattle enter an active batch only via the Send-to-Processor flag on a finishers
-                weigh-in session.
+                No in-process batches. Cattle enter an in-process batch only via the Send-to-Processor flag on a
+                finishers weigh-in session.
               </div>
             ) : activeVisible.length === 0 ? (
               <div
@@ -1111,7 +1112,7 @@ const CattleBatchesHub = ({
                   fontSize: 13,
                 }}
               >
-                No active batches match the current filters.
+                No in-process batches match the current filters.
               </div>
             ) : (
               <div style={{display: 'flex', flexDirection: 'column', gap: 10}}>
@@ -1145,14 +1146,14 @@ const CattleBatchesHub = ({
                     >
                       <span style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>{b.name}</span>
                       <Badge variant="info" style={{textTransform: 'uppercase'}}>
-                        {b.status}
+                        {processingStatusLabel(b.status)}
                       </Badge>
                       <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                         {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
                       </span>
                       {b.actual_process_date && (
                         <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
-                          processed {fmt(b.actual_process_date)}
+                          process date {fmt(b.actual_process_date)}
                         </span>
                       )}
                       {yieldPct && (
@@ -1172,7 +1173,7 @@ const CattleBatchesHub = ({
         {!loading && !loadError && (
           <div style={{marginTop: 14}}>
             <CollapsibleSection
-              label="Show Processed Batches"
+              label="Show Complete Batches"
               count={completed.length}
               expanded={showCompleted}
               onToggle={() => setShowCompleted((v) => !v)}
@@ -1183,14 +1184,14 @@ const CattleBatchesHub = ({
             >
               {completed.length === 0 ? (
                 <div style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}>
-                  No processed batches yet.
+                  No complete batches yet.
                 </div>
               ) : completedVisible.length === 0 ? (
                 <div
                   data-cattle-batches-processed-empty-filtered
                   style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}
                 >
-                  No processed batches match the current filters.
+                  No complete batches match the current filters.
                 </div>
               ) : (
                 <div style={{display: 'flex', flexDirection: 'column', gap: 10, padding: '0.5rem 0'}}>
@@ -1227,14 +1228,14 @@ const CattleBatchesHub = ({
                       >
                         <span style={{fontSize: 14, fontWeight: 700, color: 'var(--ink)'}}>{b.name}</span>
                         <Badge variant="neutral" style={{textTransform: 'uppercase'}}>
-                          {b.status}
+                          {processingStatusLabel(b.status)}
                         </Badge>
                         <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
                           {rows.length} {rows.length === 1 ? 'cow' : 'cows'}
                         </span>
                         {(b.actual_process_date || b.planned_process_date) && (
                           <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
-                            processed {fmt(b.actual_process_date || b.planned_process_date)}
+                            process date {fmt(b.actual_process_date || b.planned_process_date)}
                           </span>
                         )}
                         {yieldPct && (

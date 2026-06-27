@@ -172,8 +172,8 @@ describe('CattleBatchesView — Planned / Scheduled / Active / Processed', () =>
     expect(batchPageSrc).toContain('Confirm unschedule');
   });
 
-  it('UI surfaces "Processed" while DB storage value stays complete', () => {
-    expect(batchesViewSrc).toMatch(/Show Processed Batches/);
+  it('UI surfaces "Complete" while DB storage value stays complete', () => {
+    expect(batchesViewSrc).toMatch(/Show Complete Batches/);
     expect(batchesViewSrc).toMatch(/dataKey="processed"/);
     // The completed filter still uses status === 'complete'; storage
     // value is unchanged.

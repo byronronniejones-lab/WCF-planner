@@ -32,6 +32,7 @@ import {
 import SheepBatchPage from './SheepBatchPage.jsx';
 import {getProgramColor} from '../lib/programColors.js';
 import {getReadableText} from '../lib/styles.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import Badge from '../shared/Badge.jsx';
 
@@ -758,7 +759,7 @@ const SheepBatchesHub = ({sb, fmt, Header, authState, showUsers, setShowUsers, a
                           textTransform: 'capitalize',
                         }}
                       >
-                        {s}
+                        {processingStatusLabel(s)}
                       </button>
                     );
                   })}
@@ -1159,7 +1160,7 @@ function BatchRow({batch, fmt, onOpen}) {
       {/* Status */}
       <span style={{justifySelf: 'start'}}>
         <Badge variant={isComplete ? 'ok' : 'warn'} style={{textTransform: 'uppercase'}}>
-          {batch.status}
+          {processingStatusLabel(batch.status)}
         </Badge>
       </span>
 

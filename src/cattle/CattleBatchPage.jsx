@@ -21,6 +21,7 @@ import {
 import {recordControl, recordFieldLabel} from '../shared/recordPageControls.jsx';
 import {getProgramColor} from '../lib/programColors.js';
 import {getReadableText} from '../lib/styles.js';
+import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import Badge from '../shared/Badge.jsx';
 import {detachCattleFromProcessingBatch} from '../lib/processingDetachApi.js';
@@ -354,7 +355,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
             {batch.name}
           </RecordTitle>
           <Badge variant={isComplete ? 'neutral' : isScheduled ? 'warn' : 'info'} style={{textTransform: 'uppercase'}}>
-            {batch.status}
+            {processingStatusLabel(batch.status)}
           </Badge>
           {!isScheduled && (
             <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>
@@ -363,7 +364,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
           )}
           {(batch.actual_process_date || batch.planned_process_date) && (
             <span style={{fontSize: 12, color: 'var(--ink-muted)'}}>
-              {isScheduled ? 'scheduled' : 'processed'} {fmt(batch.actual_process_date || batch.planned_process_date)}
+              {isScheduled ? 'planned' : 'process date'} {fmt(batch.actual_process_date || batch.planned_process_date)}
             </span>
           )}
           {yieldPct && (
@@ -421,7 +422,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                 data-scheduled-batch-unschedule-warning={batch.id}
                 style={{display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'}}
               >
-                <span style={{fontSize: 12, color: 'var(--danger)'}}>Remove this scheduled batch?</span>
+                <span style={{fontSize: 12, color: 'var(--danger)'}}>Remove this planned batch?</span>
                 <button
                   type="button"
                   onClick={() => setUnscheduling(false)}
@@ -538,7 +539,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                       fontWeight: 600,
                     }}
                   >
-                    Reopen to active
+                    Reopen to In Process
                   </button>
                 )}
               </div>
