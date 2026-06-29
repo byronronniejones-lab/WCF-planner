@@ -450,7 +450,7 @@ async function runHarvest(
   svc: ReturnType<typeof createClient>,
   issueId: string,
   yearMonth: string,
-): Promise<{factCount: number}> {
+): Promise<{factCount: number; coverage: Record<string, unknown>[]}> {
   const {data: issueRow, error: issErr} = await svc
     .from('newsletter_issues')
     .select('year_month, period_start, period_end')
