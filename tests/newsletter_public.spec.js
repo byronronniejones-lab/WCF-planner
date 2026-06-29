@@ -161,13 +161,17 @@ test.describe('admin newsletter (admin)', () => {
     await cleanShot(page, 'admin-list-desktop');
 
     await page.getByRole('row').filter({hasText: PUB.title}).getByRole('button', {name: 'Open'}).click();
-    await expect(page.getByRole('heading', {name: 'Content blocks'})).toBeVisible();
+    await expect(page.getByRole('heading', {name: 'Draft'})).toBeVisible();
 
-    // Published issue: the editor shows the snapshotted draft blocks (publish
-    // leaves draft_payload intact), not an empty "No blocks yet" state.
-    await expect(page.getByText('No blocks yet.')).toHaveCount(0);
-    await expect(page.locator('.nla-block')).toHaveCount(PUB_BLOCKS.length);
-    await expect(page.locator('.nla-block').first().getByRole('textbox').first()).toHaveValue('A Great November');
+    // Published issue: the AI-owned draft renders READ-ONLY (no manual block
+    // editing) and shows the snapshotted blocks — publish leaves draft_payload
+    // intact — not the empty "No draft yet" state.
+    await expect(page.getByText('No draft yet.')).toHaveCount(0);
+    await expect(page.locator('.nla-draft-preview')).toBeVisible();
+    await expect(page.locator('.nla-draft-preview')).toContainText('A Great November');
+    // The manual block palette + per-block editors are gone.
+    await expect(page.locator('.nla-block')).toHaveCount(0);
+    await expect(page.locator('.nla-add-blocks')).toHaveCount(0);
 
     // Preview is draft-only: the disabled message shows and the Open-preview /
     // Regenerate controls are NOT rendered for a published issue.

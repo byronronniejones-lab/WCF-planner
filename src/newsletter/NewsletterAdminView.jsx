@@ -22,7 +22,8 @@ import React from 'react';
 import {sb} from '../lib/supabase.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
-import {NEWSLETTER_BLOCK_TYPES} from './NewsletterBlocks.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import NewsletterBlocks from './NewsletterBlocks.jsx';
 import {NEWSLETTER_TONE_PRESETS, NEWSLETTER_LENGTH_PRESETS} from '../lib/newsletterDraft.js';
 import {assembleNewsletterBrief} from '../lib/newsletterBrief.js';
 import {placePlannedPhotos, pendingPlacementCount} from '../lib/newsletterPhotoPlan.js';
@@ -98,213 +99,10 @@ const COVERAGE_STATUS_LABEL = {
   error: 'error',
 };
 
-// Default skeleton for each block type the editor can add.
-function defaultBlock(type) {
-  switch (type) {
-    case 'heading':
-      return {type: 'heading', text: '', level: 2};
-    case 'paragraph':
-      return {type: 'paragraph', text: ''};
-    case 'list':
-      return {type: 'list', ordered: false, items: []};
-    case 'stats':
-      return {type: 'stats', items: []};
-    case 'quote':
-      return {type: 'quote', text: '', attribution: ''};
-    case 'callout':
-      return {type: 'callout', text: '', tone: 'good'};
-    case 'photo':
-      return {type: 'photo', photoId: ''};
-    case 'gallery':
-      return {type: 'gallery', photoIds: []};
-    case 'divider':
-      return {type: 'divider'};
-    default:
-      return {type: 'paragraph', text: ''};
-  }
-}
-
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 function StatusBadge({status}) {
   const cls = status === 'published' ? 'nla-badge nla-badge-pub' : 'nla-badge nla-badge-draft';
   return <span className={cls}>{status === 'published' ? 'Published' : 'Draft'}</span>;
-}
-
-// ── Block editor ─────────────────────────────────────────────────────────────
-
-// eslint-disable-next-line no-unused-vars -- JSX-only use
-function BlockEditor({block, idx, count, approvedPhotos, onChange, onMove, onRemove}) {
-  const set = (patch) => onChange(idx, {...block, ...patch});
-
-  let fields = null;
-  if (block.type === 'heading') {
-    fields = (
-      <div className="nla-row">
-        <input
-          className="nla-input"
-          value={block.text || ''}
-          placeholder="Heading text"
-          onChange={(e) => set({text: e.target.value})}
-        />
-        <select className="nla-select" value={block.level || 2} onChange={(e) => set({level: Number(e.target.value)})}>
-          <option value={2}>H2</option>
-          <option value={3}>H3</option>
-        </select>
-      </div>
-    );
-  } else if (block.type === 'paragraph') {
-    fields = (
-      <textarea
-        className="nla-textarea"
-        rows={3}
-        value={block.text || ''}
-        placeholder="Paragraph text"
-        onChange={(e) => set({text: e.target.value})}
-      />
-    );
-  } else if (block.type === 'list') {
-    fields = (
-      <div>
-        <label className="nla-check">
-          <input type="checkbox" checked={!!block.ordered} onChange={(e) => set({ordered: e.target.checked})} />{' '}
-          Numbered
-        </label>
-        <textarea
-          className="nla-textarea"
-          rows={4}
-          value={(block.items || []).join('\n')}
-          placeholder="One item per line"
-          onChange={(e) =>
-            set({
-              items: e.target.value
-                .split('\n')
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          }
-        />
-      </div>
-    );
-  } else if (block.type === 'stats') {
-    fields = (
-      <textarea
-        className="nla-textarea"
-        rows={4}
-        value={(block.items || []).map((it) => `${it.label || ''} | ${it.value || ''}`).join('\n')}
-        placeholder="One per line:  Label | Value   (e.g.  Cattle on farm | 142)"
-        onChange={(e) =>
-          set({
-            items: e.target.value
-              .split('\n')
-              .map((line) => {
-                const [label, value] = line.split('|');
-                return {label: (label || '').trim(), value: (value || '').trim()};
-              })
-              .filter((it) => it.value),
-          })
-        }
-      />
-    );
-  } else if (block.type === 'quote') {
-    fields = (
-      <div>
-        <textarea
-          className="nla-textarea"
-          rows={2}
-          value={block.text || ''}
-          placeholder="Quote"
-          onChange={(e) => set({text: e.target.value})}
-        />
-        <input
-          className="nla-input"
-          value={block.attribution || ''}
-          placeholder="Attribution (optional)"
-          onChange={(e) => set({attribution: e.target.value})}
-        />
-      </div>
-    );
-  } else if (block.type === 'callout') {
-    fields = (
-      <div className="nla-row">
-        <textarea
-          className="nla-textarea"
-          rows={2}
-          value={block.text || ''}
-          placeholder="Callout text"
-          onChange={(e) => set({text: e.target.value})}
-        />
-        <select className="nla-select" value={block.tone || 'good'} onChange={(e) => set({tone: e.target.value})}>
-          <option value="good">Good news</option>
-          <option value="note">Note</option>
-        </select>
-      </div>
-    );
-  } else if (block.type === 'photo') {
-    fields = (
-      <select className="nla-select" value={block.photoId || ''} onChange={(e) => set({photoId: e.target.value})}>
-        <option value="">— pick an approved photo —</option>
-        {approvedPhotos.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.caption || p.altText || p.id}
-          </option>
-        ))}
-      </select>
-    );
-  } else if (block.type === 'gallery') {
-    fields = (
-      <div className="nla-gallery-pick">
-        {approvedPhotos.length === 0 && <span className="nla-muted">No approved photos yet.</span>}
-        {approvedPhotos.map((p) => {
-          const ids = block.photoIds || [];
-          const on = ids.includes(p.id);
-          return (
-            <label key={p.id} className="nla-check">
-              <input
-                type="checkbox"
-                checked={on}
-                onChange={(e) => set({photoIds: e.target.checked ? [...ids, p.id] : ids.filter((x) => x !== p.id)})}
-              />{' '}
-              {p.caption || p.altText || p.id}
-            </label>
-          );
-        })}
-      </div>
-    );
-  } else if (block.type === 'divider') {
-    fields = <div className="nla-muted">Horizontal divider.</div>;
-  }
-
-  return (
-    <div className="nla-block">
-      <div className="nla-block-head">
-        <span className="nla-block-type">{block.type}</span>
-        <span className="nla-block-actions">
-          <button
-            type="button"
-            className="nla-iconbtn"
-            disabled={idx === 0}
-            onClick={() => onMove(idx, -1)}
-            title="Move up"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            className="nla-iconbtn"
-            disabled={idx === count - 1}
-            onClick={() => onMove(idx, 1)}
-            title="Move down"
-          >
-            ↓
-          </button>
-          <button type="button" className="nla-iconbtn nla-danger" onClick={() => onRemove(idx)} title="Remove block">
-            ✕
-          </button>
-        </span>
-      </div>
-      {fields}
-    </div>
-  );
 }
 
 // ── Photo card ───────────────────────────────────────────────────────────────
@@ -645,23 +443,11 @@ function IssueEditor({issueId, onBack}) {
     }
   }
 
-  // Blocks
-  const addBlock = (type) => setBlocks((b) => [...b, defaultBlock(type)]);
-  const changeBlock = (idx, next) => setBlocks((b) => b.map((x, i) => (i === idx ? next : x)));
-  const moveBlock = (idx, dir) =>
-    setBlocks((b) => {
-      const j = idx + dir;
-      if (j < 0 || j >= b.length) return b;
-      const copy = b.slice();
-      [copy[idx], copy[j]] = [copy[j], copy[idx]];
-      return copy;
-    });
-  const removeBlock = (idx) => setBlocks((b) => b.filter((_, i) => i !== idx));
-  const saveDraft = () =>
-    withBusy(async () => {
-      const data = await saveNewsletterDraft(sb, issueId, {...(issue.draftPayload || {}), blocks});
-      applyIssue(data);
-    }, 'Draft saved.');
+  // Draft is AI-owned: no manual block editing. The read-only preview reuses the
+  // public block renderer (NewsletterBlocks). photosById/urlFor mirror
+  // NewsletterIssuePage so placed (approved) photos resolve to their public URL.
+  const photosById = useMemo(() => new Map(((issue && issue.photos) || []).map((p) => [p.id, p])), [issue]);
+  const urlFor = useCallback((storagePath) => newsletterPublicPhotoUrl(sb, storagePath), []);
 
   // Facts (brief highlight toggles + manual add)
   const toggleFact = (fact) =>
@@ -837,19 +623,18 @@ function IssueEditor({issueId, onBack}) {
         <div className="nla-col-main">
           <section className="nla-section">
             <div className="nla-section-head">
-              <h3>Content blocks</h3>
-              <span className="nla-block-actions">
-                <button type="button" className="nla-btn" disabled={busy} onClick={saveDraft}>
-                  Save draft
-                </button>
-              </span>
+              <h3>Draft</h3>
             </div>
-            {/* The AI writing step — run AFTER you've curated facts + added your
-                Q&A/tone. Blank box = write/rewrite from your facts + Q&A; with a
-                note = revise the current draft in place (keeps your edits). The AI
-                step needs the Anthropic provider; the template ignores notes. */}
+            {/* The AI owns the content structure — there is no manual block
+                building. Blank box = write/rewrite from your curated facts + Q&A;
+                with a note = revise the current draft in place. The live AI uses
+                the note; the offline template ignores it. */}
+            <label className="nla-label" htmlFor="nla-revision-notes">
+              Revision notes — tell the AI what to change
+            </label>
             <div className="nla-revise">
               <textarea
+                id="nla-revision-notes"
                 className="nla-textarea"
                 rows={2}
                 value={revisionNotes}
@@ -876,7 +661,7 @@ function IssueEditor({issueId, onBack}) {
                   {placedPhotoCount > 0
                     ? ` and removes ${placedPhotoCount} placed photo${placedPhotoCount === 1 ? '' : 's'}`
                     : ''}
-                  . Add a note above and use Revise to keep your edits.
+                  . Add a note above and use Revise to keep the current draft.
                 </span>
                 <span className="nla-rewrite-confirm-actions">
                   <button type="button" className="nla-btn nla-danger" disabled={busy} onClick={onWriteClick}>
@@ -888,28 +673,13 @@ function IssueEditor({issueId, onBack}) {
                 </span>
               </div>
             )}
-            {blocks.length === 0 && (
+            {blocks.length === 0 ? (
               <p className="nla-muted">No draft yet. Curate the facts + Q&amp;A above, then click “Write draft”.</p>
+            ) : (
+              <div className="nla-draft-preview" aria-label="Draft preview (read-only)">
+                <NewsletterBlocks blocks={blocks} photosById={photosById} urlFor={urlFor} />
+              </div>
             )}
-            {blocks.map((block, idx) => (
-              <BlockEditor
-                key={idx}
-                block={block}
-                idx={idx}
-                count={blocks.length}
-                approvedPhotos={approvedPhotos}
-                onChange={changeBlock}
-                onMove={moveBlock}
-                onRemove={removeBlock}
-              />
-            ))}
-            <div className="nla-add-blocks">
-              {NEWSLETTER_BLOCK_TYPES.map((t) => (
-                <button key={t} type="button" className="nla-btn-sm" onClick={() => addBlock(t)}>
-                  + {t}
-                </button>
-              ))}
-            </div>
           </section>
 
           <section className="nla-section">
