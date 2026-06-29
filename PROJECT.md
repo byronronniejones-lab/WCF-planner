@@ -8,14 +8,16 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-29.
-Current product checkpoint: `541d5fe`
-(`Merge pull request #47 from hotfix/cattle-batch-processing-age`).
+Current product checkpoint: `1ac82ff`
+(`Merge pull request #49 from hotfix/cattle-terminal-age-label`).
 Latest shipped product merges include Newsletter Autopilot (`a1cdcf7`, PR #44),
 Pasture Map field/offline/header chrome (`ea02278`, PR #45), Pasture Map
 draw-temp/marker fixes (`8eba126`, PR #46), and cattle processing-batch age
-display (`541d5fe`, PR #47).
-Current docs checkpoint: this 2026-06-29 session-wrap update after PRs #44-#47,
-PROD newsletter migrations `146`/`151`, and the `newsletter-harvest` v2 deploy.
+display (`541d5fe`, PR #47), and cattle terminal-age animal records
+(`1ac82ff`, PR #49).
+Current docs checkpoint: this 2026-06-29 cattle terminal-age hotfix update after
+PR #49, PROD newsletter migrations `146`/`151`, the `newsletter-harvest` v2
+deploy, and the PROD-only live `NEWSLETTER_AI_API_KEY` secret.
 Production URL: https://wcfplanner.com.
 Netlify auto-deploys from GitHub `main`.
 
@@ -68,13 +70,13 @@ Design/function invariants that govern cross-surface behavior live in
 
 ## Current State
 
-- Production deploy: Netlify auto-deploys from GitHub `main`. At wrap,
-  `origin/main` is `541d5fe` and the main CI/deploy workflows for PRs #44/#47
-  were still running or pending; older main CI is known red from the repo-wide
-  30-minute Playwright/E2E health problem, not from the newsletter or cattle
-  changes.
-- Source: latest product merge on `main` is cattle processing-batch age display
-  (`541d5fe`, PR #47). Recent main history also includes Newsletter Autopilot
+- Production deploy: Netlify auto-deploys from GitHub `main`. At this checkpoint,
+  `origin/main` includes PR #49 (`1ac82ff`). Older main CI is known red from the
+  repo-wide 30-minute Playwright/E2E health problem, not from the newsletter,
+  pasture, or cattle hotfixes.
+- Source: latest product merge on `main` is cattle terminal-age animal records
+  (`1ac82ff`, PR #49). Recent main history also includes cattle
+  processing-batch age display (`541d5fe`, PR #47), Newsletter Autopilot
   (`a1cdcf7`, PR #44), Pasture Map draw-temp/marker fixes (`8eba126`, PR #46),
   and Pasture Map field/offline/header chrome (`ea02278`, PR #45).
 - Newsletter release state: PR #44 is merged to `main`. Migrations `146` then
@@ -103,6 +105,14 @@ Design/function invariants that govern cross-surface behavior live in
   Validation before merge: Prettier on changed files, focused static test
   51/51, lint 0 errors (existing warnings only), build passed, `git diff
   --check` clean.
+- Cattle animal record terminal-age state: PR #49 is merged to `main`. The
+  cattle animal record page now shows outcome-herd age at the terminal event
+  instead of current age: `Age at processing` from the linked processing batch's
+  `actual_process_date`/`planned_process_date`, `Age at sale` from `sale_date`,
+  and `Age at death` from `death_date`. Active herds still show current `Age`.
+  Validation before merge: Prettier on changed files, `tests/static/
+  animal_detail_age.test.js` 12/12, lint 0 errors (existing warnings only),
+  build passed, and Netlify PR preview checks were clean.
 - Worktree inventory at wrap: after cleanup the intended steady state is a
   single primary worktree at `C:/Users/Ronni/WCF-planner` on `main` plus the
   seven preserved untracked handoff/shot folders:
@@ -214,6 +224,14 @@ The current source checkpoint is listed in the header above.
     breed/yield.
   - Validation: Prettier on changed files, focused static test 51/51, lint 0
     errors with existing warnings only, `npm run build`, and `git diff --check`.
+- Cattle terminal-age animal record hotfix (`1ac82ff`, PR #49, merged
+  2026-06-29):
+  - Cattle animal records in `Processed`, `Sold`, and `Deceased` now display
+    `Age at processing`, `Age at sale`, or `Age at death` using the relevant
+    event date instead of showing current age.
+  - Validation: Prettier on changed files, `tests/static/
+    animal_detail_age.test.js` 12/12, lint 0 errors with existing warnings only,
+    `npm run build`, and Netlify PR preview checks clean.
 - Newsletter Autopilot release (`a1cdcf7`, PR #44, merged 2026-06-29):
   - Ports the gather-first Autopilot admin workflow, brief/readiness panels,
     revision safeguards, photo plan, real-source harvest, and shared parity
