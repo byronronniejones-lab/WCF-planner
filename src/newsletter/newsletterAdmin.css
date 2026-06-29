@@ -507,6 +507,60 @@
   flex: 0 0 auto;
 }
 
+/* Read-only draft preview (the AI-owned draft; no manual block editing). */
+.nla-draft-preview {
+  margin-top: 12px;
+  padding: 16px 18px;
+  border: 1px solid #d2d8d4;
+  border-radius: 12px;
+  background: #fff;
+  color: #1c2b25;
+  line-height: 1.55;
+}
+.nla-draft-preview h2 {
+  font-size: 18px;
+  margin: 14px 0 6px;
+  color: #085041;
+}
+.nla-draft-preview h3 {
+  font-size: 15px;
+  margin: 12px 0 4px;
+  color: #0a6051;
+}
+.nla-draft-preview p {
+  margin: 6px 0;
+}
+.nla-draft-preview ul,
+.nla-draft-preview ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+.nla-draft-preview blockquote {
+  margin: 10px 0;
+  padding: 4px 14px;
+  border-left: 3px solid #b8cabf;
+  color: #3a4a43;
+  font-style: italic;
+}
+.nla-draft-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+.nla-draft-preview figure {
+  margin: 12px 0;
+}
+.nla-draft-preview figcaption {
+  font-size: 12px;
+  color: #5b6b63;
+  margin-top: 4px;
+}
+.nla-draft-preview .nl-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
 /* Confidence tags */
 .nla-conf-high {
   background: #d6efe3;
