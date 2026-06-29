@@ -133,7 +133,7 @@ describe('automation wrappers (mig 146 + Edge Function)', () => {
     expect(res).toEqual({ok: true, harvest: {factCount: 3}});
     expect(calls[0]).toEqual({
       name: 'newsletter-harvest',
-      opts: {body: {mode: 'admin', issueId: 'nli-2026-05', steps: ['harvest'], overwrite: true}},
+      opts: {body: {mode: 'admin', issueId: 'nli-2026-05', steps: ['harvest'], overwrite: true, revisionNotes: ''}},
     });
   });
 

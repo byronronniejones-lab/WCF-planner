@@ -8,7 +8,12 @@ import {
   detectCattleOnFarm,
   detectCattleBirths,
   detectLayerEggs,
+  detectPastureMoves,
+  detectProcessing,
+  detectCompletedTasks,
+  detectDailyReports,
   isForbiddenFact,
+  isForbiddenText,
   assertNoForbiddenFacts,
   NEWSLETTER_DETECTORS,
 } from './newsletterFacts.js';
@@ -198,5 +203,87 @@ describe('finance / mortality boundary', () => {
 
   it('exposes one detector per registry entry', () => {
     expect(NEWSLETTER_DETECTORS.length).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe('autopilot detectors — pasture / processing / tasks / daily reports', () => {
+  it('detectPastureMoves counts in-period moves and lists groups', () => {
+    const f = detectPastureMoves(
+      withPeriod({
+        pastureMoves: [
+          {date: '2026-05-10', groupLabel: 'Mommas'},
+          {date: '2026-05-18', groupLabel: 'Feeders'},
+          {date: '2026-04-30', groupLabel: 'Old'}, // out of period
+        ],
+      }),
+    );
+    expect(f.metricValue).toBe(2);
+    expect(f.detectorKey).toBe('pasture_moves');
+    expect(f.evidence.groups).toEqual(['Mommas', 'Feeders']);
+  });
+
+  it('detectCompletedTasks drops recurring/system tasks and forbidden titles', () => {
+    const f = detectCompletedTasks(
+      withPeriod({
+        completedTasks: [
+          {date: '2026-05-05', title: 'Raised the new barn', fromRecurring: false, designation: 'standard'},
+          {date: '2026-05-06', title: 'Daily feed check', fromRecurring: true, designation: 'standard'}, // recurring
+          {date: '2026-05-07', title: 'Sold the old tractor', fromRecurring: false, designation: 'standard'}, // forbidden word
+          {date: '2026-05-08', title: 'System sync', fromRecurring: false, designation: 'system'}, // system
+        ],
+      }),
+    );
+    expect(f.metricValue).toBe(1);
+    expect(f.evidence.titles).toEqual(['Raised the new barn']);
+    expect(isForbiddenFact(f)).toBe(false);
+  });
+
+  it('detectCompletedTasks returns null when every notable title is unsafe', () => {
+    const f = detectCompletedTasks(
+      withPeriod({completedTasks: [{date: '2026-05-07', title: 'Recorded mortality counts', fromRecurring: false}]}),
+    );
+    expect(f).toBeNull();
+  });
+
+  it('detectProcessing reports batch count + hanging weight (no finance)', () => {
+    const f = detectProcessing(
+      withPeriod({processingBatches: [{date: '2026-05-15', name: 'B1', hangingWeightLbs: 1200}]}),
+    );
+    expect(f.metricValue).toBe(1);
+    expect(f.displayValue).toMatch(/lbs/);
+    expect(isForbiddenFact(f)).toBe(false);
+  });
+
+  it('detectDailyReports counts reports across distinct days', () => {
+    const f = detectDailyReports(
+      withPeriod({dailySubmissions: [{date: '2026-05-01'}, {date: '2026-05-01'}, {date: '2026-05-02'}]}),
+    );
+    expect(f.metricValue).toBe(3);
+    expect(f.evidence.days).toBe(2);
+  });
+
+  it('detectNewsletterFacts wires the new sources into the pipeline', () => {
+    const facts = detectNewsletterFacts(
+      withPeriod({
+        pastureMoves: [{date: '2026-05-10', groupLabel: 'Mommas'}],
+        completedTasks: [{date: '2026-05-05', title: 'Raised the new barn', fromRecurring: false}],
+        dailySubmissions: [{date: '2026-05-01'}],
+      }),
+    );
+    const keys = facts.map((f) => f.detectorKey);
+    expect(keys).toContain('pasture_moves');
+    expect(keys).toContain('completed_tasks');
+    expect(keys).toContain('daily_reports');
+    for (const f of facts) expect(isForbiddenFact(f)).toBe(false);
+  });
+});
+
+describe('isForbiddenText — per-string guard', () => {
+  it('flags finance/mortality words and dollar signs, allows clean text', () => {
+    expect(isForbiddenText('Sold the herd')).toBe(true);
+    expect(isForbiddenText('Recorded a death')).toBe(true);
+    expect(isForbiddenText('Cost $5')).toBe(true);
+    expect(isForbiddenText('Raised the new barn roof')).toBe(false);
+    expect(isForbiddenText('142 head of cattle')).toBe(false);
   });
 });

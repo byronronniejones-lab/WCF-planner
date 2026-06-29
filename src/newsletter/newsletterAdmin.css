@@ -333,8 +333,203 @@
   max-width: 480px;
 }
 
+/* This-month hero */
+.nla-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: linear-gradient(180deg, #f1f7f4 0%, #f6f7f5 100%);
+  border: 1px solid #cfe2d9;
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+.nla-hero-month {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0a4c3e;
+}
+.nla-hero-status {
+  font-size: 14px;
+  margin-top: 2px;
+}
+.nla-hero-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.nla-create-more {
+  margin: 0 0 18px;
+}
+.nla-create-more > summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+.nla-create-more .nla-row {
+  margin-top: 8px;
+  max-width: 420px;
+}
+
+/* Newsletter brief */
+.nla-brief {
+  border-color: #cfe2d9;
+  border-left: 4px solid #085041;
+}
+.nla-brief-block {
+  margin-bottom: 14px;
+}
+.nla-brief-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7472;
+  margin-bottom: 6px;
+}
+.nla-brief-fact {
+  padding: 8px 0;
+}
+.nla-brief-why {
+  font-size: 12px;
+  color: #6b7472;
+  margin: 2px 0 0 24px;
+}
+.nla-brief-summary {
+  font-size: 13px;
+  color: #374039;
+  margin: 2px 0 0 24px;
+}
+
+/* Coverage chips */
+.nla-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.nla-cov {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: default;
+}
+.nla-cov-scanned {
+  background: #d6efe3;
+  color: #0a5c41;
+}
+.nla-cov-empty {
+  background: #eef1f3;
+  color: #5b6661;
+}
+.nla-cov-unavailable {
+  background: #f3eede;
+  color: #8a6d1e;
+}
+.nla-cov-error {
+  background: #f7dedb;
+  color: #b3261e;
+}
+
+/* Readiness checklist */
+.nla-readiness {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.nla-ready {
+  font-size: 13px;
+  padding: 3px 0;
+}
+.nla-ready-mark {
+  display: inline-block;
+  width: 18px;
+  font-weight: 800;
+}
+.nla-ready-ok .nla-ready-mark {
+  color: #0a5c41;
+}
+.nla-ready-bad .nla-ready-mark {
+  color: #b3261e;
+}
+.nla-ready-warn .nla-ready-mark {
+  color: #b8860b;
+}
+
+/* Photo plan (shot-list) */
+.nla-plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.nla-plan-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.nla-plan-slot .nla-select {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* Revise-in-place box */
+.nla-revise {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.nla-revise .nla-textarea {
+  flex: 1;
+}
+.nla-revise .nla-btn {
+  flex: 0 0 auto;
+}
+.nla-rewrite-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: -4px 0 12px;
+  padding: 8px 12px;
+  border: 1px solid #e3b4b1;
+  border-radius: 10px;
+  background: #fcf3f2;
+  color: #7a1d17;
+  font-size: 13px;
+}
+.nla-rewrite-confirm-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* Confidence tags */
+.nla-conf-high {
+  background: #d6efe3;
+  color: #0a5c41;
+}
+.nla-conf-medium {
+  background: #f3eede;
+  color: #8a6d1e;
+}
+.nla-conf-low {
+  background: #eef1f3;
+  color: #5b6661;
+}
+
 @media (max-width: 860px) {
   .nla-cols {
     grid-template-columns: 1fr;
+  }
+  .nla-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .nla-hero-actions {
+    width: 100%;
   }
 }

@@ -40,8 +40,25 @@
 import {serve} from 'https://deno.land/std@0.168.0/http/server.ts';
 import {createClient} from 'https://esm.sh/@supabase/supabase-js@2';
 import {detectNewsletterFacts} from '../_shared/newsletterFacts.js';
-import {composeTemplateDraft, validateNewsletterBlocks, buildNewsletterPrompt} from '../_shared/newsletterDraft.js';
+import {
+  composeTemplateDraft,
+  validateNewsletterBlocks,
+  buildNewsletterPrompt,
+  sanitizePhotoPlan,
+  mergePhotoPlan,
+  proposePhotoPlan,
+} from '../_shared/newsletterDraft.js';
 import {cronAuthOk} from '../_shared/newsletterCronAuth.js';
+import {
+  shapeHeadCounts,
+  shapeBirths,
+  shapeEggDailys,
+  shapePastureMoves,
+  shapeDailySubmissions,
+  shapeCompletedTasks,
+  shapeProcessingBatches,
+  coverageEntry,
+} from '../_shared/newsletterHarvestShape.js';
 
 function envTrim(name: string): string {
   return (Deno.env.get(name) ?? '').replace(/^\s+|\s+$/g, '');
@@ -124,32 +141,255 @@ async function authenticateAdmin(req: Request, mode: string): Promise<boolean> {
 }
 
 // ─── Harvest data assembly ───────────────────────────────────────────────────
-// Reads the operational sources the detectors need. Broiler + pig live in
-// app_store (ppp-* keys, same as tasks-cron). Cattle/sheep/layer detectors are
-// built + unit-tested but their live data-source wiring is a documented
-// follow-up (their storage shape needs confirmation); they receive [] here and
-// simply emit nothing until wired.
+// Reads the operational sources the detectors need with the service-role client
+// and shapes each into the detector input via the pure (unit-tested)
+// newsletterHarvestShape module. Every source is scanned defensively: a missing
+// relation / absent app_store key becomes an honest "unavailable" coverage
+// entry rather than a thrown harvest; an error is recorded as "error". The
+// returned `coverage` array is persisted so the admin brief can show exactly
+// what was scanned, empty, unavailable, or errored — never a silent empty.
+//
+// MORTALITY BOUNDARY: cattle/sheep "on farm" counts exclude dead/sold/processed
+// animals at the SQL layer (death_date/sale_date/processing_batch_id IS NULL),
+// and births are born-alive only (shapeBirths subtracts deaths). The
+// finance/mortality denylist in the detectors + the ingest RPC is the backstop.
 const HARVEST_APP_STORE_KEYS = ['ppp-v4', 'ppp-feeders-v1', 'ppp-farrowing-v1'];
 
-async function assembleHarvestInput(
+type ScanResult = {rows: Record<string, unknown>[]; available: boolean; error: string | null};
+
+function isMissingRelation(msg: string): boolean {
+  return /does not exist|schema cache|could not find|relation .* does not/i.test(msg || '');
+}
+
+// Run one source query; classify a missing relation as unavailable (not an
+// error) so an environment without a given table still produces a clean harvest.
+async function scanSource(
+  run: () => PromiseLike<{data: unknown; error: {message?: string} | null}>,
+): Promise<ScanResult> {
+  try {
+    const {data, error} = await run();
+    if (error) {
+      if (isMissingRelation(error.message || '')) return {rows: [], available: false, error: null};
+      return {rows: [], available: true, error: error.message || 'query error'};
+    }
+    return {rows: (Array.isArray(data) ? data : []) as Record<string, unknown>[], available: true, error: null};
+  } catch (e) {
+    return {rows: [], available: true, error: e instanceof Error ? e.message : String(e)};
+  }
+}
+
+const endOfDay = (isoDay: string) => `${isoDay}T23:59:59.999Z`;
+
+async function assembleHarvestInputAndCoverage(
   svc: ReturnType<typeof createClient>,
   period: {yearMonth: string; start: string; end: string},
-): Promise<Record<string, unknown>> {
-  const {data: rows, error} = await svc.from('app_store').select('key, data').in('key', HARVEST_APP_STORE_KEYS);
-  if (error) throw new Error(`select app_store: ${error.message}`);
+): Promise<{input: Record<string, unknown>; coverage: Record<string, unknown>[]}> {
+  const coverage: Record<string, unknown>[] = [];
+
+  // ── app_store programs: broiler + pig (ppp-* keys) ──
+  const appStore = await scanSource(() => svc.from('app_store').select('key, data').in('key', HARVEST_APP_STORE_KEYS));
   const store = new Map<string, unknown>();
-  for (const r of rows || []) store.set(r.key, r.data);
-  const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+  for (const r of appStore.rows) store.set(r.key as string, (r as {data: unknown}).data);
+  const arr = (v: unknown) => (Array.isArray(v) ? (v as unknown[]) : []);
+  const broilerBatches = arr(store.get('ppp-v4'));
+  const pigFeederGroups = arr(store.get('ppp-feeders-v1'));
+  const pigFarrowings = arr(store.get('ppp-farrowing-v1'));
+  coverage.push(
+    coverageEntry('broiler', 'Broilers', {
+      available: store.has('ppp-v4'),
+      error: appStore.error,
+      rowCount: broilerBatches.length,
+    }),
+  );
+  coverage.push(
+    coverageEntry('pig', 'Pigs', {
+      available: store.has('ppp-feeders-v1') || store.has('ppp-farrowing-v1'),
+      error: appStore.error,
+      rowCount: pigFeederGroups.length + pigFarrowings.length,
+    }),
+  );
+
+  // ── Cattle: active head by herd + born-alive calvings ──
+  const cattle = await scanSource(() =>
+    svc
+      .from('cattle')
+      .select('herd')
+      .eq('archived', false)
+      .is('deleted_at', null)
+      .is('death_date', null)
+      .is('sale_date', null)
+      .is('processing_batch_id', null),
+  );
+  const cattleHerds = shapeHeadCounts(cattle.rows, 'herd');
+  coverage.push(
+    coverageEntry('cattle', 'Cattle on farm', {
+      available: cattle.available,
+      error: cattle.error,
+      rowCount: cattle.rows.length,
+    }),
+  );
+
+  const cattleCalving = await scanSource(() =>
+    svc
+      .from('cattle_calving_records')
+      .select('dam_tag, calving_date, total_born, deaths')
+      .gte('calving_date', period.start)
+      .lte('calving_date', period.end),
+  );
+  const cattleBirths = shapeBirths(cattleCalving.rows, {dateField: 'calving_date'});
+  coverage.push(
+    coverageEntry('cattle_births', 'Calves born', {
+      available: cattleCalving.available,
+      error: cattleCalving.error,
+      rowCount: cattleBirths.length,
+    }),
+  );
+
+  // ── Sheep: active head by flock + born-alive lambings ──
+  const sheep = await scanSource(() =>
+    svc
+      .from('sheep')
+      .select('flock')
+      .eq('archived', false)
+      .is('deleted_at', null)
+      .is('death_date', null)
+      .is('sale_date', null)
+      .is('processing_batch_id', null),
+  );
+  const sheepFlocks = shapeHeadCounts(sheep.rows, 'flock');
+  coverage.push(
+    coverageEntry('sheep', 'Sheep on farm', {
+      available: sheep.available,
+      error: sheep.error,
+      rowCount: sheep.rows.length,
+    }),
+  );
+
+  const sheepLambing = await scanSource(() =>
+    svc
+      .from('sheep_lambing_records')
+      .select('dam_tag, lambing_date, total_born, deaths')
+      .gte('lambing_date', period.start)
+      .lte('lambing_date', period.end),
+  );
+  const sheepBirths = shapeBirths(sheepLambing.rows, {dateField: 'lambing_date'});
+  coverage.push(
+    coverageEntry('sheep_births', 'Lambs born', {
+      available: sheepLambing.available,
+      error: sheepLambing.error,
+      rowCount: sheepBirths.length,
+    }),
+  );
+
+  // ── Layers: egg collections (summed group counts) ──
+  const eggs = await scanSource(() =>
+    svc
+      .from('egg_dailys')
+      .select('date, group1_count, group2_count, group3_count, group4_count')
+      .is('deleted_at', null)
+      .gte('date', period.start)
+      .lte('date', period.end),
+  );
+  const layerProduction = shapeEggDailys(eggs.rows);
+  coverage.push(
+    coverageEntry('layer', 'Layers & eggs', {available: eggs.available, error: eggs.error, rowCount: eggs.rows.length}),
+  );
+
+  // ── Pasture moves ──
+  const moves = await scanSource(() =>
+    svc
+      .from('pasture_move_events')
+      .select('animal_type, group_key, group_label, moved_at, to_land_area_id, animal_count')
+      .gte('moved_at', period.start)
+      .lte('moved_at', endOfDay(period.end)),
+  );
+  const pastureMoves = shapePastureMoves(moves.rows);
+  coverage.push(
+    coverageEntry('pasture_moves', 'Pasture moves', {
+      available: moves.available,
+      error: moves.error,
+      rowCount: pastureMoves.length,
+    }),
+  );
+
+  // ── Daily field reports ──
+  const daily = await scanSource(() =>
+    svc
+      .from('daily_submissions')
+      .select('date, program, team_member')
+      .gte('date', period.start)
+      .lte('date', period.end),
+  );
+  const dailySubmissions = shapeDailySubmissions(daily.rows);
+  coverage.push(
+    coverageEntry('daily_reports', 'Daily reports', {
+      available: daily.available,
+      error: daily.error,
+      rowCount: daily.rows.length,
+    }),
+  );
+
+  // ── Completed tasks (projects) ──
+  const tasks = await scanSource(() =>
+    svc
+      .from('task_instances')
+      .select('title, completed_at, designation, from_recurring_template, submission_source')
+      .eq('status', 'completed')
+      .gte('completed_at', period.start)
+      .lte('completed_at', endOfDay(period.end)),
+  );
+  const completedTasks = shapeCompletedTasks(tasks.rows);
+  coverage.push(
+    coverageEntry('completed_tasks', 'Completed projects', {
+      available: tasks.available,
+      error: tasks.error,
+      rowCount: tasks.rows.length,
+    }),
+  );
+
+  // ── Processing batches (cattle + sheep) ──
+  const cattleProc = await scanSource(() =>
+    svc
+      .from('cattle_processing_batches')
+      .select('name, actual_process_date, total_hanging_weight')
+      .not('actual_process_date', 'is', null)
+      .gte('actual_process_date', period.start)
+      .lte('actual_process_date', period.end),
+  );
+  const sheepProc = await scanSource(() =>
+    svc
+      .from('sheep_processing_batches')
+      .select('name, actual_process_date, total_hanging_weight')
+      .not('actual_process_date', 'is', null)
+      .gte('actual_process_date', period.start)
+      .lte('actual_process_date', period.end),
+  );
+  const processingBatches = [...shapeProcessingBatches(cattleProc.rows), ...shapeProcessingBatches(sheepProc.rows)];
+  coverage.push(
+    coverageEntry('processing_batches', 'Processing', {
+      available: cattleProc.available || sheepProc.available,
+      error: cattleProc.error || sheepProc.error,
+      rowCount: processingBatches.length,
+    }),
+  );
+
   return {
-    period,
-    broilerBatches: arr(store.get('ppp-v4')),
-    pigFeederGroups: arr(store.get('ppp-feeders-v1')),
-    pigFarrowings: arr(store.get('ppp-farrowing-v1')),
-    cattleHerds: [],
-    cattleBirths: [],
-    sheepFlocks: [],
-    sheepBirths: [],
-    layerProduction: [],
+    input: {
+      period,
+      broilerBatches,
+      pigFeederGroups,
+      pigFarrowings,
+      cattleHerds,
+      cattleBirths,
+      sheepFlocks,
+      sheepBirths,
+      layerProduction,
+      pastureMoves,
+      dailySubmissions,
+      completedTasks,
+      processingBatches,
+    },
+    coverage,
   };
 }
 
@@ -161,7 +401,7 @@ async function callAiProvider(opts: {
   provider: string;
   model: string;
   prompt: string;
-}): Promise<{blocks: unknown[]} | null> {
+}): Promise<{blocks: unknown[]; photoPlan: unknown[]} | null> {
   if (!NEWSLETTER_AI_API_KEY) return null;
   if (opts.provider !== 'anthropic') return null;
   const model = opts.model || 'claude-opus-4-8';
@@ -197,7 +437,11 @@ async function callAiProvider(opts: {
     parsed && typeof parsed === 'object' && Array.isArray((parsed as {blocks?: unknown[]}).blocks)
       ? (parsed as {blocks: unknown[]}).blocks
       : [];
-  return {blocks};
+  const photoPlan =
+    parsed && typeof parsed === 'object' && Array.isArray((parsed as {photoPlan?: unknown[]}).photoPlan)
+      ? (parsed as {photoPlan: unknown[]}).photoPlan
+      : [];
+  return {blocks, photoPlan};
 }
 
 // ─── Steps ───────────────────────────────────────────────────────────────────
@@ -219,46 +463,76 @@ async function runHarvest(
     end: String(issueRow?.period_end || periodBounds(yearMonth).end),
   };
 
-  const input = await assembleHarvestInput(svc, period);
+  const {input, coverage} = await assembleHarvestInputAndCoverage(svc, period);
   const facts = detectNewsletterFacts(input);
   const {error: repErr} = await svc.rpc('replace_newsletter_harvest_facts', {
     p_issue_id: issueId,
     p_facts: facts,
   });
   if (repErr) throw new Error(`replace_newsletter_harvest_facts: ${repErr.message}`);
+  // Persist per-source coverage so the admin brief is honest about what was
+  // scanned/empty/unavailable. A coverage write failure must not fail the
+  // harvest (the facts already landed) — it is logged on the run instead.
+  const {error: covErr} = await svc.rpc('set_newsletter_harvest_coverage', {
+    p_issue_id: issueId,
+    p_coverage: coverage,
+  });
+  if (covErr) {
+    await svc.rpc('log_newsletter_run', {
+      p_issue_id: issueId,
+      p_run_type: 'harvest',
+      p_status: 'error',
+      p_error: `coverage: ${covErr.message}`,
+    });
+  }
   await svc.rpc('log_newsletter_run', {p_issue_id: issueId, p_run_type: 'harvest', p_status: 'ok'});
-  return {factCount: facts.length};
+  return {factCount: facts.length, coverage};
 }
 
 async function runDraft(
   svc: ReturnType<typeof createClient>,
   issueId: string,
   overwrite: boolean,
-): Promise<{provider: string; blockCount: number}> {
+  revisionNotes?: string,
+): Promise<{provider: string; blockCount: number; photoPlanCount: number}> {
   const {data: input, error: inErr} = await svc.rpc('get_newsletter_generation_input', {p_issue_id: issueId});
   if (inErr) throw new Error(`get_newsletter_generation_input: ${inErr.message}`);
   const settings = (input && input.settings) || {};
   const provider = String(settings.aiProvider || 'template');
   const model = String(settings.aiModel || '');
+  // Thread the tone preset + length + (optional) revision notes into the prompt.
+  // input.currentDraft + input.photoPlan come from the generation RPC, so a
+  // revision edits the existing blocks and a refreshed plan keeps fulfilled slots.
+  const draftInput = {
+    ...input,
+    tone: settings.tone,
+    tonePreset: settings.tonePreset,
+    lengthDetail: settings.lengthDetail,
+    revisionNotes: revisionNotes || '',
+  };
 
   let payload: {blocks: unknown[]};
   let providerUsed = provider;
+  let proposedPlan: unknown[];
   try {
     const aiResult = await callAiProvider({
       provider,
       model,
-      prompt: buildNewsletterPrompt({...input, tone: settings.tone}),
+      prompt: buildNewsletterPrompt(draftInput),
     });
     if (aiResult) {
       payload = validateNewsletterBlocks(aiResult);
+      proposedPlan = sanitizePhotoPlan(aiResult.photoPlan);
     } else {
-      payload = composeTemplateDraft(input);
+      payload = composeTemplateDraft(draftInput);
+      proposedPlan = proposePhotoPlan(draftInput);
       providerUsed = 'template';
     }
   } catch (e) {
     // A provider failure must never block the issue: fall back to the template
     // composer and record the provider error on the run.
-    payload = composeTemplateDraft(input);
+    payload = composeTemplateDraft(draftInput);
+    proposedPlan = proposePhotoPlan(draftInput);
     providerUsed = 'template';
     await svc.rpc('log_newsletter_run', {
       p_issue_id: issueId,
@@ -278,6 +552,21 @@ async function runDraft(
     p_overwrite: overwrite,
   });
   if (applyErr) throw new Error(`apply_newsletter_ai_draft: ${applyErr.message}`);
+
+  // Merge the freshly-proposed shot-list onto the existing one (ALWAYS keep
+  // slots the admin already fulfilled) and persist it. A plan-write failure must
+  // not fail the draft — it is logged on the run.
+  const mergedPlan = mergePhotoPlan(input && input.photoPlan, proposedPlan);
+  const {error: planErr} = await svc.rpc('set_newsletter_photo_plan', {p_issue_id: issueId, p_plan: mergedPlan});
+  if (planErr) {
+    await svc.rpc('log_newsletter_run', {
+      p_issue_id: issueId,
+      p_run_type: 'ai_draft',
+      p_status: 'error',
+      p_error: `photo plan: ${planErr.message}`,
+    });
+  }
+
   await svc.rpc('log_newsletter_run', {
     p_issue_id: issueId,
     p_run_type: 'ai_draft',
@@ -285,7 +574,7 @@ async function runDraft(
     p_model: model || null,
     p_status: 'ok',
   });
-  return {provider: providerUsed, blockCount: payload.blocks.length};
+  return {provider: providerUsed, blockCount: payload.blocks.length, photoPlanCount: mergedPlan.length};
 }
 
 // ─── Main handler ────────────────────────────────────────────────────────────
@@ -301,6 +590,7 @@ serve(async (req: Request) => {
     steps?: string[];
     overwrite?: boolean;
     probe?: boolean;
+    revisionNotes?: string;
   } = {};
   try {
     const text = await req.text();
@@ -321,7 +611,12 @@ serve(async (req: Request) => {
     auth: {persistSession: false, autoRefreshToken: false},
   });
 
-  if (body.probe === true) return jsonResponse({ok: true, probe: true, run_mode: mode});
+  // Probe reports whether the AI provider key is configured (boolean only — the
+  // key itself never leaves the function) so the admin settings UI can show
+  // Anthropic as available vs "needs server key" without guessing.
+  if (body.probe === true) {
+    return jsonResponse({ok: true, probe: true, run_mode: mode, aiConfigured: !!NEWSLETTER_AI_API_KEY});
+  }
 
   try {
     const result: Record<string, unknown> = {ok: true, mode};
@@ -354,7 +649,8 @@ serve(async (req: Request) => {
 
     const steps = Array.isArray(body.steps) && body.steps.length ? body.steps : ['harvest', 'draft'];
     if (steps.includes('harvest')) result.harvest = await runHarvest(svc, issueId, yearMonth);
-    if (steps.includes('draft')) result.draft = await runDraft(svc, issueId, body.overwrite !== false);
+    if (steps.includes('draft'))
+      result.draft = await runDraft(svc, issueId, body.overwrite !== false, body.revisionNotes);
     return jsonResponse(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

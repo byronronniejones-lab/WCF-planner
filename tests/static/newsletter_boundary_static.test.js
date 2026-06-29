@@ -222,3 +222,24 @@ describe('migration 146 automation boundary', () => {
     expect(preflightDoBlocks).toHaveLength(0);
   });
 });
+
+describe('newsletter draft overwrite guard (admin view)', () => {
+  const view = read(ADMIN_VIEW);
+
+  it('uses an inline confirm, never window.confirm (Codex T9 lock)', () => {
+    expect(stripComments(view)).not.toMatch(/window\.confirm\s*\(/);
+  });
+
+  it('arms a two-step confirm before a blank-note Write/Rewrite replaces an existing draft', () => {
+    // Revise (note present) preserves the draft; a blank-note Write/Rewrite with
+    // existing blocks is the destructive path and must confirm first.
+    expect(view).toMatch(/overwriteRisk\s*=\s*!isReviseMode\s*&&\s*blocks\.length\s*>\s*0/);
+    expect(view).toMatch(/if\s*\(overwriteRisk\s*&&\s*!confirmRewrite\)/);
+    expect(view).toContain('nla-rewrite-confirm');
+  });
+
+  it('counts and warns about placed photos that the overwrite would remove', () => {
+    expect(view).toMatch(/placedPhotoCount\s*=\s*blocks\.filter/);
+    expect(view).toMatch(/b\.type === 'photo' && b\.photoId/);
+  });
+});

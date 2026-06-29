@@ -60,6 +60,10 @@ async function seedNewsletter(supabaseAdmin) {
       draft_payload: {blocks: PUB_BLOCKS},
       published_payload: {blocks: PUB_BLOCKS},
       published_at: new Date().toISOString(),
+      // Bulk insert normalizes columns across rows: since the DRAFT row sets
+      // photo_plan, this row must set it too (a missing key would send NULL and
+      // violate the NOT NULL column).
+      photo_plan: [],
     },
     {
       id: DRAFT.id,
@@ -79,6 +83,7 @@ async function seedNewsletter(supabaseAdmin) {
           {type: 'paragraph', text: 'This issue is still a draft — shown only via the preview link.'},
         ],
       },
+      photo_plan: [{id: 'pp-1', idea: 'The new lambs in the field', section: 'Sheep', photoId: null}],
     },
   ]);
   // Fail loud: PostgREST bulk insert sends a missing key as NULL (bypassing the
@@ -170,12 +175,50 @@ test.describe('admin newsletter (admin)', () => {
     await expect(page.getByRole('link', {name: 'Open preview'})).toHaveCount(0);
     await expect(page.getByRole('button', {name: 'Regenerate link'})).toHaveCount(0);
 
-    // CP-B automation controls render in the one-pass editor: Harvest facts
-    // (facts section) + Generate draft (content section). The buttons trigger
-    // the newsletter-harvest Edge Function; full invocation needs the deploy
-    // gate, so this asserts the wiring is present, not the server round-trip.
-    await expect(page.getByRole('button', {name: 'Harvest facts'})).toBeVisible();
-    await expect(page.getByRole('button', {name: 'Generate draft'})).toBeVisible();
+    // Autopilot, direction-first: the editor leads with the Newsletter Brief
+    // (coverage + readiness + ranked highlights) and the two-step actions —
+    // "Gather facts" (data, no AI) and the AI "Write/Rewrite/Revise draft". The
+    // buttons trigger the newsletter-harvest Edge Function; full invocation needs
+    // the deploy gate, so this asserts the brief surface + wiring, not the round-trip.
+    await expect(page.getByRole('heading', {name: 'Newsletter brief'})).toBeVisible();
+    await expect(page.getByText('Source coverage')).toBeVisible();
+    await expect(page.getByText('Publish readiness')).toBeVisible();
+    await expect(page.getByRole('button', {name: /Gather facts|Re-gather facts/})).toBeVisible();
+    // Published issue already has draft blocks → the AI button reads "Rewrite draft".
+    await expect(page.getByRole('button', {name: /Write draft|Rewrite draft|Revise draft/})).toBeVisible();
     await cleanShot(page, 'admin-editor-desktop');
+  });
+
+  test('surfaces the this-month hero, real settings controls, and the draft brief', async ({page}) => {
+    await page.goto('/admin/newsletter');
+    await expect(page.getByRole('heading', {name: 'Monthly Newsletter'})).toBeVisible();
+    // The current month is surfaced up front with a one-click "gather facts" action.
+    await expect(page.locator('.nla-hero')).toBeVisible();
+    await expect(page.getByRole('button', {name: /Gather this month’s facts|Re-gather facts/})).toBeVisible();
+
+    // Real settings controls replace the free-text boxes.
+    await page.getByRole('button', {name: 'Show settings'}).click();
+    await expect(page.getByText('AI provider')).toBeVisible();
+    await expect(page.getByText('Tone preset')).toBeVisible();
+    await expect(page.getByText('Length / detail')).toBeVisible();
+    await cleanShot(page, 'admin-settings-desktop');
+    await page.getByRole('button', {name: 'Hide settings'}).click();
+
+    // Open the seeded DRAFT issue → the brief + readiness render for a draft.
+    await page.getByRole('row').filter({hasText: DRAFT.title}).getByRole('button', {name: 'Open'}).click();
+    await expect(page.locator('.nla-brief')).toBeVisible();
+    await expect(page.getByRole('heading', {name: 'Newsletter brief'})).toBeVisible();
+    await expect(page.locator('.nla-readiness')).toBeVisible();
+
+    // The AI photo plan (shot-list) renders from the seeded plan, and the
+    // revise-in-place box is present.
+    await expect(page.getByText('Photo plan — shots to get this month')).toBeVisible();
+    await expect(page.getByText('The new lambs in the field')).toBeVisible();
+    await expect(page.getByPlaceholder(/tell the AI what to change/i)).toBeVisible();
+    await cleanShot(page, 'admin-draft-desktop');
+
+    // Mobile capture of the editor + brief for the UI review.
+    await page.setViewportSize({width: 390, height: 844});
+    await cleanShot(page, 'admin-editor-mobile');
   });
 });
