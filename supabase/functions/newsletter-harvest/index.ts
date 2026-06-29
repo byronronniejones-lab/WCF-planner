@@ -153,7 +153,7 @@ async function authenticateAdmin(req: Request, mode: string): Promise<boolean> {
 // animals at the SQL layer (death_date/sale_date/processing_batch_id IS NULL),
 // and births are born-alive only (shapeBirths subtracts deaths). The
 // finance/mortality denylist in the detectors + the ingest RPC is the backstop.
-const HARVEST_APP_STORE_KEYS = ['ppp-v4', 'ppp-feeders-v1', 'ppp-farrowing-v1'];
+const HARVEST_APP_STORE_KEYS = ['ppp-v4', 'ppp-feeders-v1', 'ppp-farrowing-v1', 'ppp-breeders-v1'];
 
 type ScanResult = {rows: Record<string, unknown>[]; available: boolean; error: string | null};
 
@@ -194,6 +194,9 @@ async function assembleHarvestInputAndCoverage(
   const broilerBatches = arr(store.get('ppp-v4'));
   const pigFeederGroups = arr(store.get('ppp-feeders-v1'));
   const pigFarrowings = arr(store.get('ppp-farrowing-v1'));
+  // Transfer audit log — pigs moved from a feeder sub-batch into breeding leave
+  // the on-farm feeder count; detectPigsOnFarm subtracts them (ledger-derived).
+  const pigBreeders = arr(store.get('ppp-breeders-v1'));
   coverage.push(
     coverageEntry('broiler', 'Broilers', {
       available: store.has('ppp-v4'),
@@ -209,16 +212,15 @@ async function assembleHarvestInputAndCoverage(
     }),
   );
 
-  // ── Cattle: active head by herd + born-alive calvings ──
+  // ── Cattle: on-farm head by herd + born-alive calvings ──
+  // On-farm = the current herds ONLY. WCF records a departure by MOVING the
+  // animal to a 'processed' | 'deceased' | 'sold' herd, not by reliably setting
+  // death_date/sale_date/processing_batch_id — so the herd value is the source
+  // of truth for "still here". Mirrors CATTLE_HERD_KEYS in
+  // src/lib/cattleHerdFilters.js (keep these two in sync).
+  const CATTLE_ONFARM_HERDS = ['mommas', 'backgrounders', 'finishers', 'bulls'];
   const cattle = await scanSource(() =>
-    svc
-      .from('cattle')
-      .select('herd')
-      .eq('archived', false)
-      .is('deleted_at', null)
-      .is('death_date', null)
-      .is('sale_date', null)
-      .is('processing_batch_id', null),
+    svc.from('cattle').select('herd').in('herd', CATTLE_ONFARM_HERDS).is('deleted_at', null),
   );
   const cattleHerds = shapeHeadCounts(cattle.rows, 'herd');
   coverage.push(
@@ -245,16 +247,14 @@ async function assembleHarvestInputAndCoverage(
     }),
   );
 
-  // ── Sheep: active head by flock + born-alive lambings ──
+  // ── Sheep: on-farm head by flock + born-alive lambings ──
+  // Same model as cattle: departures move the animal to a 'processed' |
+  // 'deceased' | 'sold' flock, so the flock value is the on-farm source of
+  // truth. Mirrors ALL_FLOCKS minus the outcome flocks in
+  // src/sheep/SheepAnimalPage.jsx (rams | ewes | feeders are on-farm).
+  const SHEEP_ONFARM_FLOCKS = ['rams', 'ewes', 'feeders'];
   const sheep = await scanSource(() =>
-    svc
-      .from('sheep')
-      .select('flock')
-      .eq('archived', false)
-      .is('deleted_at', null)
-      .is('death_date', null)
-      .is('sale_date', null)
-      .is('processing_batch_id', null),
+    svc.from('sheep').select('flock').in('flock', SHEEP_ONFARM_FLOCKS).is('deleted_at', null),
   );
   const sheepFlocks = shapeHeadCounts(sheep.rows, 'flock');
   coverage.push(
@@ -379,6 +379,7 @@ async function assembleHarvestInputAndCoverage(
       broilerBatches,
       pigFeederGroups,
       pigFarrowings,
+      pigBreeders,
       cattleHerds,
       cattleBirths,
       sheepFlocks,
