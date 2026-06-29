@@ -33,10 +33,12 @@ describe('broiler hatch-date auto-activation hotfix', () => {
 
   it('the broiler list displays the computed status, not the stale stored status', () => {
     expect(broilerListSrc).toMatch(/const autoSt = calcPoultryStatus\(b\)/);
-    // CP0 §A4 badge: reconciled <span style={S.badge(S2.bg, S2.tx)}>{autoSt}</span> -> shared <Badge variant=...>{autoSt}</Badge>.
-    // Guard still asserts the COMPUTED autoSt (not stale stored status) is what the row renders.
+    // Badge evolved: <span>{autoSt}</span> -> <Badge variant=...>{autoSt}</Badge> ->
+    // (WI-4 redesign) <Badge variant=...>{processingStatusLabel(autoSt)}</Badge>.
+    // The variant AND the label are both driven by the COMPUTED autoSt, so the
+    // guard still proves the row renders computed status, not the stale stored one.
     expect(broilerListSrc).toMatch(
-      /<Badge variant=\{autoSt === 'active' \? 'ok' : autoSt === 'planned' \? 'warn' : 'neutral'\}>\s*\{autoSt\}\s*<\/Badge>/,
+      /<Badge variant=\{autoSt === 'active' \? 'ok' : autoSt === 'planned' \? 'warn' : 'neutral'\}>\s*\{processingStatusLabel\(autoSt\)\}\s*<\/Badge>/,
     );
   });
 });

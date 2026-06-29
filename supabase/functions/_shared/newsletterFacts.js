@@ -18,10 +18,18 @@
 //     broilerBatches:   [...],   // app_store 'ppp-v4'
 //     pigFeederGroups:  [...],   // app_store 'ppp-feeders-v1'
 //     pigFarrowings:    [...],   // app_store 'ppp-farrowing-v1'
-//     cattleHerds:      [...],   // optional
-//     sheepFlocks:      [...],   // optional
-//     layerProduction:  [...],   // optional egg-collection records
+//     cattleHerds:      [...],   // shaped from `cattle` (active head, by herd)
+//     cattleBirths:     [...],   // shaped from cattle_calving_records (born-alive)
+//     sheepFlocks:      [...],   // shaped from `sheep` (active head, by flock)
+//     sheepBirths:      [...],   // shaped from sheep_lambing_records (born-alive)
+//     layerProduction:  [...],   // shaped from egg_dailys (summed group counts)
+//     pastureMoves:     [...],   // shaped from pasture_move_events
+//     dailySubmissions: [...],   // shaped from daily_submissions
+//     completedTasks:   [...],   // shaped from task_instances (status=completed)
+//     processingBatches:[...],   // shaped from cattle/sheep_processing_batches
 //   }
+//   The DB-row → input shaping (born-alive math, grouping, egg summing) lives in
+//   the pure newsletterHarvestShape module; this module only runs detectors.
 //   Fact = {
 //     detectorKey, program, title, summary, metricValue, displayValue,
 //     sourceRefs:[...], comparison:{}, confidence:'high'|'medium'|'low',
@@ -43,10 +51,18 @@
 const FORBIDDEN_FACT_RE =
   /\b(?:mortalit(?:y|ies)|died|death|deaths|dead|deceased|perished|cull|culled|culls|loss|losses|price|priced|pricing|cost|costs|revenue|profit|profits|income|expense|expenses|dollar|dollars|sale|sales|sold|invoice|invoiced|paid|payment|earnings)\b/i;
 
+// Whole-text finance/mortality check. Exported so detectors that fold free text
+// (e.g. task titles) into a fact can drop individual unsafe strings BEFORE they
+// reach the fact — one bad title then neither leaks nor nukes the whole fact.
+export function isForbiddenText(s) {
+  const t = typeof s === 'string' ? s : '';
+  return FORBIDDEN_FACT_RE.test(t) || /\$/.test(t);
+}
+
 export function isForbiddenFact(fact) {
   if (!fact || typeof fact !== 'object') return true;
   const haystack = `${fact.title || ''} ${fact.summary || ''} ${fact.displayValue || ''} ${fact.program || ''} ${fact.detectorKey || ''}`;
-  return FORBIDDEN_FACT_RE.test(haystack) || /\$/.test(haystack);
+  return isForbiddenText(haystack);
 }
 
 // ── Small pure helpers ──────────────────────────────────────────────────────
@@ -392,6 +408,106 @@ export function detectLayerEggs(input) {
   };
 }
 
+export function detectPastureMoves(input) {
+  const moves = asArray(input.pastureMoves).filter((m) => inPeriod(m && m.date, input.period));
+  if (moves.length === 0) return null;
+  const groups = [...new Set(moves.map((m) => firstStr(m, ['groupLabel'])).filter(Boolean))];
+  const n = moves.length;
+  return {
+    detectorKey: 'pasture_moves',
+    program: 'pasture',
+    title: 'Rotational grazing moves',
+    summary: `${n} animal move${n === 1 ? '' : 's'} across the pastures this month${
+      groups.length ? ` (${groups.length} group${groups.length === 1 ? '' : 's'})` : ''
+    }.`,
+    metricValue: n,
+    displayValue: `${n} move${n === 1 ? '' : 's'}`,
+    sourceRefs: [{module: 'pasture_move_events', ids: groups}],
+    comparison: {},
+    confidence: 'high',
+    evidence: {moves: n, groups},
+  };
+}
+
+export function detectProcessing(input) {
+  const batches = asArray(input.processingBatches).filter((b) => inPeriod(b && b.date, input.period));
+  if (batches.length === 0) return null;
+  let weight = 0;
+  const names = [];
+  for (const b of batches) {
+    weight += firstNum(b, ['hangingWeightLbs']);
+    const nm = firstStr(b, ['name']);
+    if (nm) names.push(nm);
+  }
+  const n = batches.length;
+  const lbs = Math.round(weight);
+  return {
+    detectorKey: 'processing_batches',
+    program: 'production',
+    title: 'Brought to processing',
+    summary:
+      lbs > 0
+        ? `${n} processing batch${n === 1 ? '' : 'es'} completed this month (${lbs} lbs hanging weight).`
+        : `${n} processing batch${n === 1 ? '' : 'es'} completed this month.`,
+    metricValue: n,
+    displayValue: lbs > 0 ? `${n} batch${n === 1 ? '' : 'es'} · ${lbs} lbs` : `${n} batch${n === 1 ? '' : 'es'}`,
+    sourceRefs: [{module: 'processing_batches', ids: names}],
+    comparison: {},
+    confidence: 'medium',
+    evidence: {batches: n, hangingWeightLbs: lbs > 0 ? lbs : null, names},
+  };
+}
+
+export function detectCompletedTasks(input) {
+  // Notable = one-off project work, not a recurring/system chore.
+  const tasks = asArray(input.completedTasks).filter(
+    (t) => t && inPeriod(t.date, input.period) && !t.fromRecurring && firstStr(t, ['designation']) !== 'system',
+  );
+  // Drop any title that trips the finance/mortality boundary BEFORE folding it
+  // into the fact — one unsafe title neither leaks nor drops the whole fact.
+  const safeTitles = tasks.map((t) => firstStr(t, ['title'])).filter((s) => s && !isForbiddenText(s));
+  if (safeTitles.length === 0) return null;
+  const sample = safeTitles.slice(0, 5);
+  const n = safeTitles.length;
+  return {
+    detectorKey: 'completed_tasks',
+    program: 'projects',
+    title: 'Projects completed',
+    summary:
+      n === 1
+        ? `One project finished this month: ${sample[0]}.`
+        : `${n} projects finished this month, including ${sample.slice(0, 3).join(', ')}.`,
+    metricValue: n,
+    displayValue: `${n} project${n === 1 ? '' : 's'}`,
+    sourceRefs: [{module: 'task_instances', ids: []}],
+    comparison: {},
+    confidence: 'medium',
+    evidence: {completed: n, titles: sample},
+  };
+}
+
+export function detectDailyReports(input) {
+  const subs = asArray(input.dailySubmissions).filter((s) => inPeriod(s && s.date, input.period));
+  if (subs.length === 0) return null;
+  const days = new Set(subs.map((s) => isoDay(s && s.date)).filter(Boolean));
+  const people = new Set(subs.map((s) => firstStr(s, ['teamMember'])).filter(Boolean));
+  const n = subs.length;
+  return {
+    detectorKey: 'daily_reports',
+    program: 'team',
+    title: 'Daily field reporting',
+    summary: `The team filed ${n} field report${n === 1 ? '' : 's'} across ${days.size} day${
+      days.size === 1 ? '' : 's'
+    } this month, keeping every program current.`,
+    metricValue: n,
+    displayValue: `${n} report${n === 1 ? '' : 's'} · ${days.size} day${days.size === 1 ? '' : 's'}`,
+    sourceRefs: [{module: 'daily_submissions', ids: []}],
+    comparison: {},
+    confidence: 'medium',
+    evidence: {reports: n, days: days.size, contributors: people.size},
+  };
+}
+
 // Ordered registry — the sort_order in the issue follows this order.
 export const NEWSLETTER_DETECTORS = Object.freeze([
   detectCattleOnFarm,
@@ -403,6 +519,10 @@ export const NEWSLETTER_DETECTORS = Object.freeze([
   detectBroilerOnFarm,
   detectBroilerProcessed,
   detectLayerEggs,
+  detectPastureMoves,
+  detectProcessing,
+  detectCompletedTasks,
+  detectDailyReports,
 ]);
 
 // Drop any candidate that trips the finance/mortality boundary. Pure filter.

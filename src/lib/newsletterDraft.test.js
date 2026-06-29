@@ -4,6 +4,11 @@ import {
   sanitizeBlock,
   composeTemplateDraft,
   buildNewsletterPrompt,
+  resolveTone,
+  sanitizePhotoPlan,
+  mergePhotoPlan,
+  proposePhotoPlan,
+  NEWSLETTER_TONE_PRESETS,
   NEWSLETTER_BLOCK_TYPES,
 } from './newsletterDraft.js';
 import {NEWSLETTER_BLOCK_TYPES as RENDERER_TYPES} from '../newsletter/NewsletterBlocks.jsx';
@@ -107,5 +112,120 @@ describe('buildNewsletterPrompt — fixed template with hard rules', () => {
 describe('whitelist stays in sync with the public renderer', () => {
   it('newsletterDraft and NewsletterBlocks share the exact block whitelist', () => {
     expect([...NEWSLETTER_BLOCK_TYPES]).toEqual([...RENDERER_TYPES]);
+  });
+});
+
+describe('autopilot prompt context + presets', () => {
+  it('resolveTone prefers a custom tone, then a preset, then the default', () => {
+    expect(resolveTone({tone: 'my custom voice'})).toBe('my custom voice');
+    expect(resolveTone({tonePreset: 'celebratory'})).toBe(NEWSLETTER_TONE_PRESETS.celebratory);
+    expect(resolveTone({})).toBe(NEWSLETTER_TONE_PRESETS.warm_credible);
+  });
+
+  it('buildNewsletterPrompt folds in past issues and length guidance', () => {
+    const prompt = buildNewsletterPrompt({
+      issue: {yearMonth: '2026-05'},
+      facts: [{title: 'Calves born', summary: 'seven', displayValue: '7 calves'}],
+      intake: {},
+      lengthDetail: 'brief',
+      pastIssues: [
+        {yearMonth: '2026-04', title: 'April Review', factTitles: ['Cattle on the farm'], bodyText: 'A calm April.'},
+      ],
+    });
+    expect(prompt).toMatch(/PAST ISSUES/);
+    expect(prompt).toContain('April Review');
+    expect(prompt).toContain('Cattle on the farm');
+    expect(prompt).toMatch(/about one page/);
+    // hard rules still present
+    expect(prompt).toMatch(/NEVER mention finances/i);
+  });
+
+  it('composeTemplateDraft groups highlights by program for the detailed length', () => {
+    const input = {
+      issue: {title: 'May Review', yearMonth: '2026-05'},
+      facts: [
+        {title: 'Cattle on the farm', summary: '142 head.', displayValue: '142 head', program: 'cattle'},
+        {title: 'Eggs collected', summary: '900 eggs.', displayValue: '900 eggs', program: 'layer'},
+      ],
+      intake: {},
+      lengthDetail: 'detailed',
+    };
+    const {blocks} = composeTemplateDraft(input);
+    const text = JSON.stringify(blocks);
+    expect(text).toContain('Cattle:');
+    expect(text).toContain('Layers & eggs:');
+  });
+
+  it('composeTemplateDraft brief length uses a single flat highlights list', () => {
+    const {blocks} = composeTemplateDraft({
+      issue: {title: 'May Review', yearMonth: '2026-05'},
+      facts: [{title: 'Cattle', summary: '142 head.', displayValue: '142 head', program: 'cattle'}],
+      intake: {},
+      lengthDetail: 'brief',
+    });
+    expect(blocks.some((b) => b.type === 'list')).toBe(true);
+  });
+});
+
+describe('photo plan (shot-list)', () => {
+  it('sanitizePhotoPlan drops empty ideas and stamps stable ids + null photoId', () => {
+    const out = sanitizePhotoPlan([{idea: 'The calves', section: 'Cattle'}, {idea: '  '}, {section: 'x'}]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({idea: 'The calves', section: 'Cattle', photoId: null});
+    expect(out[0].id).toMatch(/^pp-/);
+    // same idea+section => same id (so a re-proposed slot is stable)
+    expect(sanitizePhotoPlan([{idea: 'The calves', section: 'Cattle'}])[0].id).toBe(out[0].id);
+  });
+
+  it('proposePhotoPlan derives one shot per included program', () => {
+    const plan = proposePhotoPlan({
+      facts: [
+        {program: 'cattle', summary: 'x'},
+        {program: 'cattle', summary: 'y'}, // dedup by program
+        {program: 'layer', summary: 'z'},
+      ],
+    });
+    expect(plan.map((s) => s.section)).toEqual(['Cattle', 'Layers & eggs']);
+  });
+
+  it('mergePhotoPlan keeps fulfilled slots and adds new ideas without duplicating', () => {
+    const existing = sanitizePhotoPlan([{idea: 'The calves', section: 'Cattle'}]);
+    existing[0].photoId = 'nlp-1'; // fulfilled
+    const proposed = [
+      {idea: 'The calves', section: 'Cattle'}, // same as fulfilled → must keep the photo, no dup
+      {idea: 'The hens', section: 'Layers & eggs'}, // new
+    ];
+    const merged = mergePhotoPlan(existing, proposed);
+    expect(merged).toHaveLength(2);
+    const calves = merged.find((s) => s.idea === 'The calves');
+    expect(calves.photoId).toBe('nlp-1');
+    expect(merged.find((s) => s.idea === 'The hens').photoId).toBeNull();
+  });
+
+  it('mergePhotoPlan drops stale unfulfilled ideas the new plan no longer suggests', () => {
+    const existing = sanitizePhotoPlan([{idea: 'Old idea', section: 'X'}]); // unfulfilled
+    const merged = mergePhotoPlan(existing, [{idea: 'New idea', section: 'Y'}]);
+    expect(merged.map((s) => s.idea)).toEqual(['New idea']);
+  });
+});
+
+describe('revision-in-place prompt', () => {
+  it('asks for a photoPlan and, with notes, includes the revision request + current draft', () => {
+    const prompt = buildNewsletterPrompt({
+      issue: {yearMonth: '2026-05'},
+      facts: [{title: 'Calves born', summary: 'seven', displayValue: '7 calves'}],
+      intake: {},
+      revisionNotes: 'warmer tone, shorten the cattle section',
+      currentDraft: {blocks: [{type: 'paragraph', text: 'Existing draft body.'}]},
+    });
+    expect(prompt).toMatch(/"photoPlan"/);
+    expect(prompt).toMatch(/REVISION REQUEST/);
+    expect(prompt).toContain('warmer tone, shorten the cattle section');
+    expect(prompt).toContain('Existing draft body.');
+  });
+
+  it('omits the revision section when there are no notes', () => {
+    const prompt = buildNewsletterPrompt({issue: {yearMonth: '2026-05'}, facts: [], intake: {}});
+    expect(prompt).not.toMatch(/REVISION REQUEST/);
   });
 });

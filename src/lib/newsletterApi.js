@@ -234,9 +234,12 @@ export async function regenerateNewsletterPreviewToken(sb, id) {
 // leaves the function; this only passes the issue id + which steps to run.
 //   steps: ['harvest'] | ['draft'] | ['harvest','draft']
 //   overwrite: when running 'draft', replace existing draft blocks (default true)
-export async function runNewsletterHarvest(sb, {issueId, steps = ['harvest', 'draft'], overwrite = true}) {
+export async function runNewsletterHarvest(
+  sb,
+  {issueId, steps = ['harvest', 'draft'], overwrite = true, revisionNotes = ''},
+) {
   const {data, error} = await sb.functions.invoke('newsletter-harvest', {
-    body: {mode: 'admin', issueId, steps, overwrite},
+    body: {mode: 'admin', issueId, steps, overwrite, revisionNotes},
   });
   if (error) {
     // Edge errors carry the HTTP body on error.context in supabase-js v2.
@@ -253,6 +256,54 @@ export async function runNewsletterHarvest(sb, {issueId, steps = ['harvest', 'dr
   return data || {};
 }
 
+// One-action "Prepare issue": harvest planner facts THEN generate the draft in a
+// single server pass — the autopilot primary action. overwrite replaces existing
+// draft blocks (the admin Prepare button passes true; the monthly cron uses false
+// so it never clobbers admin edits).
+export async function prepareNewsletterIssue(sb, {issueId, overwrite = true}) {
+  return runNewsletterHarvest(sb, {issueId, steps: ['harvest', 'draft'], overwrite});
+}
+
+// Gather facts ONLY (harvest, no AI draft) — the "direction first" entry point.
+// Scan the planner for this month's facts so the admin can curate them and add
+// direction (Q&A, tone) BEFORE the AI writes anything.
+export async function gatherNewsletterFacts(sb, {issueId}) {
+  return runNewsletterHarvest(sb, {issueId, steps: ['harvest']});
+}
+
+// Regenerate the draft only (no re-harvest), optionally with revision notes the
+// AI applies in place to the current draft ("warmer tone", "shorten the cattle
+// section"). Revision notes only affect the Anthropic provider; the offline
+// template composer regenerates deterministically and ignores them.
+export async function regenerateNewsletterDraft(sb, {issueId, revisionNotes = ''}) {
+  return runNewsletterHarvest(sb, {issueId, steps: ['draft'], overwrite: true, revisionNotes});
+}
+
+// Fulfill (or clear) one photo-plan slot with an approved photo. photoId null
+// clears the slot.
+export async function setNewsletterPhotoPlanSlot(sb, {issueId, slotId, photoId = null}) {
+  const {data, error} = await sb.rpc('set_newsletter_photo_plan_slot', {
+    p_issue_id: issueId,
+    p_slot_id: slotId,
+    p_photo_id: photoId ?? null,
+  });
+  if (error) throw new Error(`setNewsletterPhotoPlanSlot: ${error.message || String(error)}`);
+  return data;
+}
+
+// Ask the Edge Function whether the AI provider key is configured (boolean only;
+// the key never leaves the function). Non-throwing — the settings UI treats a
+// failure / pre-deploy function as "unknown" and falls back to the template.
+export async function probeNewsletterAi(sb) {
+  try {
+    const {data, error} = await sb.functions.invoke('newsletter-harvest', {body: {mode: 'admin', probe: true}});
+    if (error) return {ok: false, aiConfigured: false};
+    return {ok: !!(data && data.ok), aiConfigured: !!(data && data.aiConfigured)};
+  } catch (_e) {
+    return {ok: false, aiConfigured: false};
+  }
+}
+
 export async function listNewsletterRunsAdmin(sb, issueId) {
   const {data, error} = await sb.rpc('list_newsletter_runs_admin', {p_issue_id: issueId});
   if (error) throw new Error(`listNewsletterRunsAdmin: ${error.message || String(error)}`);
@@ -267,18 +318,46 @@ export async function getNewsletterSettings(sb) {
 
 export async function updateNewsletterSettings(
   sb,
-  {aiProvider, aiModel, tone, taskAssignee, draftGenDay, publishTargetDay},
+  {
+    aiProvider,
+    aiModel,
+    tone,
+    tonePreset,
+    lengthDetail,
+    photoMin,
+    photoTarget,
+    pastIssueContextCount,
+    taskAssignee,
+    draftGenDay,
+    publishTargetDay,
+  } = {},
 ) {
   const {data, error} = await sb.rpc('update_newsletter_settings', {
     p_ai_provider: aiProvider ?? null,
     p_ai_model: aiModel ?? null,
     p_tone: tone ?? null,
+    p_tone_preset: tonePreset ?? null,
+    p_length_detail: lengthDetail ?? null,
+    p_photo_min: Number.isFinite(photoMin) ? photoMin : null,
+    p_photo_target: Number.isFinite(photoTarget) ? photoTarget : null,
+    p_past_issue_context_count: Number.isFinite(pastIssueContextCount) ? pastIssueContextCount : null,
     p_task_assignee: taskAssignee ?? null,
     p_draft_gen_day: draftGenDay ?? null,
     p_publish_target_day: publishTargetDay ?? null,
   });
   if (error) throw new Error(`updateNewsletterSettings: ${error.message || String(error)}`);
   return data;
+}
+
+// Recent published issues + their included facts — powers the brief's repetition
+// warnings (and any "what did we say last month" admin context).
+export async function getNewsletterRecentPublishedAdmin(sb, {limit = 3, excludeId = null} = {}) {
+  const {data, error} = await sb.rpc('get_newsletter_recent_published_admin', {
+    p_limit: limit,
+    p_exclude_id: excludeId,
+  });
+  if (error) throw new Error(`getNewsletterRecentPublishedAdmin: ${error.message || String(error)}`);
+  return Array.isArray(data) ? data : [];
 }
 
 // ── Staging storage (private) ────────────────────────────────────────────────

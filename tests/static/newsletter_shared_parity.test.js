@@ -21,6 +21,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const PAIRS = [
   ['src/lib/newsletterFacts.js', 'supabase/functions/_shared/newsletterFacts.js'],
   ['src/lib/newsletterDraft.js', 'supabase/functions/_shared/newsletterDraft.js'],
+  ['src/lib/newsletterHarvestShape.js', 'supabase/functions/_shared/newsletterHarvestShape.js'],
   ['src/lib/newsletterCronAuth.js', 'supabase/functions/_shared/newsletterCronAuth.js'],
 ];
 
