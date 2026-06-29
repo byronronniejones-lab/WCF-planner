@@ -25,18 +25,19 @@ function withPeriod(extra) {
 }
 
 describe('newsletter fact detectors — positive, evidence-backed facts', () => {
-  it('broiler on-farm counts active flocks and carries evidence', () => {
+  it('broiler on-farm counts only active flocks as birdCountActual − mortality', () => {
     const fact = detectBroilerOnFarm(
       withPeriod({
         broilerBatches: [
-          {name: 'B-26-04', status: 'brooding', currentCount: 300},
-          {name: 'B-26-03', status: 'processed', currentCount: 250}, // excluded (done)
-          {name: 'B-26-05', status: 'growing', birdCount: 150},
+          {name: 'B-26-04', status: 'active', birdCountActual: 320, mortalityCumulative: 20}, // 300 on farm
+          {name: 'B-26-03', status: 'processed', birdCountActual: 250}, // excluded (done)
+          {name: 'B-26-06', status: 'planned', birdCount: 900}, // excluded (not hatched yet)
+          {name: 'B-26-05', status: 'active', birdCountActual: 150, mortalityCumulative: 0}, // 150 on farm
         ],
       }),
     );
     expect(fact.detectorKey).toBe('broiler_on_farm');
-    expect(fact.metricValue).toBe(450);
+    expect(fact.metricValue).toBe(450); // (320−20) + 150 — planned/processed never counted
     expect(fact.evidence.flockCount).toBe(2);
     expect(fact.confidence).toBe('high');
   });
@@ -103,22 +104,31 @@ describe('newsletter fact detectors — positive, evidence-backed facts', () => 
     expect(fact.displayValue).toBe('2 litters');
   });
 
-  it('pigs on-farm sums sub-batches when present', () => {
+  it('pigs on-farm = ledger current of ACTIVE groups (started − trips − transfers − mortality)', () => {
     const fact = detectPigsOnFarm(
       withPeriod({
         pigFeederGroups: [
           {
-            batchName: 'P-26-01',
+            batchName: 'F1',
+            status: 'active',
+            processingTrips: [{subAttributions: [{subId: 'a', count: 5}]}],
+            pigMortalities: [{sub_batch_name: 'A', count: 2}],
             subBatches: [
-              {name: 'A', headCount: 12},
-              {name: 'B', headCount: 8, status: 'removed'},
+              {id: 'a', name: 'A', status: 'active', giltCount: 20, boarCount: 10}, // 30 −5 −1 −2 = 22
+              {id: 'b', name: 'B', status: 'processed', giltCount: 15, boarCount: 0}, // processed → 0
             ],
           },
-          {batchName: 'P-26-02', headCount: 20},
+          // Parent-only active group: started − trips − transfers − mortality.
+          {batchName: 'F3', status: 'active', giltCount: 8, boarCount: 0, processingTrips: [{pigCount: 3}]}, // 8 − 3 = 5
+          // Planned group is NOT on the farm yet → excluded entirely.
+          {batchName: 'F2', status: 'planned', subBatches: [{id: 'c', name: 'C', status: 'active', giltCount: 100}]},
         ],
+        pigBreeders: [{transferredFromBatch: {batchName: 'F1', subBatchName: 'A'}, sex: 'Gilt'}], // 1 transfer from F1/A
       }),
     );
-    expect(fact.metricValue).toBe(32); // 12 (active sub) + 20 (group), removed sub excluded
+    expect(fact.detectorKey).toBe('pig_on_farm');
+    expect(fact.metricValue).toBe(27); // F1 sub A 22 + F3 parent-only 5; processed/planned never counted
+    expect(fact.evidence.groupCount).toBe(2);
   });
 
   it('cattle on-farm + births read their documented shapes', () => {
@@ -156,7 +166,7 @@ describe('newsletter fact detectors — positive, evidence-backed facts', () => 
   it('detectNewsletterFacts assembles a deterministic, ordered set', () => {
     const facts = detectNewsletterFacts(
       withPeriod({
-        broilerBatches: [{name: 'B1', status: 'growing', currentCount: 100}],
+        broilerBatches: [{name: 'B1', status: 'active', birdCountActual: 100, mortalityCumulative: 0}],
         cattleHerds: [{name: 'H1', headCount: 50}],
       }),
     );

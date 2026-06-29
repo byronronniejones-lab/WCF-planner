@@ -106,28 +106,20 @@ function asArray(v) {
   return Array.isArray(v) ? v : [];
 }
 
-const BROILER_COUNT_KEYS = [
-  'birdsOnFarm',
-  'currentCount',
-  'count',
-  'birdCount',
-  'birds',
-  'placed',
-  'quantity',
-  'headCount',
-];
 const BROILER_PROCESSED_KEYS = ['processedCount', 'birdsProcessed', 'processed', 'dressedCount', 'count', 'quantity'];
-const PIG_HEAD_KEYS = ['headCount', 'currentCount', 'count', 'pigsOnFarm', 'head', 'quantity'];
 // Born-alive ONLY. We never fall back to totalBorn/litterSize, which include
 // stillborn — publishing those as "piglets born alive" would be a mortality leak.
 const PIG_BORN_ALIVE_KEYS = ['bornAlive', 'liveBorn', 'liveBirths', 'pigletsBornAlive', 'alive'];
 const CATTLE_HEAD_KEYS = ['headCount', 'currentCount', 'count', 'head', 'animals', 'quantity'];
 const SHEEP_HEAD_KEYS = ['headCount', 'currentCount', 'count', 'head', 'animals', 'quantity'];
 
+// On-farm = a flock that has hatched and is not yet processed. Anything not
+// explicitly 'active' (planned/processed/inactive/...) has no birds on the
+// ground, so it is excluded — counting 'planned' batches was the inflation bug.
+// Mirrors calcPoultryStatus(b) === 'active' in src/lib/broiler.js (the app
+// auto-reconciles a batch's stored status to that computed status on load).
 function isBroilerActive(batch) {
-  const status = firstStr(batch, ['status']).toLowerCase();
-  if (status === 'processed' || status === 'inactive' || status === 'removed' || status === 'archived') return false;
-  return true;
+  return firstStr(batch, ['status']).toLowerCase() === 'active';
 }
 
 function pluralBirds(n) {
@@ -143,7 +135,11 @@ export function detectBroilerOnFarm(input) {
   let total = 0;
   const ids = [];
   for (const b of batches) {
-    const c = firstNum(b, BROILER_COUNT_KEYS);
+    // Current birds = day-one placed (birdCountActual) minus cumulative
+    // mortality, clamped >= 0 — mirrors computeBroilerOnFarmCounts' projectedBirds
+    // in src/lib/broiler.js. NOT the ordered birdCount (a plan, not head on the
+    // ground), which counted thousands of un-hatched birds.
+    const c = Math.max(0, firstNum(b, ['birdCountActual']) - firstNum(b, ['mortalityCumulative']));
     if (c > 0) {
       total += c;
       ids.push(firstStr(b, ['name', 'batchName', 'id']));
@@ -192,31 +188,104 @@ export function detectBroilerProcessed(input) {
   };
 }
 
-function isPigGroupActive(group) {
-  const status = firstStr(group, ['status']).toLowerCase();
-  return status !== 'processed' && status !== 'inactive' && status !== 'removed' && status !== 'archived';
+// ── Pig on-farm: ledger-derived current head ─────────────────────────────────
+// The app NEVER persists a pig current count; it derives it from the audit
+// ledger — started (giltCount+boarCount) − processing-trip pigs − transfers to
+// breeding (ppp-breeders-v1) − mortality, clamped >= 0. These helpers mirror
+// computeBatchCurrentCount + its chain in src/lib/pig.js, ported for the
+// no-tripSourceSummary path the harvest runs in (no live source summary → trip
+// pigs come from subAttributions / trip.pigCount, exactly as pig.js falls back
+// to without a summary). KEEP IN SYNC with src/lib/pig.js.
+function pigTransfersForSub(breeders, parentBatchName, subBatchName) {
+  let count = 0;
+  if (!Array.isArray(breeders)) return count;
+  for (const b of breeders) {
+    if (!b || !b.transferredFromBatch) continue;
+    if (b.transferredFromBatch.batchName !== parentBatchName) continue;
+    if (b.transferredFromBatch.subBatchName !== subBatchName) continue;
+    count++;
+  }
+  return count;
+}
+function pigTransfersForBatch(breeders, parentBatchName) {
+  let count = 0;
+  if (!Array.isArray(breeders)) return count;
+  for (const b of breeders) {
+    if (!b || !b.transferredFromBatch) continue;
+    if (b.transferredFromBatch.batchName !== parentBatchName) continue;
+    count++;
+  }
+  return count;
+}
+function pigTripPigsForSub(trips, subId) {
+  if (!Array.isArray(trips) || !subId) return 0;
+  let n = 0;
+  for (const t of trips) {
+    const atts = t && Array.isArray(t.subAttributions) ? t.subAttributions : [];
+    for (const a of atts) if (a && a.subId === subId) n += parseInt(a.count) || 0;
+  }
+  return n;
+}
+function pigTripPigCount(trip) {
+  return parseInt(trip && trip.pigCount) || 0;
+}
+function pigMortalityForSub(group, subName) {
+  let n = 0;
+  for (const m of (group && group.pigMortalities) || []) {
+    if (m && m.sub_batch_name === subName) n += parseInt(m.count) || 0;
+  }
+  return n;
+}
+function pigMortalityForBatch(group) {
+  let n = 0;
+  for (const m of (group && group.pigMortalities) || []) n += parseInt(m.count) || 0;
+  return n;
+}
+function pigBatchStartedCount(group) {
+  const gb = (parseInt(group && group.giltCount) || 0) + (parseInt(group && group.boarCount) || 0);
+  if (gb > 0) return gb;
+  if (group && group.farmBorn) return parseInt(group.originalPigCount) || 0;
+  return 0;
+}
+// Per-sub current count: 0 when processed, else started − trips − transfers −
+// mortality (clamped >= 0). Mirrors computeSubCurrentCount.
+function pigSubCurrentCount(group, sub, breeders) {
+  if (!sub || sub.status === 'processed') return 0;
+  const started = (parseInt(sub.giltCount) || 0) + (parseInt(sub.boarCount) || 0);
+  const tripPigs = pigTripPigsForSub((group && group.processingTrips) || [], sub.id);
+  const transfers = pigTransfersForSub(breeders, group && group.batchName, sub.name);
+  const mortality = pigMortalityForSub(group, sub.name);
+  return Math.max(0, started - tripPigs - transfers - mortality);
+}
+// Parent feeder-group current count. With subs: sum of sub currents. Parent-only:
+// started − trip pigs − transfers − mortality. Mirrors computeBatchCurrentCount;
+// the parent-only no-started fallback returns 0 (the harvest has no live daily
+// pig_count to fall back to, unlike the app's render path).
+function pigBatchCurrentCount(group, breeders) {
+  const subs = (group && group.subBatches) || [];
+  if (subs.length > 0) {
+    return subs.reduce((s, sub) => s + pigSubCurrentCount(group, sub, breeders), 0);
+  }
+  const parentTrips = ((group && group.processingTrips) || []).reduce((s, t) => s + pigTripPigCount(t), 0);
+  const parentTransfers = pigTransfersForBatch(breeders, group && group.batchName);
+  const parentMort = pigMortalityForBatch(group);
+  const parentStarted = pigBatchStartedCount(group);
+  if (parentStarted > 0) return Math.max(0, parentStarted - parentTrips - parentTransfers - parentMort);
+  return 0;
 }
 
 export function detectPigsOnFarm(input) {
-  const groups = asArray(input.pigFeederGroups).filter(isPigGroupActive);
+  // On-farm = ACTIVE feeder groups only (excludes planned/processed), counted by
+  // the app's ledger, NOT a persisted field. breeders = ppp-breeders-v1.
+  const groups = asArray(input.pigFeederGroups).filter((g) => firstStr(g, ['status']).toLowerCase() === 'active');
+  const breeders = asArray(input.pigBreeders);
   let total = 0;
   const ids = [];
   for (const g of groups) {
-    const subs = asArray(g.subBatches).filter(isPigGroupActive);
-    if (subs.length > 0) {
-      for (const s of subs) {
-        const c = firstNum(s, PIG_HEAD_KEYS);
-        if (c > 0) {
-          total += c;
-          ids.push(firstStr(s, ['name', 'id']) || firstStr(g, ['batchName', 'id']));
-        }
-      }
-    } else {
-      const c = firstNum(g, PIG_HEAD_KEYS);
-      if (c > 0) {
-        total += c;
-        ids.push(firstStr(g, ['batchName', 'id']));
-      }
+    const c = pigBatchCurrentCount(g, breeders);
+    if (c > 0) {
+      total += c;
+      ids.push(firstStr(g, ['batchName', 'id']));
     }
   }
   if (total <= 0) return null;
