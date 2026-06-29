@@ -38,6 +38,18 @@ function resolveProcessedDate(batch) {
   return todayCentralISO();
 }
 
+function ageAtProcessing(birthDate, processDate) {
+  if (!birthDate || !processDate) return '—';
+  const birthMs = new Date(String(birthDate) + 'T12:00:00Z').getTime();
+  const processMs = new Date(String(processDate) + 'T12:00:00Z').getTime();
+  if (!Number.isFinite(birthMs) || !Number.isFinite(processMs)) return '—';
+  const days = Math.floor((processMs - birthMs) / 86400000);
+  if (days < 0) return '—';
+  const years = Math.floor(days / 365);
+  const months = Math.floor((days % 365) / 30);
+  return years > 0 ? years + 'y ' + months + 'm' : months + 'm';
+}
+
 export default function CattleBatchPage({sb, fmt, authState, Header}) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -334,6 +346,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
   const totalLive = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
   const totalHang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);
   const yieldPct = totalLive > 0 && totalHang > 0 ? Math.round((totalHang / totalLive) * 1000) / 10 : null;
+  const batchProcessDate = batch.actual_process_date || batch.planned_process_date;
   const isComplete = batch.status === 'complete';
   const isScheduled = batch.status === 'scheduled';
   const entityLabel = batch.name || batchId;
@@ -575,6 +588,7 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                   const lv = parseFloat(r.live_weight);
                   const hw = parseFloat(r.hanging_weight);
                   const y = lv > 0 && hw > 0 ? Math.round((hw / lv) * 1000) / 10 : null;
+                  const processingAge = ageAtProcessing(cow?.birth_date, batchProcessDate);
                   const weightDisabled = !canEdit || isComplete;
                   const weightStyle = {
                     fontSize: 13,
@@ -608,6 +622,12 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                           {'#' + (r.tag || cow?.tag || '?')}
                         </span>
                         <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>{cow?.breed || '—'}</span>
+                        <span
+                          data-batch-cow-processing-age={r.cattle_id}
+                          style={{fontSize: 11, color: 'var(--ink-muted)', fontVariantNumeric: 'tabular-nums'}}
+                        >
+                          {'Age at processing ' + processingAge}
+                        </span>
                         {y && (
                           <span style={{fontSize: 11, fontWeight: 600, color: 'var(--text-primary)'}}>
                             {y + '% yield'}
