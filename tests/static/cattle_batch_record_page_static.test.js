@@ -168,6 +168,13 @@ describe('CattleBatchPage — active/complete batch support', () => {
     expect(pageSrc).toContain('Yield');
     expect(pageSrc).toContain('Cost');
   });
+  it('shows each cow age at the batch processing date', () => {
+    expect(pageSrc).toContain('function ageAtProcessing');
+    expect(pageSrc).toContain('const batchProcessDate = batch.actual_process_date || batch.planned_process_date');
+    expect(pageSrc).toContain('const processingAge = ageAtProcessing(cow?.birth_date, batchProcessDate)');
+    expect(pageSrc).toContain('data-batch-cow-processing-age');
+    expect(pageSrc).toContain("'Age at processing ' + processingAge");
+  });
 });
 
 describe('CattleBatchesView — cleaned list view', () => {
