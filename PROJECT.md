@@ -8,11 +8,14 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-06-30.
-Current product checkpoint: `1e7cab0`
-(`Merge remote-tracking branch 'origin/main' into codex/residual-lanes`).
-Latest shipped product merges include residual lanes closure (`365e8c1` /
-`1e7cab0`), Newsletter redesign and production-facts fixes (`bd44a3e` /
-`4c4a259`, PR #54/#55), Newsletter Autopilot (`a1cdcf7`, PR #44), Pasture Map
+Current product checkpoint: `535e373`
+(`Merge pull request #58 ... installable offline Pasture Map hub + map/draw UI fixes`).
+Latest shipped product merges include the Pasture Map field-tweaks trio
+(`f8ebb99` / `d2a4a89` / `535e373`, PR #56/#57/#58 — Field-tab promote + manager
+hard delete + mig `152`, tap-to-place draw, and the installable offline
+`/pasture-map` PWA hub), residual lanes closure (`365e8c1` / `1e7cab0`),
+Newsletter redesign and production-facts fixes (`bd44a3e` / `4c4a259`,
+PR #54/#55), Newsletter Autopilot (`a1cdcf7`, PR #44), Pasture Map
 field/offline/header chrome (`ea02278`, PR #45), Pasture Map draw-temp/marker
 fixes (`8eba126`, PR #46), cattle processing-batch age display (`541d5fe`,
 PR #47), cattle terminal-age animal records (`1ac82ff`, PR #49), and Pasture Map
@@ -108,7 +111,13 @@ Design/function invariants that govern cross-surface behavior live in
   type/acres; verified locally (pasture static 181/181, ephemeral Playwright).
   No pasture PROD SQL was applied during PR #45/#46/#51; migration `150`'s
   `NOTIFY` addition is text-only for future/fresh-env applies and was not
-  re-applied to PROD.
+  re-applied to PROD. The later PR #56/#57/#58 trio (`f8ebb99` / `d2a4a89` /
+  `535e373`, merged 2026-06-30) is also on `main`: PR #56 applied migration `152`
+  (manager hard delete) to TEST and PROD with the role gate, grants, occupancy
+  guard, and no-purge path verified on PROD; PR #57/#58 are code-only (no SQL).
+  The installable `/pasture-map` PWA install + offline behavior is verified by a
+  `pwa_offline_cache` cold-open e2e, but the Add-to-Home-Screen tap itself is a
+  device action Ronnie still needs to confirm on the deployed build.
 - Cattle processing-batch state: PR #47 is merged to `main`. Cattle processing
   batch record rows now show every cow's age at the batch processing date.
   Validation before merge: Prettier on changed files, focused static test
@@ -135,12 +144,15 @@ Design/function invariants that govern cross-surface behavior live in
   newsletter/source/autopilot/residuals worktrees were pruned after their lanes
   merged. Do not delete the preserved folders unless Ronnie explicitly asks.
 - PROD-applied recent migrations include `112` through `116`, `125` through
-  `151`. Migration `143` (`delete_land_area_grazing_history`) remains deployed
+  `152`. Migration `143` (`delete_land_area_grazing_history`) remains deployed
   but unused by the UI. Newsletter migrations `144` and `145` define the tables,
   anon surface, and storage buckets; `146` adds automation/run logging/cron RPC
   support; `151` adds Autopilot settings, source coverage, photo plan, and
-  generation-input extensions. The public anon newsletter surface remains the
-  exact three RPCs from `144`.
+  generation-input extensions. Migration `152`
+  (`152_pasture_map_manager_hard_delete.sql`) widens `hard_delete_land_area` from
+  admin-only to management+admin (occupancy guard, child-detach, and no-purge
+  soft-delete path unchanged); applied to TEST and PROD on 2026-06-30. The public
+  anon newsletter surface remains the exact three RPCs from `144`.
 - Production legacy import: `Processing Events - ALL.xlsx` parsed 69 rows,
   skipped 0, and upserted 69 rows into `production_legacy_events` on PROD by
   stable `source_key`.
@@ -214,6 +226,24 @@ Design/function invariants that govern cross-surface behavior live in
   dropdowns portal to `document.body` so they render above the map. Light keeps
   pasture farm-team-level Map/Field working controls; non-pasture authorization
   is unchanged.
+  - Paddock draw (Map "Draw temp paddock" and Field "Draw paddock") is one custom
+    tap-to-place engine: a map tap drops a vertex at the cursor, each vertex is a
+    draggable handle, the cursor is a crosshair over the whole map (incl. over
+    existing paddocks) with an arrow over the draw bar (Undo/Save/Cancel + a tap
+    hint). There is no fixed-center crosshair overlay, no "Drop point" button, and
+    no Geoman polygon draw; the Leaflet scale readout is non-interactive.
+  - Temp paddocks can be promoted to permanent (and archived/restored/hard-
+    deleted) from the Map Area modal AND a compact phone-first Field action card.
+    Hard delete is management+admin (mig `152`), isolated in a Danger zone.
+  - The active animal group is explicit-only: no implicit `groups[0]` default, so
+    drawing/tapping never silently adds to a rotation. The map draws only the
+    selected group's rotation; the group auto-deselects when navigating Back to
+    the group list or changing tabs (no separate Deselect control).
+  - Pasture Map is an installable PWA hub: `/pasture-map` serves `pasture-map.html`
+    (links `manifest-pasture.webmanifest`, `start_url` `/pasture-map`) so the
+    home-screen icon opens straight into the map and works offline after one
+    online warm-up. Offline tiles are cached via Field "Offline setup". The
+    service-worker cache version is `2026-06-30-pasture-pwa-v1`.
 - Latest validation: Newsletter Autopilot PR #44 had format/lint/unit/build
   green, unit tests 6503/6503, and newsletter public/admin E2E green in CI; it
   received a narrow red-CI waiver for the unrelated repo-wide Playwright
@@ -243,6 +273,37 @@ Design/function invariants that govern cross-surface behavior live in
 The following work is merged to `main` and pushed. Netlify deploys from `main`.
 The current source checkpoint is listed in the header above.
 
+- Pasture Map field-tweaks trio (`f8ebb99` / `d2a4a89` / `535e373`,
+  PR #56/#57/#58, merged 2026-06-30):
+  - PR #56 — Field-tab promote + explicit active group + manager hard delete.
+    Temp paddocks can be promoted to permanent (and archived/restored/hard-
+    deleted) from a compact phone-first Field action card, removing the Map-tab
+    round-trip. The active animal group is now explicit-only (no implicit
+    `groups[0]` default) so drawing/tapping never silently adds to a rotation.
+    Migration `152_pasture_map_manager_hard_delete.sql` widens
+    `hard_delete_land_area` from admin-only to management+admin (occupancy guard,
+    child-detach, and no-purge soft-delete path unchanged); applied to TEST and
+    PROD. Client danger zone + Area-record gate moved to `isManager`.
+  - PR #57 — tap-to-place paddock draw. Both the Map "Draw temp paddock" and the
+    Field "Draw paddock" now run one custom tap-to-place engine: a map tap drops
+    a vertex at the cursor, every vertex is a draggable handle, and the cursor is
+    a crosshair over the whole map (including over existing paddocks) with an
+    arrow/pointer over the draw bar. The fixed-center crosshair overlay, the
+    "Drop point" button, and the Geoman polygon draw path are gone. The Leaflet
+    scale readout was made non-interactive so it stops stealing draw-bar clicks.
+  - PR #58 — installable offline Pasture Map hub + map/draw UI fixes. New
+    `pasture-map.html` entry + `manifest-pasture.webmanifest` (`start_url`
+    `/pasture-map`) + `_redirects` route + `vite.config` input + `sw.js` precache
+    so the home-screen icon opens straight into the map and cold-opens offline
+    after one online warm-up (cache version bumped to `2026-06-30-pasture-pwa-v1`).
+    UI: Field draw-form name/type inputs capped (were full-screen wide); the map
+    draws only the selected group's rotation; the Deselect button is removed and
+    the armed group auto-deselects on Back to the group list (and on tab change).
+  - Validation: prettier, lint 0 errors, pasture + PWA static suites green,
+    `npm run build` (emits `dist/pasture-map.html`), and focused Playwright —
+    pasture cp2/v1_field/light_access, plus `pwa_offline_cache` extended with a
+    `/pasture-map` offline cold-open. The Add-to-Home-Screen install itself is a
+    device action for Ronnie to confirm on the deployed build.
 - Residual lanes closure (`1e7cab0`, pushed 2026-06-30):
   - Pasture Map teardown and Home dashboard console-noise residuals are closed:
     Leaflet layer cleanup is guarded during rapid Map/Field navigation, and
