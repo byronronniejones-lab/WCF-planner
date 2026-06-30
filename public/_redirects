@@ -22,6 +22,10 @@
 /equipment/*     /equipment.html  200
 /fueling         /equipment.html  200
 /fueling/*       /equipment.html  200
+# /pasture-map serves the Pasture Map field hub (start_url=/pasture-map) so the
+# home-screen icon opens straight into the map and works offline in the field.
+/pasture-map     /pasture-map.html  200
+/pasture-map/*   /pasture-map.html  200
 
 # SPA fallback — any other unmatched path serves index.html so client-side
 # routing (React Router) can take over. Status 200 (not 301) so the browser

@@ -22,23 +22,27 @@ describe('PWA app-shell service worker contract', () => {
     expect(main).toMatch(/applyManifestHref\(window\.location\.pathname\);\s*registerAppServiceWorker\(\);/);
   });
 
-  it('pre-caches the three install shells plus manifests, icons, and self-hosted font', () => {
+  it('pre-caches the four install shells plus manifests, icons, and self-hosted font', () => {
     for (const marker of [
       'const SHELL_CACHE = `wcf-app-shell-${CACHE_VERSION}`;',
       'const RUNTIME_CACHE = `wcf-runtime-${CACHE_VERSION}`;',
       "'/index.html'",
       "'/dailys.html'",
       "'/equipment.html'",
+      "'/pasture-map.html'",
       "'/manifest.webmanifest'",
       "'/manifest-dailys.webmanifest'",
       "'/manifest-equipment.webmanifest'",
+      "'/manifest-pasture.webmanifest'",
       "'/icons/icon-192.png'",
       "'/icons/icon-512.png'",
       "'/fonts/hanken-grotesk-latin.woff2'",
     ]) {
       expect(sw).toContain(marker);
     }
-    expect(sw).toContain("for (const shellUrl of ['/index.html', '/dailys.html', '/equipment.html'])");
+    expect(sw).toContain(
+      "for (const shellUrl of ['/index.html', '/dailys.html', '/equipment.html', '/pasture-map.html'])",
+    );
     expect(sw).toContain('await cacheLinkedBuildAssets(shellCache, shellUrl);');
     expect(sw).toContain("value.startsWith('/assets/')");
   });
@@ -53,6 +57,7 @@ describe('PWA app-shell service worker contract', () => {
   it('serves route-specific cached shells for offline navigation', () => {
     expect(sw).toContain("prefixes: ['/dailys', '/webforms'], shell: '/dailys.html'");
     expect(sw).toContain("prefixes: ['/equipment', '/fueling'], shell: '/equipment.html'");
+    expect(sw).toContain("prefixes: ['/pasture-map'], shell: '/pasture-map.html'");
     expect(sw).toContain("if (request.mode === 'navigate')");
     expect(sw).toContain('event.respondWith(handleNavigation(request));');
     expect(sw).toContain("return match ? match.shell : '/index.html';");
@@ -66,7 +71,7 @@ describe('PWA app-shell service worker contract', () => {
   });
 
   it('fetches JS and CSS build assets from the network first so mobile PWAs do not stay pinned to stale bundles', () => {
-    expect(sw).toContain("const CACHE_VERSION = '2026-06-23-mobile-load-hotfix-v1';");
+    expect(sw).toContain("const CACHE_VERSION = '2026-06-30-pasture-pwa-v1';");
     expect(sw).toContain('event.respondWith(networkFirstThenCache(request));');
     expect(sw).toContain('function isFreshBuildAssetRequest(request, url)');
     expect(sw).toContain("request.destination === 'script' || request.destination === 'style'");

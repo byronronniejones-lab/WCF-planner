@@ -1464,7 +1464,7 @@ describe('One-shot redesign: Setup lifecycle / Reports tags / Plan conflict / Fi
     expect(viewSrc).not.toMatch(/window\.(confirm|alert|prompt)\(/);
   });
 
-  it('active group is explicit-only (no groups[0] default) and clears on tab change', () => {
+  it('active group is explicit-only (no groups[0] default) and auto-deselects on navigate-back', () => {
     // No implicit groups[0] fallback: a null active group is a real "nothing
     // armed" state so drawing/tapping never silently adds to a rotation.
     expect(viewSrc).not.toMatch(/groups\.find\(\(group\) => group\.id === activeGroupId\) \|\| groups\[0\]/);
@@ -1477,9 +1477,20 @@ describe('One-shot redesign: Setup lifecycle / Reports tags / Plan conflict / Fi
       viewSrc.indexOf('function switchToolMode'),
     );
     expect(switchBody).toContain('setActiveGroupId(null)');
-    // Visible deselect control + armed-group pill in the group switcher.
-    expect(viewSrc).toContain('data-pasture-group-deselect');
-    expect(viewSrc).toContain('data-pasture-group-armed');
+    // No separate Deselect control: the group-record Back button auto-deselects.
+    expect(viewSrc).not.toContain('data-pasture-group-deselect');
+    expect(viewSrc).not.toContain('data-pasture-group-armed');
+    const recordBody = viewSrc.slice(
+      viewSrc.indexOf('function renderGroupRecord'),
+      viewSrc.indexOf('data-pasture-group-record-back'),
+    );
+    expect(recordBody).toContain('setActiveGroupId(null)');
+    // Only the armed group's rotation draws on the map (no all-groups overlay).
+    const rotMemo = viewSrc.slice(
+      viewSrc.indexOf('const rotationPaths = React.useMemo'),
+      viewSrc.indexOf('const rotationPaths = React.useMemo') + 700,
+    );
+    expect(rotMemo).toContain('if (g.id !== activeGroupId) continue;');
   });
 
   it('Field tab exposes a compact manager action card (promote / archive / hard delete)', () => {

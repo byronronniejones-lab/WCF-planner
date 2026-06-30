@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="theme-color" content="#085041"/>
+<title>WCF Planner</title>
+<!-- Pasture Map install entry. Identical to index.html EXCEPT the manifest
+     link below points at the pasture manifest so iOS Safari / Android Chrome
+     read start_url=/pasture-map at HTML parse time, before any JS. Netlify
+     _redirects routes /pasture-map and /pasture-map/* to this file before the
+     SPA fallback, so Add to Home Screen from the field captures start_url
+     /pasture-map (not the root) and the icon opens straight into the map. The
+     React app boots from /src/main.jsx the same way as index.html — only the
+     install manifest differs. -->
+<link rel="manifest" href="/manifest-pasture.webmanifest"/>
+<link rel="apple-touch-icon" href="/icons/icon-192.png"/>
+<link rel="preconnect" href="https://unpkg.com" crossorigin/>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin/>
+<link rel="preconnect" href="https://pzfujbjtayhkdlxiblwe.supabase.co" crossorigin/>
+<!-- Self-hosted Hanken Grotesk (variable, latin subset) — no Google Fonts CDN so the
+     app font works offline/PWA. Preload keeps FOUT short. @font-face is in <style>. -->
+<link rel="preload" href="/fonts/hanken-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin/>
+<!-- React, ReactDOM, and Supabase are now bundled by Vite via /src/main.jsx (see end of <body>). -->
+<!-- Babel-in-browser was removed when Vite took over JSX transpilation at build time. -->
+<!-- The CDN preload + script tags that lived here pre-migration are deleted. -->
+<!-- Pre-migration index.html backed up at ~/OneDrive/Desktop/WCF-planner-backups/index.html.pre-vite-2026-04-19 -->
+
+<style>
+  :root {
+    --green-50:  #f0f7f4;
+    --green-100: #d8ede6;
+    --green-200: #b2dbd0;
+    --green-300: #7fc2b2;
+    --green-400: #4fa690;
+    --green-500: #2d8a72;
+    --green-600: #1e6e5a;
+    --green-700: #165749;
+    --green-800: #10433a;
+    --green-900: #0b3530;
+    --text-primary:   #111827;
+    --text-secondary: #4b5563;
+    --text-muted:     #9ca3af;
+    --border:         oklch(0.84 0.008 230);
+    --border-strong:  oklch(0.72 0.011 230);
+    --bg-page:        oklch(0.991 0.002 225);
+    --bg-card:        #ffffff;
+    --shadow-sm:  0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+    --shadow-md:  0 4px 6px rgba(0,0,0,.05), 0 2px 4px rgba(0,0,0,.04);
+    --shadow-lg:  0 10px 15px rgba(0,0,0,.06), 0 4px 6px rgba(0,0,0,.04);
+    /* CP0 §A3: 10px radius floor site-wide; 6 retired. (Island keeps 9/12/18.) */
+    --radius-sm:  10px;
+    --radius-md:  12px;
+    --radius-lg:  14px;
+    /* ── Home aesthetic parity token layer (Build Queue item 1) ──
+       Reconcile-down from src/dashboard/homeRedesign.css so site-wide parity
+       surfaces consume ONE source of truth instead of scatter-copying values.
+       --bg-page above is the promoted near-white canvas; --border/--border-strong
+       are retuned to the darker post-hotfix Home contrast. */
+    --surface-2:    oklch(0.975 0.003 225);
+    --divider:      oklch(0.938 0.004 230);
+    --row-hover:    oklch(0.979 0.003 230);
+    --shadow-card:  0 1px 2px rgba(20,30,40,0.045);
+    --shadow-hover: 0 7px 20px rgba(20,30,40,0.1);
+    --brand:        oklch(0.5 0.095 162);
+    --ink:          #000000;
+    --ink-muted:    oklch(0.52 0.012 250);
+    --ink-faint:    oklch(0.69 0.01 250);
+    --c-broiler:    oklch(0.66 0.12 70);
+    --c-layer:      oklch(0.58 0.13 45);
+    --c-pig:        oklch(0.6 0.11 350);
+    --c-cattle:     oklch(0.52 0.15 25);
+    --c-sheep:      oklch(0.58 0.07 195);
+    --danger:       oklch(0.56 0.18 26);
+    --danger-soft:  oklch(0.952 0.038 28);
+    --warn:         oklch(0.66 0.13 70);
+    --warn-ink:     oklch(0.5 0.11 62);
+    --warn-soft:    oklch(0.955 0.05 82);
+    --ok:           oklch(0.56 0.11 156);
+    --ok-ink:       oklch(0.45 0.09 156);
+    --ok-soft:      oklch(0.952 0.036 162);
+    --info:         oklch(0.54 0.13 258);
+    --info-soft:    oklch(0.952 0.034 258);
+  }
+  @font-face {
+    font-family: 'Hanken Grotesk';
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url('/fonts/hanken-grotesk-latin.woff2') format('woff2');
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    background:var(--bg-page);
+    color:var(--text-primary);
+    font-size:14px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  input,select,textarea{
+    font-family:inherit;
+    font-size:13px;
+    padding:8px 11px;
+    border:1px solid var(--border-strong);
+    border-radius:var(--radius-sm);
+    width:100%;
+    outline:none;
+    background:#fff;
+    color:var(--text-primary);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  input:focus,select:focus,textarea:focus{
+    border-color:var(--green-500);
+    box-shadow:0 0 0 3px rgba(45,138,114,.1);
+  }
+  input::placeholder,textarea::placeholder{color:var(--text-muted)}
+  button{font-family:inherit;cursor:pointer}
+  textarea{resize:vertical}
+
+
+    @media print {
+    .no-print{display:none!important}
+    body{background:#fff}
+    .print-area{padding:0!important}
+  }
+  .breed-gantt::-webkit-scrollbar { height: 24px; }
+  .breed-gantt::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 12px; }
+  .breed-gantt::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 12px; border: 4px solid #e5e7eb; }
+  .breed-gantt::-webkit-scrollbar-thumb:hover { background: #374151; }
+
+  /* ── WEBFORM STYLES (scoped to #webform-container) ── */
+  #webform-container{--wf-green:#085041;--wf-green-lt:#ecfdf5;--wf-green-bd:#a7f3d0;--wf-text:#111827;--wf-text2:#4b5563;--wf-muted:#9ca3af;--wf-border:#e5e7eb;--wf-border2:#d1d5db;--wf-bg:#f6f8f7;--wf-r-sm:6px;--wf-r-md:10px;--wf-shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);font-family:'Hanken Grotesk',-apple-system,sans-serif;background:#f6f8f7;color:#111827;font-size:14px;line-height:1.5;min-height:100vh}
+  #webform-container input,#webform-container select,#webform-container textarea{font-family:inherit;font-size:13px;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;width:100%;outline:none;background:#fff;color:#111827;transition:border-color .15s,box-shadow .15s}
+  #webform-container input:focus,#webform-container select:focus,#webform-container textarea:focus{border-color:#085041;box-shadow:0 0 0 3px rgba(8,80,65,.1)}
+  #webform-container input::placeholder,#webform-container textarea::placeholder{color:#9ca3af}
+  #webform-container button{font-family:inherit;cursor:pointer}
+  #webform-container label{display:block;font-size:12px;color:#4b5563;margin-bottom:4px;font-weight:500}
+  #webform-container .header{background:linear-gradient(135deg,#042f23,#085041 60%,#0d6652);color:#fff;padding:14px 1.5rem;display:flex;justify-content:space-between;align-items:center}
+  #webform-container .header-logo{font-size:17px;font-weight:700;letter-spacing:-.4px}
+  #webform-container .header-sub{font-size:11px;font-weight:500;color:rgba(255,255,255,.6);border-left:1px solid rgba(255,255,255,.25);padding-left:10px;margin-left:10px;letter-spacing:.5px}
+  #webform-container .wrap{max-width:540px;margin:0 auto;padding:1.5rem 1rem 3rem}
+  #webform-container .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  #webform-container .card-title{font-size:13px;font-weight:700;color:#4b5563;text-transform:uppercase;letter-spacing:.4px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #e5e7eb}
+  #webform-container .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  #webform-container .field{margin-bottom:12px}
+  #webform-container .field:last-child{margin-bottom:0}
+  #webform-container .toggle-group{display:grid;grid-template-columns:1fr 1fr;border-radius:6px;overflow:hidden;border:1px solid #d1d5db}
+  #webform-container .tgl{padding:9px 0;border:none;background:#f9fafb;color:#4b5563;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;text-align:center;transition:background .12s,color .12s}
+  #webform-container .tgl:first-child{border-right:1px solid #d1d5db}
+  #webform-container .tgl.yes{background:#085041;color:#fff}
+  #webform-container .tgl.no{background:#374151;color:#fff}
+  #webform-container .btn-submit{width:100%;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,#085041,#0d6652);color:#fff;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(8,80,65,.25);transition:opacity .15s}
+  #webform-container .btn-submit:hover{opacity:.92}
+  #webform-container .btn-submit:disabled{opacity:.45;cursor:not-allowed}
+  #webform-container .hint{font-size:11px;color:#9ca3af;margin-top:3px}
+  #webform-container .err{background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#b91c1c;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
+  #webform-container .today{display:inline-block;font-size:11px;padding:2px 8px;background:#ecfdf5;color:#085041;border:1px solid #a7f3d0;border-radius:4px;font-weight:600;margin-top:4px;cursor:pointer;user-select:none}
+  #webform-container .today:hover{background:#d1fae5}
+  #webform-container .success{text-align:center;padding:3rem 1rem;display:none}
+  #webform-container .success-icon{font-size:56px;margin-bottom:16px}
+  #webform-container .success h2{font-size:20px;font-weight:700;margin-bottom:8px}
+  #webform-container .success p{font-size:14px;color:#4b5563;margin-bottom:28px;line-height:1.6}
+  .btn-another{display:inline-block;padding:10px 28px;border:2px solid var(--green);border-radius:var(--r-md);background:#fff;color:var(--green);font-size:14px;font-weight:600;cursor:pointer}
+  .loading-msg{text-align:center;padding:3rem;color:var(--muted);font-size:14px}
+  @media(max-width:400px){.grid2{grid-template-columns:1fr}}
+  /* ── Global openable affordance (CP0 WI-6) ──
+     Contract locked by tests/static/openable_hover_affordance_static.test.js;
+     keep this block byte-identical across index.html / dailys.html /
+     equipment.html.
+       .hoverable-tile — openable div-based card/tile/grid row: lifts 3px on
+       hover/focus (Home parity .lift) with a soft shadow + stronger border.
+       .hoverable-row  — openable <tr> inside a real <table>: raises via a
+       row-hover wash + stronger cell border (transforms/box-shadow are
+       unreliable on table rows, so rows use paint emphasis, not a lift).
+     Both reveal a trailing › chevron (.chev, styled just below this block) and
+     share the same keyboard-focus ring. Hover/focus may only change paint
+     (background/box-shadow/outline/border-color/transform) — never box metrics
+     — so pointing at a row never shifts layout. !important lets the lift/wash
+     win over inline call-site styles; hover is gated behind (hover:hover) so
+     touch devices get the :active state instead of a sticky lift; prefers-
+     reduced-motion drops the lift transform. */
+  .hoverable-tile{cursor:pointer;transition:transform .3s ease,box-shadow .3s ease,border-color .3s ease}
+  .hoverable-row{cursor:pointer}
+  @media (hover:hover){
+    .hoverable-tile:hover{transform:translateY(-3px);box-shadow:var(--shadow-hover);border-color:var(--border-strong) !important}
+    .hoverable-row:hover td{background:var(--row-hover) !important;border-color:var(--border-strong) !important}
+  }
+  .hoverable-tile:active{transform:none;box-shadow:none}
+  .hoverable-row:active td{background:var(--row-hover) !important}
+  .hoverable-tile:focus-visible,.hoverable-row:focus-visible{outline:2px solid var(--brand);outline-offset:-2px;background:var(--row-hover) !important}
+  @media (prefers-reduced-motion: reduce){
+    .hoverable-tile{transition:box-shadow .3s ease,border-color .3s ease}
+    .hoverable-tile:hover{transform:none}
+  }
+  /* WI-6 trailing chevron — fades + slides in on hover/focus of any openable.
+     Opt-in: a surface adds <span class="chev" aria-hidden="true">›</span> as
+     its last child (DataTable rows reserve a trailing cell). Kept OUTSIDE the
+     guarded affordance block on purpose — opacity is not a paint prop the block
+     allows. */
+  .hoverable-tile .chev,.hoverable-row .chev{margin-left:auto;color:var(--text-faint);line-height:1;opacity:0;transform:translateX(-6px);transition:opacity .3s ease,transform .3s ease;pointer-events:none}
+  .hoverable-tile:hover .chev,.hoverable-tile:focus-visible .chev,.hoverable-row:hover .chev,.hoverable-row:focus-visible .chev{opacity:1;transform:none;color:var(--brand)}
+  @media (prefers-reduced-motion: reduce){.hoverable-tile .chev,.hoverable-row .chev{transition:none}}
+
+  /* Authenticated-app mobile overrides. Public webforms set their own
+     layout above and intentionally don't carry these data-* hooks, so
+     these rules only apply to logged-in surfaces. !important is required
+     to win against inline styles set by JSX.
+     Hooks used:
+       data-home-grid     HomeDashboard program/animals grids
+       data-header-bar    Dark top header bar (Header.jsx)
+       data-header-userinfo  Save-status + username container
+       data-header-username  Just the name·role span
+       data-header-subnav    Light section sub-nav bar
+       data-mobile-hscroll   Wide row container → horizontal scroll
+       data-mobile-1col      Multi-col grid → single column on mobile
+       data-mobile-2col      Wide multi-col grid → 2 columns on mobile */
+  @media (max-width: 600px) {
+    [data-home-grid="programs"] {
+      grid-template-columns: 1fr 1fr !important;
+    }
+    [data-home-grid="animals"] {
+      grid-template-columns: 1fr 1fr 1fr !important;
+      gap: 12px !important;
+    }
+    [data-home-grid="animals"] > :last-child {
+      border-left: none !important;
+      padding-left: 0 !important;
+    }
+    [data-header-bar="1"] {
+      padding: 8px 12px !important;
+      gap: 6px !important;
+    }
+    /* Reorder header children at mobile widths so the layout resolves into
+       two predictable rows: brand + (save-status) + burger/sign-out on
+       row 1, then the Webforms+Tasks nav strip on row 2. Without these
+       order tweaks marginLeft:auto on user-info pushed the action group
+       to the right of row 2 and left Tasks orphaned on the left of row 2
+       with a big gap between — visually ragged. */
+    [data-header-bar="1"] [data-header-brand="1"] {
+      order: 1;
+    }
+    [data-header-bar="1"] [data-header-userinfo="1"] {
+      order: 2;
+      margin-left: 0 !important;
+    }
+    [data-header-bar="1"] [data-header-action-group="1"] {
+      order: 3;
+      margin-left: auto !important;
+    }
+    [data-header-bar="1"] [data-header-webforms-group="1"] {
+      order: 4;
+      margin-left: 0 !important;
+    }
+    [data-header-bar="1"] [data-header-tasks-divider="1"] {
+      order: 5;
+      margin-left: 0 !important;
+    }
+    [data-header-username="1"] {
+      display: none !important;
+    }
+    [data-header-subnav="1"] {
+      flex-wrap: nowrap !important;
+      overflow-x: auto !important;
+      -webkit-overflow-scrolling: touch !important;
+      scrollbar-width: none;
+      padding: 8px 12px !important;
+    }
+    [data-header-subnav="1"]::-webkit-scrollbar {
+      display: none;
+    }
+    [data-mobile-hscroll="1"] {
+      overflow-x: auto !important;
+      -webkit-overflow-scrolling: touch !important;
+    }
+    [data-mobile-1col="1"] {
+      grid-template-columns: 1fr !important;
+    }
+    [data-mobile-2col="1"] {
+      grid-template-columns: 1fr 1fr !important;
+    }
+    /* Feed-ledger equation rows: at narrow widths the desktop 7-/8-col
+       grid compresses into unreadable 30px columns. Flip to a vertical
+       stack so each value (and the operator that prefixes it) gets its
+       own line, with the start/consumed/ordered/end content reading
+       naturally top-to-bottom. */
+    [data-mobile-stack-equation="1"] {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: stretch !important;
+      gap: 4px !important;
+    }
+    [data-mobile-stack-equation="1"] > * {
+      text-align: left !important;
+    }
+    /* Broiler BatchForm side nav arrows are position:fixed and overlap
+       the modal body on narrow viewports. Hide on mobile — the user
+       can still cycle batches by closing and tapping the next row in
+       the list. */
+    [data-batchform-side-nav="1"] {
+      display: none !important;
+    }
+  }
+</style>
+<script>
+  // Select all text in number inputs on focus so typing replaces the 0 immediately
+  document.addEventListener('focusin', function(e){
+    if(e.target.type === 'number') e.target.select();
+  });
+  // (window._wcfBabelCache + window._wcfLoadXLSX definitions removed in
+  // Phase 1.5 / 1.4 — Babel-in-browser is gone, xlsx is dynamically
+  // imported from npm in src/main.jsx. The wcf-babel-* localStorage keys
+  // left over from prior visits are purged once on app mount, also in
+  // src/main.jsx.)
+</script>
+<style>
+  /* Loading spinner shown while Babel transpiles + first React render */
+  #wcf-boot-loader {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #f0f7f4 0%, #ecfdf5 100%);
+    font-family: 'Hanken Grotesk', -apple-system, sans-serif;
+    z-index: 99999;
+    transition: opacity .3s;
+  }
+  #wcf-boot-loader.fade-out { opacity: 0; pointer-events: none; }
+  #wcf-boot-loader .logo { font-size: 22px; font-weight: 800; color: #085041; letter-spacing: -.4px; margin-bottom: 6px; }
+  #wcf-boot-loader .tagline { font-size: 12px; color: #6b7280; margin-bottom: 24px; }
+  #wcf-boot-loader .spinner { width: 32px; height: 32px; border: 3px solid #d1fae5; border-top-color: #085041; border-radius: 50%; animation: wcfspin 0.7s linear infinite; }
+  #wcf-boot-loader .step { font-size: 11px; color: #9ca3af; margin-top: 16px; letter-spacing: .3px; }
+  @keyframes wcfspin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="wcf-boot-loader">
+  <div class="logo">🌾 WCF Planner</div>
+  <div class="tagline">Loading...</div>
+  <div class="spinner"></div>
+  <div class="step" id="wcf-boot-step">Starting up</div>
+</div>
+<div id="root"></div>
+<script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

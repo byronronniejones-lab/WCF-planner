@@ -34,11 +34,13 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const dailysHtml = fs.readFileSync(path.join(ROOT, 'dailys.html'), 'utf8');
 const equipmentHtml = fs.readFileSync(path.join(ROOT, 'equipment.html'), 'utf8');
+const pastureHtml = fs.readFileSync(path.join(ROOT, 'pasture-map.html'), 'utf8');
 const redirects = fs.readFileSync(path.join(ROOT, 'public/_redirects'), 'utf8');
 const viteConfig = fs.readFileSync(path.join(ROOT, 'vite.config.js'), 'utf8');
 const rootManifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/manifest.webmanifest'), 'utf8'));
 const dailysManifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/manifest-dailys.webmanifest'), 'utf8'));
 const equipmentManifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/manifest-equipment.webmanifest'), 'utf8'));
+const pastureManifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/manifest-pasture.webmanifest'), 'utf8'));
 
 function manifestHref(html) {
   const m = html.match(/<link\s+rel="manifest"\s+href="([^"]+)"\s*\/?>/);
@@ -60,6 +62,11 @@ describe('Manifest start_url values', () => {
     expect(equipmentManifest.start_url).toBe('/equipment');
     expect(equipmentManifest.scope).toBe('/');
   });
+
+  it('pasture manifest start_url is "/pasture-map" so the field icon opens the map', () => {
+    expect(pastureManifest.start_url).toBe('/pasture-map');
+    expect(pastureManifest.scope).toBe('/');
+  });
 });
 
 describe('Manifest <link> in HTML entries', () => {
@@ -75,16 +82,22 @@ describe('Manifest <link> in HTML entries', () => {
     expect(manifestHref(equipmentHtml)).toBe('/manifest-equipment.webmanifest');
   });
 
-  it('all three HTMLs boot the same React app from /src/main.jsx', () => {
+  it('pasture-map.html links to /manifest-pasture.webmanifest', () => {
+    expect(manifestHref(pastureHtml)).toBe('/manifest-pasture.webmanifest');
+  });
+
+  it('all HTMLs boot the same React app from /src/main.jsx', () => {
     expect(indexHtml).toMatch(/<script\s+type="module"\s+src="\/src\/main\.jsx">/);
     expect(dailysHtml).toMatch(/<script\s+type="module"\s+src="\/src\/main\.jsx">/);
     expect(equipmentHtml).toMatch(/<script\s+type="module"\s+src="\/src\/main\.jsx">/);
+    expect(pastureHtml).toMatch(/<script\s+type="module"\s+src="\/src\/main\.jsx">/);
   });
 
-  it('all three HTMLs include the boot-loader so anti-flash UX matches', () => {
+  it('all HTMLs include the boot-loader so anti-flash UX matches', () => {
     expect(indexHtml).toMatch(/id="wcf-boot-loader"/);
     expect(dailysHtml).toMatch(/id="wcf-boot-loader"/);
     expect(equipmentHtml).toMatch(/id="wcf-boot-loader"/);
+    expect(pastureHtml).toMatch(/id="wcf-boot-loader"/);
   });
 });
 
@@ -125,6 +138,11 @@ describe('Netlify public/_redirects rule order', () => {
     expect(redirects).toMatch(/^\/fueling\/\*\s+\/equipment\.html\s+200\s*$/m);
   });
 
+  it('routes /pasture-map and /pasture-map/* to /pasture-map.html', () => {
+    expect(redirects).toMatch(/^\/pasture-map\s+\/pasture-map\.html\s+200\s*$/m);
+    expect(redirects).toMatch(/^\/pasture-map\/\*\s+\/pasture-map\.html\s+200\s*$/m);
+  });
+
   it('the /* catch-all to /index.html is the last redirect rule', () => {
     expect(redirects).toMatch(/\/\*\s+\/index\.html\s+200\s*$/);
     // All hub lines must appear before the catch-all.
@@ -142,14 +160,20 @@ describe('Netlify public/_redirects rule order', () => {
     for (const i of equipmentLineIdxs) {
       expect(i).toBeLessThan(catchAllIdx);
     }
+    const pastureLineIdxs = lines.map((l, i) => (/pasture-map\.html/.test(l) ? i : -1)).filter((i) => i !== -1);
+    expect(pastureLineIdxs.length).toBe(2); // /pasture-map, /pasture-map/*
+    for (const i of pastureLineIdxs) {
+      expect(i).toBeLessThan(catchAllIdx);
+    }
   });
 });
 
 describe('vite.config.js multi-page build inputs', () => {
-  it('declares index.html, dailys.html, and equipment.html as rollup inputs', () => {
+  it('declares index, dailys, equipment, and pasture-map as rollup inputs', () => {
     expect(viteConfig).toMatch(/main:\s*resolve\(__dirname,\s*'index\.html'\)/);
     expect(viteConfig).toMatch(/dailys:\s*resolve\(__dirname,\s*'dailys\.html'\)/);
     expect(viteConfig).toMatch(/equipment:\s*resolve\(__dirname,\s*'equipment\.html'\)/);
+    expect(viteConfig).toMatch(/'pasture-map':\s*resolve\(__dirname,\s*'pasture-map\.html'\)/);
   });
 
   it('pins the production syntax target below modern Safari-only defaults for older mobile browsers', () => {
