@@ -2709,6 +2709,9 @@ a.pm-btn {
 
 .pm-drawform-row .pm-field {
   flex: 1 1 150px;
+  /* Cap the name/type inputs so they don't stretch the full width of the
+     Field draw bar (the name box was running the whole screen). */
+  max-width: 420px;
 }
 
 .pm-drawform-metric {
@@ -3651,17 +3654,6 @@ a.pm-btn {
 .pm-field-action-note {
   font-size: 13px;
   color: #4a5750;
-}
-
-/* "Adding to <group>" pill + Deselect in the Map group-switcher head, shown only
-   while an animal group is explicitly armed for add-to-rotation. */
-.pm-group-armed {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #2f7a46;
 }
 
 /* ==========================================================================

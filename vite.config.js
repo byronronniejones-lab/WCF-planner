@@ -9,13 +9,14 @@ import react from '@vitejs/plugin-react';
 //
 // Multi-page entries (PWA install: each hub needs its own HTML so the install
 // banner reads the hub-specific manifest at HTML parse time, before any JS):
-//   - index.html      — default; links /manifest.webmanifest (start_url /).
-//   - dailys.html     — links /manifest-dailys.webmanifest (start_url /dailys).
-//   - equipment.html  — links /manifest-equipment.webmanifest (start_url /equipment).
-// Netlify _redirects routes /dailys*, /equipment*, and the legacy /fueling*
-// to the right HTML before the SPA fallback so the install banner reads the
-// right manifest at HTML parse time. All three HTMLs boot the same React
-// app from /src/main.jsx — only the install manifest differs.
+//   - index.html       — default; links /manifest.webmanifest (start_url /).
+//   - dailys.html      — links /manifest-dailys.webmanifest (start_url /dailys).
+//   - equipment.html   — links /manifest-equipment.webmanifest (start_url /equipment).
+//   - pasture-map.html — links /manifest-pasture.webmanifest (start_url /pasture-map).
+// Netlify _redirects routes /dailys*, /equipment*, /pasture-map*, and the legacy
+// /fueling* to the right HTML before the SPA fallback so the install banner reads
+// the right manifest at HTML parse time. All HTMLs boot the same React app from
+// /src/main.jsx — only the install manifest differs.
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -27,6 +28,7 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         dailys: resolve(__dirname, 'dailys.html'),
         equipment: resolve(__dirname, 'equipment.html'),
+        'pasture-map': resolve(__dirname, 'pasture-map.html'),
       },
     },
   },

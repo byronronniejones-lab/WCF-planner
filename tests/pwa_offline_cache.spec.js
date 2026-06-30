@@ -5,7 +5,15 @@ test.use({storageState: {cookies: [], origins: []}});
 function cachedShellFor(pathname) {
   if (pathname.startsWith('/equipment') || pathname.startsWith('/fueling')) return '/equipment.html';
   if (pathname.startsWith('/dailys') || pathname.startsWith('/webforms')) return '/dailys.html';
+  if (pathname.startsWith('/pasture-map')) return '/pasture-map.html';
   return '/index.html';
+}
+
+function expectedManifestFor(pathname) {
+  if (pathname.startsWith('/equipment') || pathname.startsWith('/fueling')) return '/manifest-equipment.webmanifest';
+  if (pathname.startsWith('/dailys') || pathname.startsWith('/webforms')) return '/manifest-dailys.webmanifest';
+  if (pathname.startsWith('/pasture-map')) return '/manifest-pasture.webmanifest';
+  return '/manifest.webmanifest';
 }
 
 async function waitForServiceWorkerControl(page) {
@@ -59,10 +67,7 @@ async function expectOfflineColdOpen(context, page, pathname) {
     await expect(page.locator('#wcf-boot-loader')).toHaveCount(0, {timeout: 15_000});
     await expect(page.locator('[data-login-screen]')).toBeVisible({timeout: 15_000});
     await expect(page).toHaveURL(new RegExp(`${pathname}/?$`));
-    await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
-      'href',
-      pathname.startsWith('/equipment') ? '/manifest-equipment.webmanifest' : '/manifest-dailys.webmanifest',
-    );
+    await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', expectedManifestFor(pathname));
   } finally {
     await context.setOffline(false);
   }
@@ -76,4 +81,9 @@ test('daily reports icon can cold-open /dailys after one online warm-up', async 
 test('equipment icon can cold-open /equipment after one online warm-up', async ({page, context}) => {
   await warmAppShell(page, '/equipment');
   await expectOfflineColdOpen(context, page, '/equipment');
+});
+
+test('pasture-map icon can cold-open /pasture-map after one online warm-up', async ({page, context}) => {
+  await warmAppShell(page, '/pasture-map');
+  await expectOfflineColdOpen(context, page, '/pasture-map');
 });

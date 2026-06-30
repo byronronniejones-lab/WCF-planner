@@ -1,4 +1,4 @@
-const CACHE_VERSION = '2026-06-23-mobile-load-hotfix-v1';
+const CACHE_VERSION = '2026-06-30-pasture-pwa-v1';
 const SHELL_CACHE = `wcf-app-shell-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `wcf-runtime-${CACHE_VERSION}`;
 const CACHE_NAMES = new Set([SHELL_CACHE, RUNTIME_CACHE]);
@@ -12,9 +12,12 @@ const CORE_URLS = [
   '/equipment',
   '/equipment.html',
   '/fueling',
+  '/pasture-map',
+  '/pasture-map.html',
   '/manifest.webmanifest',
   '/manifest-dailys.webmanifest',
   '/manifest-equipment.webmanifest',
+  '/manifest-pasture.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/fonts/hanken-grotesk-latin.woff2',
@@ -23,6 +26,7 @@ const CORE_URLS = [
 const HTML_SHELL_BY_PATH = [
   {prefixes: ['/dailys', '/webforms'], shell: '/dailys.html'},
   {prefixes: ['/equipment', '/fueling'], shell: '/equipment.html'},
+  {prefixes: ['/pasture-map'], shell: '/pasture-map.html'},
 ];
 
 self.addEventListener('install', (event) => {
@@ -66,7 +70,7 @@ async function precacheAppShell() {
   const shellCache = await caches.open(SHELL_CACHE);
   await Promise.all(CORE_URLS.map((url) => putFresh(shellCache, url)));
 
-  for (const shellUrl of ['/index.html', '/dailys.html', '/equipment.html']) {
+  for (const shellUrl of ['/index.html', '/dailys.html', '/equipment.html', '/pasture-map.html']) {
     await cacheLinkedBuildAssets(shellCache, shellUrl);
   }
 }

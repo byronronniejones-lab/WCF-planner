@@ -285,9 +285,11 @@ try {
 //   - manifest.webmanifest          (start_url /)         — authenticated app root
 //   - manifest-dailys.webmanifest   (start_url /dailys)   — operator daily-reports hub
 //   - manifest-equipment.webmanifest (start_url /equipment) — equipment/fueling hub
+//   - manifest-pasture.webmanifest  (start_url /pasture-map) — pasture map field hub
 // The link[rel="manifest"] href tracks the active hub:
 //   - /equipment* or /fueling*    → equipment manifest
 //   - /dailys* or /webforms*      → dailys manifest
+//   - /pasture-map*               → pasture manifest
 //   - everything else             → root manifest
 // The HTML <link> tag is the install source-of-truth (Add to Home Screen
 // snapshots it at HTML parse time), so Netlify _redirects routes hub URLs
@@ -305,6 +307,8 @@ function applyManifestHref(pathname) {
       next = '/manifest-equipment.webmanifest';
     } else if (pathname.startsWith('/dailys') || pathname.startsWith('/webforms')) {
       next = '/manifest-dailys.webmanifest';
+    } else if (pathname.startsWith('/pasture-map')) {
+      next = '/manifest-pasture.webmanifest';
     }
     if (link.getAttribute('href') !== next) link.setAttribute('href', next);
   } catch (e) {

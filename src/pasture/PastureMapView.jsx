@@ -1100,6 +1100,9 @@ export default function PastureMapView({Header, authState}) {
   const rotationPaths = React.useMemo(() => {
     const out = [];
     for (const g of groups) {
+      // Only the explicitly selected (armed) group's rotation draws on the map;
+      // with no group selected the map stays clean.
+      if (g.id !== activeGroupId) continue;
       const ids = rotations[g.id] || [];
       if (!ids.length) continue;
       const loc = groupLocation[g.id];
@@ -2730,21 +2733,7 @@ export default function PastureMapView({Header, authState}) {
       <div className="pm-card pm-group-table-card pm-tile-card" data-surface="pasture-group-table">
         <div className="pm-card-head">
           <div className="pm-card-title">Animal groups</div>
-          {activeGroup ? (
-            <span className="pm-group-armed" data-pasture-group-armed={activeGroup.groupKey || activeGroup.id}>
-              Adding to <strong>{activeGroup.name}</strong>
-              <button
-                type="button"
-                className="pm-btn pm-btn-sm"
-                onClick={() => setActiveGroupId(null)}
-                data-pasture-group-deselect="1"
-              >
-                Deselect
-              </button>
-            </span>
-          ) : (
-            <span>{groups.length} groups</span>
-          )}
+          <span>{groups.length} groups</span>
         </div>
         {sections.length === 0 ? (
           <div className="pm-tile-empty">No active planner groups yet.</div>
@@ -3037,7 +3026,14 @@ export default function PastureMapView({Header, authState}) {
           <button
             type="button"
             className="pm-btn pm-btn-sm"
-            onClick={() => (source === 'reports' ? setReportGroupId(null) : setSelectedGroupId(null))}
+            onClick={() => {
+              // Navigating back to the group list auto-deselects the armed group
+              // (no separate Deselect control): the map rotation + add-to-rotation
+              // target clear when you leave the record.
+              setActiveGroupId(null);
+              if (source === 'reports') setReportGroupId(null);
+              else setSelectedGroupId(null);
+            }}
             data-pasture-group-record-back="1"
           >
             &larr; {source === 'reports' ? 'All records' : 'Groups'}
