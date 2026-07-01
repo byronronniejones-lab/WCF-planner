@@ -8,10 +8,10 @@ load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
 Last updated: 2026-07-01.
-Current `main`/source tip: `837a7d3` (a docs-only PROJECT.md reconciliation).
-Last actual code/product checkpoint: `c668a2a` (PR #59, Newsletter archive-link
-gating, migration `153`). The docs-only merges since then (`b75e4b6`, `bb9df54`,
-`8735930`/PR #60, `14e7257`, `837a7d3`) carry no product-code change.
+Current wrap checkpoints: `1e8d58b` (PROJECT.md cleanup) plus `f32c2a1` (Cattle
+Herds grouped-default / flat-controlled hotfix). Last code/product checkpoint:
+`f32c2a1`. Previous newsletter checkpoint: `c668a2a` (PR #59, Newsletter
+archive-link gating, migration `153`).
 Shipped history lives in `git log` and `archive/SESSION_LOG.md`; durable behavior
 lives in the Load-Bearing Contracts below; migration/live state lives in Current
 State and Backend And Data State. Do not re-enumerate the changelog in this header.
@@ -67,9 +67,9 @@ Design/function invariants that govern cross-surface behavior live in
 
 ## Current State
 
-- Production deploy: Netlify auto-deploys from GitHub `main`. Current `main` tip
-  is `837a7d3` (docs-only). The last code/product merge is `c668a2a` (PR #59,
-  Newsletter archive-link gating). Product code is unchanged since PR #59.
+- Production deploy: Netlify auto-deploys from GitHub `main`. This wrap merges
+  the PROJECT.md cleanup (`1e8d58b`) and Cattle Herds hotfix (`f32c2a1`). The
+  latest code/product checkpoint is `f32c2a1`.
 - Newsletter live state: Autopilot + direction-first redesign + fact fixes +
   archive-link gating are merged (PR #44/#54/#55/#59). Migrations `146`/`151`/`153`
   are PROD-applied; `newsletter-harvest` is deployed (PROD v5 / TEST v1);
@@ -99,14 +99,22 @@ Design/function invariants that govern cross-surface behavior live in
   via `src/lib/processingStatusDisplay.js` (display-only; stored values are
   unchanged). See the Processing Calendar contract for the mapping and the
   pig-specific zero-head exception.
+- Cattle Herds hotfix (`f32c2a1`): `/cattle/herds` defaults to grouped herd
+  sections when no filters/search/non-default sort are active. Any active
+  filter/search/non-default sort switches to one flat matched-results table.
+  The `Sold` herd filter is sold-only and flat (no Processed/Deceased/Sold
+  section headers). `Last Activity` sort/column uses the cattle animal Activity
+  stream and shows date/time.
 - `tasks-cron` Edge Function is active in PROD: recurring + system-task generation
   with batch/group entity labels, plus To Do approval/originator notifications.
 - Broiler derived-data drift lane is closed and verified in PROD.
 - Dependency hardening is complete: Vite/Vitest/plugin-react majors upgraded,
   SheetJS pinned to the patched 0.20.3 tarball, Node pinned to 22 for Netlify, and
   `npm audit` is 0 on the hardened lockfile.
-- Worktree inventory: three worktrees — `C:/Users/Ronni/WCF-planner` (this docs
+- Worktree inventory: four worktrees — `C:/Users/Ronni/WCF-planner` (this docs
   lane, `docs/pasture-map-session-state`),
+  `C:/Users/Ronni/WCF-planner-codex-cattle-herds-hotfix`
+  (`hotfix/cattle-herds-activity-sort`, pushed and merged into this wrap branch),
   `C:/Users/Ronni/WCF-planner-newsletter-redesign` (`main`), and
   `C:/Users/Ronni/WCF-planner-codex-residuals` (still on the old
   `codex/persistent-login` branch; a merged lane, not a standing build worktree).
@@ -123,10 +131,10 @@ Per-PR shipped history is not maintained here. For what shipped and when, read
 Durable behavior lives in the Load-Bearing Contracts below; current migration and
 live state lives in Current State and Backend And Data State.
 
-Most recent session: the Pasture Map field-tweaks trio (PR #56/#57/#58 — Field-tab
-promote, tap-to-place draw, installable offline `/pasture-map` PWA; migration `152`
-PROD-applied) and the residual-lanes closure (`1e7cab0`), both on `main` at/under
-`837a7d3`.
+Most recent session: PROJECT.md cleanup (`1e8d58b`) plus Cattle Herds hotfix
+(`f32c2a1`) on top of the Pasture Map field-tweaks trio (PR #56/#57/#58 —
+Field-tab promote, tap-to-place draw, installable offline `/pasture-map` PWA;
+migration `152` PROD-applied) and the residual-lanes closure (`1e7cab0`).
 
 ---
 
@@ -1211,13 +1219,10 @@ Workflow/worktable entities:
 
 ### Processing Calendar
 
-- Not shipped yet. The Processing Calendar is the planned Asana replacement for
-  the `SF Processing Calendar ` project, not the existing `/production`
-  reporting page.
-- The active build plan for this unbuilt lane lives only in Build Queue item 2
-  (`Processing Calendar Asana import and native workflow`). Do not duplicate or
-  fork that plan elsewhere in this file; update Build Queue item 2 as Ronnie
-  locks each remaining field/status/import decision.
+- Processing Calendar is distinct from the existing `/production` reporting
+  page. Build Queue item 2 (`Processing Calendar Asana import and native
+  workflow`) is the only home for its build scope; do not duplicate or fork that
+  plan elsewhere in this file.
 - `/production` remains the processed-output reporting surface. The Processing
   Calendar should be a workflow/schedule/record surface for processing batches,
   milestones, comments, attachments, custom fields, and subtasks.
@@ -1228,11 +1233,8 @@ Workflow/worktable entities:
   just to change labels. Pig batch displays must use the pig-specific helper
   because raw `active` can mean either a future zero-head placeholder
   (`Planned`) or pigs already in the feeder workflow (`In Process`).
-- The Processing Calendar table/drawer look-and-feel (Asana-like row lift, slight
-  shadow, and a hover/focus chevron; no flat background-only hover) is unbuilt UI
-  and is specified in Build Queue item 2, not restated here.
 - The Asana token is a live secret and must not be committed, pasted into docs,
-  or stored in source. Future importer work must use Supabase Vault or an
+  or stored in source. Importer implementations must use Supabase Vault or an
   equivalent approved secret path.
 - Existing CP0/design-system contracts apply. Do not copy prototype styles that
   conflict with true-black text, radius floor, closed badge set, table hover,
@@ -1475,13 +1477,19 @@ Workflow/worktable entities:
 - Active cattle herds: `mommas`, `backgrounders`, `finishers`, `bulls`.
 - Active sheep flocks: `rams`, `ewes`, `feeders`.
 - Outcome states are `processed`, `deceased`, `sold`.
-- Cattle Herds and Sheep Flocks render a single always-flat list (the
-  grouped/flat view toggle was removed). A column/display picker chooses which
-  of the full field set shows; `tag` is always shown; the choice persists in
-  saved views (`columnVisible` gates `cowTableColumns` / `flatColumns`). Outcome
-  herds/flocks stay browsable in `CollapsibleOutcomeSections` /
-  `SheepCollapsibleOutcomeSections` below the flat list. Do not reintroduce the
-  per-herd/per-flock grouped tiles or a `viewMode` toggle.
+- Cattle Herds default to grouped herd sections when no filters/search/non-default
+  sort are active. Any active filter/search/non-default sort renders one flat
+  matched-results table through the shared `DataTable`. The `Sold` herd filter
+  is flat and sold-only; it must not retain Processed/Deceased/Sold group
+  headers. `Last Activity` sort/column reads the cattle animal Activity stream
+  through `listActivityEvents`, shows date/time, defaults newest-first, and sorts
+  missing activity last.
+- Sheep Flocks render a single always-flat list (the grouped/flat view toggle was
+  removed). A column/display picker chooses which of the full field set shows;
+  `tag` is always shown; the choice persists in saved views (`columnVisible`
+  gates `flatColumns`). Outcome flocks stay browsable in
+  `SheepCollapsibleOutcomeSections` below the flat list. Do not reintroduce a
+  sheep `viewMode` toggle.
 - Heifer-to-cow promotion fires from both calving records and calf-row dam links.
 - Manual transfer goes through `transfer_cattle_animal` /
   `transfer_sheep_animal`.
