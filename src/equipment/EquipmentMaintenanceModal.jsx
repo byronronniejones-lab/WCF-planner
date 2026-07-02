@@ -6,6 +6,7 @@ import {getProgramColor} from '../lib/programColors.js';
 import {getReadableText} from '../lib/styles.js';
 import {newClientSubmissionId} from '../lib/clientSubmissionId.js';
 import {imageAltText} from '../lib/imageAlt.js';
+import {recordActivityEvent} from '../lib/activityApi.js';
 import {recordSaveButton, recordSecondaryButton} from '../shared/recordPageControls.jsx';
 
 export default function EquipmentMaintenanceModal({sb, equipment, existing, authState, onClose, onSaved}) {
@@ -85,6 +86,7 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
       team_member: (authState && authState.name) || null,
     };
     let error;
+    const isNewEvent = !(existing && existing.id);
     if (existing && existing.id) {
       ({error} = await sb.from('equipment_maintenance_events').update(rec).eq('id', existing.id));
     } else {
@@ -104,6 +106,34 @@ export default function EquipmentMaintenanceModal({sb, equipment, existing, auth
       setErr('Save failed: ' + error.message);
       setSaving(false);
       return;
+    }
+    // Best-effort record.created on the equipment.item — only for a genuine new
+    // event (skip edits and the duplicate-submission short-circuit above), so the
+    // create leg is symmetric with the audited delete_equipment_maintenance_event.
+    if (isNewEvent) {
+      try {
+        await recordActivityEvent(sb, {
+          entityType: 'equipment.item',
+          entityId: equipment.id,
+          eventType: 'record.created',
+          entityLabel: equipment.name || equipment.id,
+          body:
+            'Logged maintenance event' +
+            (rec.title ? ' "' + rec.title + '"' : '') +
+            ' on ' +
+            (equipment.name || equipment.id),
+          payload: {
+            record: 'equipment.maintenance',
+            event_type: rec.event_type,
+            event_date: rec.event_date,
+            title: rec.title,
+            cost: rec.cost,
+            team_member: rec.team_member,
+          },
+        });
+      } catch (_e) {
+        /* best-effort audit trail */
+      }
     }
     setSaving(false);
     onSaved();

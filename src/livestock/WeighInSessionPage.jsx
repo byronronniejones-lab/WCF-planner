@@ -955,6 +955,21 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
     ]);
     const animalTable = session.species === 'sheep' ? 'sheep' : 'cattle';
     await sb.from(animalTable).update({tag: newTag, old_tags: updatedOldTags}).eq('id', knownCowId);
+    // Best-effort: also log the tag change on the ANIMAL's own feed (the existing
+    // weighin.session event below only scopes the identity change to the session).
+    try {
+      const animalChanges = buildChanges({tag: priorTag}, {tag: newTag}, {labels: {tag: 'Tag'}});
+      if (animalChanges.length) {
+        await recordFieldChange(sb, {
+          entityType: session.species === 'sheep' ? 'sheep.animal' : 'cattle.animal',
+          entityId: knownCowId,
+          entityLabel: newTag || priorTag || knownCowId,
+          changes: animalChanges,
+        });
+      }
+    } catch (_e) {
+      /* best-effort audit trail */
+    }
     await sb.from('weigh_ins').update({new_tag_flag: false}).eq('id', entry.id);
     const commentsTable2 = session.species === 'sheep' ? 'sheep_comments' : 'cattle_comments';
     const idCol = session.species === 'sheep' ? 'sheep_id' : 'cattle_id';
@@ -1029,6 +1044,20 @@ export default function WeighInSessionPage({sb, fmt, authState, Header}) {
         if (cowUpd.error) {
           setNotice({kind: 'error', message: 'Tag swap failed: ' + cowUpd.error.message});
           return;
+        }
+        // Best-effort: log the tag change on the animal's own feed.
+        try {
+          const swapChanges = buildChanges({tag: priorTag}, {tag}, {labels: {tag: 'Tag'}});
+          if (swapChanges.length) {
+            await recordFieldChange(sb, {
+              entityType: session.species === 'sheep' ? 'sheep.animal' : 'cattle.animal',
+              entityId: cow.id,
+              entityLabel: tag || priorTag || cow.id,
+              changes: swapChanges,
+            });
+          }
+        } catch (_e) {
+          /* best-effort audit trail */
         }
       }
       const id = String(Date.now()) + Math.random().toString(36).slice(2, 6);

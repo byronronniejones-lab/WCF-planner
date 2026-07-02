@@ -519,3 +519,87 @@ describe('Activity change logging - no direct table access', () => {
     });
   }
 });
+
+describe('Activity change logging - PR2A best-effort logging additions', () => {
+  // PR2A (mutation-audit lane) adds best-effort recordActivityEvent/recordFieldChange
+  // AFTER the existing successful mutation (never wraps it in runMutation, so
+  // mutation behavior + the mutation-inventory counts are unchanged). These lock the
+  // new emits so a future refactor cannot silently drop the create/delete-symmetry
+  // leg. Deferred sites (autosave-diff + entity-scoping) and the ratified documents
+  // exclusion are asserted absent below.
+  const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+  const cattleAnimalPage = read('src/cattle/CattleAnimalPage.jsx');
+  const cattleBatchesView = read('src/cattle/CattleBatchesView.jsx');
+  const sowsView = read('src/pig/SowsView.jsx');
+  const weighInSession = read('src/livestock/WeighInSessionPage.jsx');
+  const weighInsWebform = read('src/webforms/WeighInsWebform.jsx');
+  const eqAddModal = read('src/equipment/EquipmentAddModal.jsx');
+  const eqMaintModal = read('src/equipment/EquipmentMaintenanceModal.jsx');
+  const eqDetail = read('src/equipment/EquipmentDetail.jsx');
+  const sheepProc = read('src/lib/sheepProcessingBatch.js');
+  const cattleProc = read('src/lib/cattleProcessingBatch.js');
+
+  it('cattle: calving + new-cow record.created on cattle.animal, schedule on cattle.processing', () => {
+    expect(cattleAnimalPage).toContain("record: 'cattle.calving'");
+    expect(cattleAnimalPage).toContain("entityType: 'cattle.animal'");
+    expect(cattleHerds).toContain("record: 'cattle.animal'");
+    expect(cattleBatchesView).toContain("entityType: 'cattle.processing'");
+    expect(cattleBatchesView).toContain("eventType: 'record.created'");
+  });
+
+  it('pig: add batch record.created, sub-batch archive/unarchive status.changed, breeder delete record.deleted', () => {
+    expect(pigBatchesView).toContain("'Added batch '");
+    expect(pigSubBatches).toContain("'Archived sub-batch '");
+    expect(pigSubBatches).toContain("'Reopened sub-batch '");
+    expect(pigSubBatches).toContain("eventType: 'status.changed'");
+    expect(sowsView).toContain("'Deleted breeding pig '");
+    expect(sowsView).toContain("eventType: 'record.deleted'");
+  });
+
+  it('weigh-in identity: animal-scoped field.updated in addition to the session event', () => {
+    expect(weighInSession).toContain('changes: animalChanges');
+    expect(weighInSession).toContain('changes: swapChanges');
+    expect(weighInSession).toContain("session.species === 'sheep' ? 'sheep.animal' : 'cattle.animal'");
+  });
+
+  it('webform weigh-in: new_cow record.created, retag/reconcile field.updated, finalize status.changed', () => {
+    expect(weighInsWebform).toContain("'Added cattle animal #'");
+    expect(weighInsWebform).toContain('changes: retagChanges');
+    expect(weighInsWebform).toContain('changes: reconcileChanges');
+    expect(weighInsWebform).toContain("entityType: 'weighin.session'");
+    expect(weighInsWebform).toContain("to: 'complete'");
+  });
+
+  it('equipment: add + maintenance record.created, interval edits field.updated', () => {
+    expect(eqAddModal).toContain("'Added equipment '");
+    expect(eqAddModal).toContain("eventType: 'record.created'");
+    expect(eqMaintModal).toContain("'Logged maintenance event'");
+    expect(eqDetail).toContain("action: 'remove_interval_entry'");
+    expect(eqDetail).toContain("action: 'toggle_interval_task'");
+  });
+
+  it('processing: login-gated webform attach emits field.updated on the batch (cattle + sheep parity)', () => {
+    expect(sheepProc).toContain("entityType: 'sheep.processing'");
+    expect(sheepProc).toContain("action: 'attach'");
+    expect(cattleProc).toContain("entityType: 'cattle.processing'");
+    expect(cattleProc).toContain("action: 'attach'");
+  });
+
+  it('every PR2A emit stays best-effort (try/catch or swallowed reject; never blocks the mutation)', () => {
+    expect(cattleAnimalPage).toMatch(/try \{[\s\S]*?recordActivityEvent[\s\S]*?\} catch \(_e\)/);
+    expect(sheepProc).toMatch(/try \{[\s\S]*?recordActivityEvent[\s\S]*?\} catch \(_e\)/);
+    expect(pigSubBatches).toMatch(/recordActivityEvent[\s\S]*?\}\)\.catch\(\(\) => \{\}\)/);
+  });
+
+  it('PR2A-deferred whole-file sites carry NO emit (revisit in a follow-up)', () => {
+    // FarrowingView: a farrowing-delete has no registered activity entity (like
+    // the gated pig.breeding item) — needs an entity decision.
+    expect(read('src/pig/FarrowingView.jsx')).not.toContain('recordActivityEvent');
+    // FuelBillsView: a fuel bill's id is not an equipment id, so equipment.item
+    // entity-scoping for the create needs verification vs delete_fuel_bill.
+    expect(read('src/admin/FuelBillsView.jsx')).not.toContain('recordActivityEvent');
+    // EquipmentWebformsAdmin documents stay unaudited (ratified exclusion — see the
+    // 'does not log documents' test above).
+    expect(eqAdmin).not.toContain("field: 'documents'");
+  });
+});

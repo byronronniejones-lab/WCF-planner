@@ -1369,11 +1369,34 @@ export default function SowsView({
                     <button
                       onClick={() => {
                         confirmDelete('Delete this pig permanently? This cannot be undone.', () => {
+                          const deleted = breeders.find((b) => b.id === editBreederId) || null;
                           const nb = breeders.filter((b) => b.id !== editBreederId);
                           setBreeders(nb);
                           persistBreeders(nb);
                           setShowBreederForm(false);
                           setEditBreederId(null);
+                          // Best-effort pig.breeder record.deleted (mirrors saveBreeder's
+                          // record.created) so the most destructive lifecycle event is not
+                          // one-sided. Never blocks the delete.
+                          if (deleted) {
+                            try {
+                              recordActivityEvent(sb, {
+                                entityType: BREEDING_PIG_ENTITY_TYPE,
+                                entityId: deleted.id,
+                                eventType: 'record.deleted',
+                                entityLabel: breedingPigEntityLabel(deleted),
+                                body: 'Deleted breeding pig ' + breedingPigEntityLabel(deleted),
+                                payload: {
+                                  record: 'pig.breeder',
+                                  tag: deleted.tag,
+                                  sex: deleted.sex,
+                                  group: deleted.group || null,
+                                },
+                              }).catch(() => {});
+                            } catch (_e) {
+                              /* best-effort audit trail */
+                            }
+                          }
                         });
                       }}
                       style={S.btnDanger}

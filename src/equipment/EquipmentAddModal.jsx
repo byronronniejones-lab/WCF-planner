@@ -5,6 +5,7 @@
 // /fueling reads the equipment table directly.
 import React from 'react';
 import {EQUIPMENT_CATEGORIES} from '../lib/equipment.js';
+import {recordActivityEvent} from '../lib/activityApi.js';
 import {getProgramColor} from '../lib/programColors.js';
 import {getReadableText} from '../lib/styles.js';
 import {recordSaveButton, recordSecondaryButton} from '../shared/recordPageControls.jsx';
@@ -63,6 +64,20 @@ export default function EquipmentAddModal({sb, onClose, onCreated}) {
     if (error) {
       setErr('Save failed: ' + error.message);
       return;
+    }
+    // Best-effort record.created so the equipment item's creation appears in its
+    // feed (later status/field/child changes are already audited). Never blocks.
+    try {
+      await recordActivityEvent(sb, {
+        entityType: 'equipment.item',
+        entityId: rec.id,
+        eventType: 'record.created',
+        entityLabel: rec.name,
+        body: 'Added equipment ' + rec.name,
+        payload: {record: 'equipment.item', name: rec.name, slug: rec.slug, category: rec.category},
+      });
+    } catch (_e) {
+      /* best-effort audit trail */
     }
     onCreated(rec);
   }

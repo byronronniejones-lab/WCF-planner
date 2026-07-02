@@ -31,7 +31,7 @@ import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import {RecordPageBody, RecordTitle} from '../shared/RecordPageShell.jsx';
 import {LockedTeamMemberField, recordControl, recordTextarea} from '../shared/recordPageControls.jsx';
-import {runMutation, recordStatusChange} from '../lib/entityMutations.js';
+import {runMutation, recordStatusChange, recordActivityEvent} from '../lib/entityMutations.js';
 import {fleetFuelingEntryPath, fleetChecklistEntryPath} from '../lib/routes.js';
 import {deleteEquipmentFueling, deleteEquipmentMaintenanceEvent} from '../lib/equipmentLogDeleteApi.js';
 import {imageAltText} from '../lib/imageAlt.js';
@@ -179,7 +179,30 @@ export default function EquipmentDetail({
           .from('equipment_fuelings')
           .update({service_intervals_completed: next})
           .eq('id', fueling.id);
-        if (error) setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+        if (error) {
+          setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+        } else {
+          // Best-effort field.updated on the equipment.item: one service-interval
+          // completion removed from a fueling row (whole-row delete is audited
+          // via RPC; this partial edit was not). Never blocks.
+          try {
+            await recordActivityEvent(sb, {
+              entityType: 'equipment.item',
+              entityId: eq.id,
+              eventType: 'field.updated',
+              entityLabel: eq.name || eq.id,
+              body: 'Removed service-interval entry "' + label + '" from a fueling row',
+              payload: {
+                record: 'equipment.serviceInterval',
+                action: 'remove_interval_entry',
+                fueling_id: fueling.id,
+                label: label,
+              },
+            });
+          } catch (_e) {
+            /* best-effort audit trail */
+          }
+        }
       },
     );
   }
@@ -206,7 +229,30 @@ export default function EquipmentDetail({
       .from('equipment_fuelings')
       .update({service_intervals_completed: next})
       .eq('id', fueling.id);
-    if (error) setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+    if (error) {
+      setNotice({kind: 'error', message: 'Save failed: ' + error.message});
+    } else {
+      // Best-effort field.updated on the equipment.item: a service sub-task was
+      // toggled on a historical fueling. Never blocks.
+      try {
+        await recordActivityEvent(sb, {
+          entityType: 'equipment.item',
+          entityId: eq.id,
+          eventType: 'field.updated',
+          entityLabel: eq.name || eq.id,
+          body: (has ? 'Unchecked' : 'Checked') + ' a service sub-task on a fueling row',
+          payload: {
+            record: 'equipment.serviceInterval',
+            action: 'toggle_interval_task',
+            fueling_id: fueling.id,
+            task_id: taskId,
+            checked: !has,
+          },
+        });
+      } catch (_e) {
+        /* best-effort audit trail */
+      }
+    }
   }
 
   const sortedFuelings = [...(fuelings || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));

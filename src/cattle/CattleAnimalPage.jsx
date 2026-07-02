@@ -20,7 +20,7 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 import RecordPageLoadError from '../shared/RecordPageLoadError.jsx';
 import {loadCattleWeighInsCached} from '../lib/cattleCache.js';
 import {CATTLE_ALL_HERD_KEYS, CATTLE_HERD_KEYS, cowTagSet} from '../lib/cattleHerdFilters.js';
-import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
+import {runMutation, recordFieldChange, recordActivityEvent} from '../lib/entityMutations.js';
 import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 import {softDeleteCattleAnimal} from '../lib/cattleDeleteApi.js';
 import {transferCattleAnimal} from '../lib/animalTransferApi.js';
@@ -273,6 +273,29 @@ export default function CattleAnimalPage({sb, fmt, authState, Header}) {
     if (error) {
       setNotice({kind: 'error', message: 'Save failed: ' + error.message});
       return false;
+    }
+    // Best-effort: the mig-079 delete RPC logs record.deleted against the dam's
+    // cattle.animal record, so a calving-add must emit the symmetric
+    // record.created (scoped to the dam, not the calving row) so the audit
+    // stream is not one-sided. Mirrors SheepAnimalPage.addLambingRecord.
+    try {
+      await recordActivityEvent(sb, {
+        entityType: 'cattle.animal',
+        entityId: cowRecord.id,
+        eventType: 'record.created',
+        entityLabel: cowRecord.tag || cowRecord.id,
+        body: 'Recorded calving (' + rec.calving_date + ') for #' + (cowRecord.tag || cowRecord.id),
+        payload: {
+          record: 'cattle.calving',
+          calving_record_id: id,
+          dam_tag: cowRecord.tag,
+          calving_date: rec.calving_date,
+          total_born: rec.total_born,
+          deaths: rec.deaths,
+        },
+      });
+    } catch (_e) {
+      /* best-effort audit trail; the calving row is already saved */
     }
     await loadAll();
     return true;

@@ -42,7 +42,7 @@ import {
 } from '../lib/savedViewsApi.js';
 import {getProgramColor} from '../lib/programColors.js';
 import {getReadableText} from '../lib/styles.js';
-import {listActivityEvents} from '../lib/activityApi.js';
+import {listActivityEvents, recordActivityEvent} from '../lib/activityApi.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import InlineNotice from '../shared/InlineNotice.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
@@ -973,6 +973,20 @@ const CattleHerdsHub = ({
         setNotice({kind: 'error', message: 'Save failed: ' + error.message});
         setSaving(false);
         return;
+      }
+      // Best-effort record.created so the animal's creation appears in its feed
+      // (edit/transfer/delete are already audited). Mirrors SowsView/SheepAnimalPage.
+      try {
+        await recordActivityEvent(sb, {
+          entityType: 'cattle.animal',
+          entityId: newId,
+          eventType: 'record.created',
+          entityLabel: rec.tag || newId,
+          body: 'Added cattle animal ' + (rec.tag || newId),
+          payload: {record: 'cattle.animal', tag: rec.tag, sex: rec.sex, herd: rec.herd},
+        });
+      } catch (_e) {
+        /* best-effort audit trail */
       }
     }
     setSaving(false);

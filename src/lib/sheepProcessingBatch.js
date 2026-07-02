@@ -11,6 +11,8 @@
 //     cleared on every matching weigh_in row (the chip-clear lesson learned
 //     from cattle commit 448152e applied here from day 1).
 
+import {recordActivityEvent} from './activityApi.js';
+
 export function recomputeBatchTotals(rows) {
   const live = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
   const hang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);
@@ -131,6 +133,28 @@ export async function attachEntriesToBatch(sb, {batch, entries, sheepList, teamM
         /* sheep_transfers only exists post-migration-029 */
       }
     }
+  }
+
+  // Best-effort field.updated on the sheep.processing stream (batch.id) so the
+  // login-gated webform attach is audited (the authenticated RPC path logs its
+  // own event). Never blocks the attach.
+  try {
+    await recordActivityEvent(sb, {
+      entityType: 'sheep.processing',
+      entityId: batch.id,
+      eventType: 'field.updated',
+      entityLabel: batch.name || batch.id,
+      body: 'Attached ' + attached.length + ' sheep to ' + (batch.name || 'batch') + ' (webform)',
+      payload: {
+        record: 'sheep.processing',
+        field: 'sheep_detail',
+        action: 'attach',
+        attached: attached.length,
+        skipped: skipped.length,
+      },
+    });
+  } catch (_e) {
+    /* best-effort audit trail */
   }
 
   return {attached, skipped};

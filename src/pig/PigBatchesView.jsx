@@ -1593,6 +1593,21 @@ export default function PigBatchesView({
                         const grp = {id: String(Date.now()), processingTrips: [], subBatches: [], ...feederForm};
                         const nb = [...feederGroups, grp];
                         persistFeeders(nb);
+                        // Best-effort pig.batch record.created (entity_id = group.id) so the
+                        // batch creation appears in its feed (delete + archive already
+                        // audited). Never blocks the create.
+                        try {
+                          recordActivityEvent(sb, {
+                            entityType: 'pig.batch',
+                            entityId: grp.id,
+                            eventType: 'record.created',
+                            entityLabel: grp.batchName || grp.id,
+                            body: 'Added batch ' + (grp.batchName || grp.id),
+                            payload: {record: 'pig.batch', batchName: grp.batchName || null},
+                          }).catch(() => {});
+                        } catch (_e) {
+                          /* best-effort audit trail */
+                        }
                         setShowFeederForm(false);
                         setEditFeederId(null);
                         setOriginalFeederForm(null);

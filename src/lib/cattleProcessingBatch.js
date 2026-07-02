@@ -3,6 +3,8 @@
 // (CattleWeighInsView) so the two surfaces land identical DB state when a
 // cattle finisher session is completed with send-to-processor entries.
 
+import {recordActivityEvent} from './activityApi.js';
+
 export function recomputeBatchTotals(rows) {
   const live = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
   const hang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);
@@ -153,6 +155,28 @@ export async function attachEntriesToBatch(sb, {batch, entries, cattleList, team
         /* cattle_transfers RLS may block on legacy roles */
       }
     }
+  }
+
+  // Best-effort field.updated on the cattle.processing stream (batch.id) so the
+  // login-gated webform attach is audited (the authenticated RPC path logs its
+  // own event). Never blocks the attach.
+  try {
+    await recordActivityEvent(sb, {
+      entityType: 'cattle.processing',
+      entityId: batch.id,
+      eventType: 'field.updated',
+      entityLabel: batch.name || batch.id,
+      body: 'Attached ' + attached.length + ' cattle to ' + (batch.name || 'batch') + ' (webform)',
+      payload: {
+        record: 'cattle.processing',
+        field: 'cows_detail',
+        action: 'attach',
+        attached: attached.length,
+        skipped: skipped.length,
+      },
+    });
+  } catch (_e) {
+    /* best-effort audit trail */
   }
 
   return {attached, skipped};

@@ -23,6 +23,8 @@ import {openableProps} from '../shared/openable.js';
 import {fmt, centralISOFor, todayCentralISO} from '../lib/dateUtils.js';
 import {formatAgeRange, formatFeedPerPig, formatGroupAdg, formatAvgWeight} from '../lib/pigForecast.js';
 import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
+import {recordActivityEvent, recordFieldChange, recordStatusChange} from '../lib/entityMutations.js';
+import {buildChanges} from '../lib/activityChangeDiff.js';
 import CattleSendToProcessorModal from '../cattle/CattleSendToProcessorModal.jsx';
 import SheepSendToProcessorModal from '../sheep/SheepSendToProcessorModal.jsx';
 import {detachCowFromBatch} from '../lib/cattleProcessingBatch.js';
@@ -580,6 +582,20 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
       setErr('Complete failed: ' + compUp.error.message);
       return;
     }
+    // Best-effort: log the completion on the weighin.session feed (the RPC stamps
+    // the submitter as actor). Mirrors the authenticated WeighInSessionPage.
+    try {
+      await recordStatusChange(sb, {
+        entityType: 'weighin.session',
+        entityId: session.id,
+        entityLabel:
+          (species || session.species || 'weigh-in') + ' · ' + (session.herd || session.flock || session.date || ''),
+        from: 'draft',
+        to: 'complete',
+      });
+    } catch (_e) {
+      /* best-effort audit trail */
+    }
     if (species === 'broiler') {
       // Server-side stamp of week4Lbs / week6Lbs on the matching broiler
       // batch row. The public form cannot reach the admin batch store under
@@ -764,6 +780,20 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
         setErr('Could not create cow: ' + cowIns.error.message);
         return;
       }
+      // Best-effort record.created on the new cow's feed (webform is login-gated,
+      // so the RPC stamps the submitter as actor). Never blocks the create.
+      try {
+        await recordActivityEvent(sb, {
+          entityType: 'cattle.animal',
+          entityId: cowId,
+          eventType: 'record.created',
+          entityLabel: '#' + tag,
+          body: 'Added cattle animal #' + tag + ' (' + (sex || 'unknown sex') + ', herd ' + herd + ')',
+          payload: {record: 'cattle.animal', tag: tag, sex: sex, herd: herd, birth_date: birthDate || null},
+        });
+      } catch (_e) {
+        /* best-effort audit trail */
+      }
       // Reflect locally so subsequent dropdowns/list immediately include the new cow.
       setCattleList((prev) => prev.concat([cowRec]));
     }
@@ -795,6 +825,20 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
           setBusy(false);
           setErr('Could not retag cow: ' + cowUpd.error.message);
           return;
+        }
+        // Best-effort: log the tag change on the cow's own feed.
+        try {
+          const retagChanges = buildChanges({tag: priorTag.trim()}, {tag: tag.trim()}, {labels: {tag: 'Tag'}});
+          if (retagChanges.length) {
+            await recordFieldChange(sb, {
+              entityType: 'cattle.animal',
+              entityId: retagCow.id,
+              entityLabel: tag.trim() || retagCow.id,
+              changes: retagChanges,
+            });
+          }
+        } catch (_e) {
+          /* best-effort audit trail */
         }
         setCattleList((prev) =>
           prev.map((c) => (c.id === retagCow.id ? {...c, tag: tag.trim(), old_tags: updatedOldTags} : c)),
@@ -871,6 +915,20 @@ const WeighInsWebform = ({sb, sessionSubmitter}) => {
       setBusy(false);
       setErr('Could not swap tag: ' + cowUpd.error.message);
       return;
+    }
+    // Best-effort: log the tag change on the cow's own feed.
+    try {
+      const reconcileChanges = buildChanges({tag: priorTag}, {tag: newTag}, {labels: {tag: 'Tag'}});
+      if (reconcileChanges.length) {
+        await recordFieldChange(sb, {
+          entityType: 'cattle.animal',
+          entityId: cowId,
+          entityLabel: newTag || cowId,
+          changes: reconcileChanges,
+        });
+      }
+    } catch (_e) {
+      /* best-effort audit trail */
     }
     const wiUpd = await sb.from('weigh_ins').update({new_tag_flag: false}).eq('id', entry.id);
     if (wiUpd.error) {

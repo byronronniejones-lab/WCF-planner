@@ -40,20 +40,61 @@ export function usePigSubBatches({
   const [editSubId, setEditSubId] = useState(null);
 
   function archiveSubBatch(batchId, subId) {
+    const parent = feederGroups.find((g) => g.id === batchId) || null;
+    const sub = parent ? (parent.subBatches || []).find((s) => s.id === subId) || null : null;
     const nb = feederGroups.map((g) =>
       g.id !== batchId
         ? g
         : {...g, subBatches: (g.subBatches || []).map((s) => (s.id === subId ? {...s, status: 'processed'} : s))},
     );
     persistFeeders(nb);
+    // Best-effort pig.batch status.changed (entity_id = group.id): the standalone
+    // sub-batch archive mirrors the parent archive/unarchive audit. Never blocks.
+    try {
+      recordActivityEvent(sb, {
+        entityType: 'pig.batch',
+        entityId: batchId,
+        eventType: 'status.changed',
+        entityLabel: (parent && parent.batchName) || batchId,
+        body: 'Archived sub-batch ' + (sub && sub.name ? '"' + sub.name + '"' : '(unnamed)') + ' to processed',
+        payload: {
+          record: 'pig.subBatch',
+          subBatchId: subId,
+          subBatchName: (sub && sub.name) || null,
+          changes: [{field: 'status', from: 'active', to: 'processed'}],
+        },
+      }).catch(() => {});
+    } catch (_e) {
+      /* best-effort — never block the archive */
+    }
   }
   function unarchiveSubBatch(batchId, subId) {
+    const parent = feederGroups.find((g) => g.id === batchId) || null;
+    const sub = parent ? (parent.subBatches || []).find((s) => s.id === subId) || null : null;
     const nb = feederGroups.map((g) =>
       g.id !== batchId
         ? g
         : {...g, subBatches: (g.subBatches || []).map((s) => (s.id === subId ? {...s, status: 'active'} : s))},
     );
     persistFeeders(nb);
+    // Best-effort pig.batch status.changed reversing the archive. Never blocks.
+    try {
+      recordActivityEvent(sb, {
+        entityType: 'pig.batch',
+        entityId: batchId,
+        eventType: 'status.changed',
+        entityLabel: (parent && parent.batchName) || batchId,
+        body: 'Reopened sub-batch ' + (sub && sub.name ? '"' + sub.name + '"' : '(unnamed)') + ' to active',
+        payload: {
+          record: 'pig.subBatch',
+          subBatchId: subId,
+          subBatchName: (sub && sub.name) || null,
+          changes: [{field: 'status', from: 'processed', to: 'active'}],
+        },
+      }).catch(() => {});
+    } catch (_e) {
+      /* best-effort — never block the reopen */
+    }
   }
   // Persist a sub-batch using the given form state. Returns the new subId on success.
   //

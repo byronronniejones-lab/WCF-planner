@@ -13,6 +13,7 @@ import {printRows} from '../lib/printExport.js';
 import {buildProcessingBatchExportColumns} from '../lib/operationalExportColumns.js';
 import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 import {usePersistentViewState} from '../lib/usePersistentViewState.js';
+import {recordActivityEvent} from '../lib/activityApi.js';
 import {
   listSavedViews,
   createSavedView,
@@ -230,6 +231,16 @@ const CattleBatchesHub = ({
       setNotice({kind: 'error', message: 'Schedule failed: ' + r.error.message});
       return;
     }
+    // Best-effort record.created on the cattle.processing stream so the schedule
+    // lifecycle is audited (the reverse unschedule already logs record.deleted).
+    recordActivityEvent(sb, {
+      entityType: 'cattle.processing',
+      entityId: rowId,
+      eventType: 'record.created',
+      entityLabel: vb.name,
+      body: 'Scheduled ' + vb.name + ' for ' + date,
+      payload: {record: 'cattle.processing', name: vb.name, planned_process_date: date},
+    }).catch(() => {});
     navigate('/cattle/batches/' + rowId);
   }
 
