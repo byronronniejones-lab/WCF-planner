@@ -5,6 +5,11 @@ import {describe, expect, it} from 'vitest';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
+const HTML_SHELLS = ['index.html', 'dailys.html', 'equipment.html', 'pasture-map.html'];
+
+function read(rel) {
+  return fs.readFileSync(path.join(ROOT, rel), 'utf8');
+}
 
 function stripComments(src) {
   return src.replace(/(^|\s)\/\/[^\n]*/g, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -29,6 +34,14 @@ function webformSourceFiles() {
   return listRuntimeSourceFiles(path.join(ROOT, 'src/webforms')).filter(
     (file) => path.relative(ROOT, file).replace(/\\/g, '/') !== 'src/webforms/WebformsAdminView.jsx',
   );
+}
+
+function webformIslandCss(rel) {
+  const src = read(rel);
+  const start = src.indexOf('#webform-container{');
+  const end = src.indexOf('  @media(max-width:400px)', start);
+  if (start < 0 || end < 0) throw new Error(`Could not find webform island CSS in ${rel}`);
+  return src.slice(start, end).trim();
 }
 
 describe('public webforms boundary', () => {
@@ -83,5 +96,38 @@ describe('public webforms boundary', () => {
     }
 
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('public webform island CP5 styling tokens', () => {
+  it('keeps every HTML shell on the same #webform-container island CSS', () => {
+    const base = webformIslandCss(HTML_SHELLS[0]);
+    for (const rel of HTML_SHELLS.slice(1)) {
+      expect(webformIslandCss(rel), `${rel} webform island CSS drifted from ${HTML_SHELLS[0]}`).toBe(base);
+    }
+  });
+
+  it('uses the CP0 section A3 radius floor and canonical control token shape inside the island', () => {
+    const css = webformIslandCss('index.html');
+
+    expect(css).toContain('--wf-text:#000000');
+    expect(css).toContain('--wf-r-sm:10px;--wf-r-md:12px;--wf-r-lg:14px');
+    expect(css).toContain('padding:8px 11px');
+    expect(css).toContain('border:1px solid var(--wf-border2)');
+    expect(css).toContain('border-radius:var(--wf-r-sm)');
+    expect(css).toContain('#webform-container .card{');
+    expect(css).toContain('border-radius:var(--wf-r-md)');
+    expect(css).toContain('#webform-container .btn-another');
+    expect(css).toContain('#webform-container .loading-msg');
+    expect(css).not.toMatch(/--wf-r-(?:sm|md|lg):[1-9]px/);
+    expect(css).not.toMatch(/border-radius:[1-9]px/);
+  });
+
+  it('keeps the island mobile grid override scoped to #webform-container', () => {
+    for (const rel of HTML_SHELLS) {
+      const src = read(rel);
+      expect(src).toContain('@media(max-width:400px){#webform-container .grid2{grid-template-columns:1fr}}');
+      expect(src).not.toContain('@media(max-width:400px){.grid2{grid-template-columns:1fr}}');
+    }
   });
 });

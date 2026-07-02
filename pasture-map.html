@@ -48,7 +48,7 @@
     --shadow-sm:  0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
     --shadow-md:  0 4px 6px rgba(0,0,0,.05), 0 2px 4px rgba(0,0,0,.04);
     --shadow-lg:  0 10px 15px rgba(0,0,0,.06), 0 4px 6px rgba(0,0,0,.04);
-    /* CP0 §A3: 10px radius floor site-wide; 6 retired. (Island keeps 9/12/18.) */
+    /* CP0 §A3: 10px radius floor site-wide; 6 retired. (Home island keeps 9/12/18.) */
     --radius-sm:  10px;
     --radius-md:  12px;
     --radius-lg:  14px;
@@ -130,40 +130,40 @@
   .breed-gantt::-webkit-scrollbar-thumb:hover { background: #374151; }
 
   /* ── WEBFORM STYLES (scoped to #webform-container) ── */
-  #webform-container{--wf-green:#085041;--wf-green-lt:#ecfdf5;--wf-green-bd:#a7f3d0;--wf-text:#111827;--wf-text2:#4b5563;--wf-muted:#9ca3af;--wf-border:#e5e7eb;--wf-border2:#d1d5db;--wf-bg:#f6f8f7;--wf-r-sm:6px;--wf-r-md:10px;--wf-shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);font-family:'Hanken Grotesk',-apple-system,sans-serif;background:#f6f8f7;color:#111827;font-size:14px;line-height:1.5;min-height:100vh}
-  #webform-container input,#webform-container select,#webform-container textarea{font-family:inherit;font-size:13px;padding:9px 12px;border:1px solid #d1d5db;border-radius:6px;width:100%;outline:none;background:#fff;color:#111827;transition:border-color .15s,box-shadow .15s}
-  #webform-container input:focus,#webform-container select:focus,#webform-container textarea:focus{border-color:#085041;box-shadow:0 0 0 3px rgba(8,80,65,.1)}
-  #webform-container input::placeholder,#webform-container textarea::placeholder{color:#9ca3af}
+  #webform-container{--wf-green:#085041;--wf-green-lt:#ecfdf5;--wf-green-bd:#a7f3d0;--wf-text:#000000;--wf-text2:#4b5563;--wf-muted:#9ca3af;--wf-border:#d1d5db;--wf-border2:#d1d5db;--wf-bg:#f6f8f7;--wf-r-sm:10px;--wf-r-md:12px;--wf-r-lg:14px;--wf-shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);font-family:'Hanken Grotesk',-apple-system,sans-serif;background:var(--wf-bg);color:var(--wf-text);font-size:14px;line-height:1.5;min-height:100vh}
+  #webform-container input,#webform-container select,#webform-container textarea{font-family:inherit;font-size:13px;padding:8px 11px;border:1px solid var(--wf-border2);border-radius:var(--wf-r-sm);width:100%;outline:none;background:#fff;color:var(--wf-text);transition:border-color .15s,box-shadow .15s}
+  #webform-container input:focus,#webform-container select:focus,#webform-container textarea:focus{border-color:var(--wf-green);box-shadow:0 0 0 3px rgba(8,80,65,.1)}
+  #webform-container input::placeholder,#webform-container textarea::placeholder{color:var(--wf-muted)}
   #webform-container button{font-family:inherit;cursor:pointer}
-  #webform-container label{display:block;font-size:12px;color:#4b5563;margin-bottom:4px;font-weight:500}
+  #webform-container label{display:block;font-size:12px;color:var(--wf-text2);margin-bottom:4px;font-weight:500}
   #webform-container .header{background:linear-gradient(135deg,#042f23,#085041 60%,#0d6652);color:#fff;padding:14px 1.5rem;display:flex;justify-content:space-between;align-items:center}
   #webform-container .header-logo{font-size:17px;font-weight:700;letter-spacing:-.4px}
   #webform-container .header-sub{font-size:11px;font-weight:500;color:rgba(255,255,255,.6);border-left:1px solid rgba(255,255,255,.25);padding-left:10px;margin-left:10px;letter-spacing:.5px}
   #webform-container .wrap{max-width:540px;margin:0 auto;padding:1.5rem 1rem 3rem}
-  #webform-container .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-  #webform-container .card-title{font-size:13px;font-weight:700;color:#4b5563;text-transform:uppercase;letter-spacing:.4px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #e5e7eb}
+  #webform-container .card{background:#fff;border:1px solid var(--wf-border);border-radius:var(--wf-r-md);padding:20px;margin-bottom:16px;box-shadow:var(--wf-shadow)}
+  #webform-container .card-title{font-size:13px;font-weight:700;color:var(--wf-text2);text-transform:uppercase;letter-spacing:.4px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--wf-border)}
   #webform-container .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   #webform-container .field{margin-bottom:12px}
   #webform-container .field:last-child{margin-bottom:0}
-  #webform-container .toggle-group{display:grid;grid-template-columns:1fr 1fr;border-radius:6px;overflow:hidden;border:1px solid #d1d5db}
-  #webform-container .tgl{padding:9px 0;border:none;background:#f9fafb;color:#4b5563;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;text-align:center;transition:background .12s,color .12s}
-  #webform-container .tgl:first-child{border-right:1px solid #d1d5db}
-  #webform-container .tgl.yes{background:#085041;color:#fff}
+  #webform-container .toggle-group{display:grid;grid-template-columns:1fr 1fr;border-radius:var(--wf-r-sm);overflow:hidden;border:1px solid var(--wf-border2)}
+  #webform-container .tgl{padding:9px 0;border:none;background:#f9fafb;color:var(--wf-text2);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;text-align:center;transition:background .12s,color .12s}
+  #webform-container .tgl:first-child{border-right:1px solid var(--wf-border2)}
+  #webform-container .tgl.yes{background:var(--wf-green);color:#fff}
   #webform-container .tgl.no{background:#374151;color:#fff}
-  #webform-container .btn-submit{width:100%;padding:13px;border:none;border-radius:10px;background:linear-gradient(135deg,#085041,#0d6652);color:#fff;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(8,80,65,.25);transition:opacity .15s}
+  #webform-container .btn-submit{width:100%;padding:10px 16px;border:none;border-radius:var(--wf-r-sm);background:linear-gradient(135deg,#085041,#0d6652);color:#fff;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(8,80,65,.25);transition:opacity .15s}
   #webform-container .btn-submit:hover{opacity:.92}
   #webform-container .btn-submit:disabled{opacity:.45;cursor:not-allowed}
-  #webform-container .hint{font-size:11px;color:#9ca3af;margin-top:3px}
-  #webform-container .err{background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#b91c1c;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
-  #webform-container .today{display:inline-block;font-size:11px;padding:2px 8px;background:#ecfdf5;color:#085041;border:1px solid #a7f3d0;border-radius:4px;font-weight:600;margin-top:4px;cursor:pointer;user-select:none}
+  #webform-container .hint{font-size:11px;color:var(--wf-muted);margin-top:3px}
+  #webform-container .err{background:#fef2f2;border:1px solid #fecaca;border-radius:var(--wf-r-sm);color:#b91c1c;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none}
+  #webform-container .today{display:inline-block;font-size:11px;padding:2px 8px;background:var(--wf-green-lt);color:var(--wf-green);border:1px solid var(--wf-green-bd);border-radius:var(--wf-r-sm);font-weight:600;margin-top:4px;cursor:pointer;user-select:none}
   #webform-container .today:hover{background:#d1fae5}
   #webform-container .success{text-align:center;padding:3rem 1rem;display:none}
   #webform-container .success-icon{font-size:56px;margin-bottom:16px}
   #webform-container .success h2{font-size:20px;font-weight:700;margin-bottom:8px}
-  #webform-container .success p{font-size:14px;color:#4b5563;margin-bottom:28px;line-height:1.6}
-  .btn-another{display:inline-block;padding:10px 28px;border:2px solid var(--green);border-radius:var(--r-md);background:#fff;color:var(--green);font-size:14px;font-weight:600;cursor:pointer}
-  .loading-msg{text-align:center;padding:3rem;color:var(--muted);font-size:14px}
-  @media(max-width:400px){.grid2{grid-template-columns:1fr}}
+  #webform-container .success p{font-size:14px;color:var(--wf-text2);margin-bottom:28px;line-height:1.6}
+  #webform-container .btn-another{display:inline-block;padding:10px 16px;border:1px solid var(--wf-green);border-radius:var(--wf-r-sm);background:#fff;color:var(--wf-green);font-size:14px;font-weight:600;cursor:pointer}
+  #webform-container .loading-msg{text-align:center;padding:3rem;color:var(--wf-muted);font-size:14px}
+  @media(max-width:400px){#webform-container .grid2{grid-template-columns:1fr}}
   /* ── Global openable affordance (CP0 WI-6) ──
      Contract locked by tests/static/openable_hover_affordance_static.test.js;
      keep this block byte-identical across index.html / dailys.html /
