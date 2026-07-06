@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', '..');
 const pigSrc = fs.readFileSync(path.join(ROOT, 'src/pig/PigFeedView.jsx'), 'utf8');
 const broilerSrc = fs.readFileSync(path.join(ROOT, 'src/broiler/BroilerFeedView.jsx'), 'utf8');
+const feedOrderBasisSrc = fs.readFileSync(path.join(ROOT, 'src/lib/feedOrderBasis.js'), 'utf8');
 
 // ============================================================================
 // Pig feed ledger — minimal screen contract (post snapshot-board removal)
@@ -126,7 +127,7 @@ describe('PigFeedView — minimal ledger contract', () => {
     expect(pigSrc).not.toMatch(/onChange:\s*function\s*\(e\)\s*\{\s*savePigOrder/);
   });
 
-  it('active month is pinned to the next calendar month, not the first unsaved month', () => {
+  it('active month is pinned to the current calendar month, not the first unsaved month', () => {
     expect(pigSrc).toMatch(/calendarOrderYM\(now\)/);
     expect(pigSrc).not.toMatch(/firstUnsavedFrom/);
     expect(pigSrc).not.toMatch(/while \(\(feedOrders\.pig \|\| \{\}\)\[cur\] != null\)/);
@@ -213,6 +214,14 @@ describe('PigFeedView — minimal ledger contract', () => {
     expect(pigSrc).toMatch(
       /const \[y, m\] = todayDate\.split\('-'\)\.map\(Number\);[\s\S]*?return new Date\(y, m - 1, 1\)\.toLocaleDateString\('en-US', \{month: 'short'\}\)/,
     );
+  });
+});
+
+describe('Feed boards — active order month contract', () => {
+  it('shared active-month helper returns the current calendar month, not next month', () => {
+    expect(feedOrderBasisSrc).toMatch(/export function calendarOrderYM\(today = new Date\(\)\)/);
+    expect(feedOrderBasisSrc).toMatch(/return ymFromDate\(today\)/);
+    expect(feedOrderBasisSrc).not.toMatch(/return addMonthsYM\(ymFromDate\(today\), 1\)/);
   });
 });
 
@@ -492,7 +501,7 @@ describe('BroilerFeedView — minimal ledger contract', () => {
 describe('Feed boards — Est. tile stays on the current calendar month', () => {
   it('Broiler: second tile is always End of [current] Est. with current-month ledger end per type', () => {
     // Values = current calendar-month PERSISTED ledger end per type. Saving
-    // an order can advance activeYM, but never the summary month/label.
+    // an order cannot advance activeYM or the summary month/label.
     expect(broilerSrc).toMatch(/const estTileYM = thisYM/);
     expect(broilerSrc).toMatch(
       /const lg = pLedger\[type\]\[estTileYM\];\s*endOfCurrent\[type\] = lg \? lg\.end : null/,

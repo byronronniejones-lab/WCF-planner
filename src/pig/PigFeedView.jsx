@@ -3,14 +3,14 @@
 // ----------------------------------------------------------------------------
 // Minimal pig feed ledger. Answers two questions:
 //   1. How much feed do I have right now?
-//   2. How much do I need to order for the next calendar order month?
+//   2. How much do I need to order for the current calendar order month?
 //
 // Layout:
 //   • Four top tiles: Actual On Hand · End of [current] Est. · Order for
 //     [active] · Need Thru [active+1].
 //   • Physical-count input directly below, with a "Count includes [month]
 //     order" checkbox derived from the count date's month.
-//   • Exactly one monthly order card: next calendar month. Saved history
+//   • Exactly one monthly order card: current calendar month. Saved history
 //     stays out of this order-entry surface.
 //   • Each monthly card reads as an equation: Start − Consumed + Ordered
 //     = End.
@@ -33,7 +33,7 @@
 //     double-count when the count was taken after that month's delivery.
 //
 // Active-month workflow:
-//   • activeOrderYM is pinned to next calendar month. Saving does not
+//   • activeOrderYM is pinned to the current calendar month. Saving does not
 //     advance it; the calendar month flip does.
 //   • editingMonthYM lets the operator edit the pinned saved month. Edit
 //     pre-loads the draft locally; the persisted value is unchanged until
@@ -183,8 +183,8 @@ export default function PigFeedView({
     // Two valid commit paths:
     //   1. Operator typed a value — save the typed number (including 0).
     //   2. Operator left the input blank AND the recommendation is exactly
-    //      0 — explicit "Save 0" path so the active month can advance
-    //      without forcing the operator to type "0".
+    //      0 — explicit "Save 0" path so the current month is marked
+    //      decided without forcing the operator to type "0".
     let valueToSave;
     if (raw === '') {
       if (recommendedOrder !== 0) return;
@@ -364,10 +364,10 @@ export default function PigFeedView({
         }
       : activeLg;
 
-  // Second tile stays pinned to the current calendar month. The order workflow
-  // can advance activeYM after this month's order is saved, but this summary
-  // still shows the current month-end estimate. Saved order only -- updates on
-  // save, not while typing an unsaved draft.
+  // Second tile stays pinned to the current calendar month. The order card
+  // uses the same current-month pin, while this summary keeps showing the
+  // current month-end estimate. Saved order only -- updates on save, not while
+  // typing an unsaved draft.
   const estTileYM = thisYM;
   const estTileLg = pigLedger[estTileYM];
   const estTileValue = estTileLg ? estTileLg.end : null;
