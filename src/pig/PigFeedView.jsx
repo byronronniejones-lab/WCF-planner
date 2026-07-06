@@ -383,6 +383,9 @@ export default function PigFeedView({
       {label: 'SOWS', projected: Math.round((proj.sowLbs || 0) * daysInMonth)},
       {label: 'BOARS', projected: Math.round((proj.boarLbs || 0) * daysInMonth)},
     ];
+    if ((proj.farrowingPiglets || 0) > 0) {
+      groups.push({label: 'NURSING PIGLETS', projected: Math.round((proj.farrowingPigletLbs || 0) * daysInMonth)});
+    }
     feederGroups
       .filter((g) => g.status === 'active')
       .forEach((g) => {
@@ -1051,7 +1054,7 @@ export default function PigFeedView({
               Sows (non-nursing): <strong>5 lbs/day</strong>
             </span>
             <span>
-              Nursing sows: <strong>12 lbs/day</strong>
+              Nursing sows: <strong>15 lbs/day</strong>
             </span>
             <span>
               Boars: <strong>5 lbs/day</strong>
