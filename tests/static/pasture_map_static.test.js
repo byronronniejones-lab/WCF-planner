@@ -43,6 +43,8 @@ const mig150Code = mig150.replace(/--[^\n]*/g, '');
 const mig152 = read('supabase-migrations/152_pasture_map_manager_hard_delete.sql');
 const mig155 = read('supabase-migrations/155_pasture_map_departure_overlap_rest.sql');
 const mig155Code = mig155.replace(/--[^\n]*/g, '');
+const mig158 = read('supabase-migrations/158_pasture_map_positive_overlap_impacts.sql');
+const mig158Code = mig158.replace(/--[^\n]*/g, '');
 const mainSrc = read('src/main.jsx');
 const homeSrc = read('src/dashboard/HomeDashboard.jsx');
 const plannerIconsSrc = read('src/lib/plannerIcons.js');
@@ -2134,6 +2136,71 @@ describe('Pasture Map: per-entry grazing delete + parent-from-child coloring (mi
     expect(mig155Code).toContain("'current_occupancy_count', v_current_count");
     expect(mig155Code).toContain("'rest_days', v_rest_days");
     expect(mig155Code).toContain("'rest_state', v_rest_state");
+  });
+
+  it('mig 158 adds a positive-AREA overlap predicate and applies it to record + read', () => {
+    // 1) Shared "grazing overlap" predicate = positive-AREA intersection, not a
+    //    shared-edge touch. Keeps the index-friendly ST_Intersects prefilter, then
+    //    requires geodesic intersection area above a ~1 m^2 floor.
+    expect(mig158Code).toContain('CREATE OR REPLACE FUNCTION public._pasture_areas_overlap');
+    expect(mig158Code).toContain('extensions.ST_Intersects(g.ga, g.gb)');
+    expect(mig158Code).toMatch(
+      /ST_Area\(\s*extensions\.ST_Intersection\([^)]*\)::extensions\.geography\s*\)\s*>\s*1\.0/,
+    );
+    expect(mig158Code).toMatch(
+      /REVOKE ALL ON FUNCTION public\._pasture_areas_overlap\(text, text\) FROM PUBLIC, anon, authenticated/,
+    );
+
+    // 2) record_pasture_move keeps the current 9-arg signature + authenticated
+    //    grant + Light role + weight + advisory lock + feeder-conflict behaviour,
+    //    and BOTH overlap checks route through the positive-area predicate.
+    expect(mig158Code).toContain('CREATE OR REPLACE FUNCTION public.record_pasture_move');
+    expect(mig158Code).toContain('p_total_weight_lbs numeric DEFAULT NULL');
+    expect(mig158Code).toContain(
+      'GRANT EXECUTE ON FUNCTION public.record_pasture_move(text, text, text, text, text, timestamptz, int, numeric, text)',
+    );
+    expect(mig158Code).toContain("v_role NOT IN ('farm_team', 'management', 'admin', 'light')");
+    expect(mig158Code).toContain('pg_advisory_xact_lock');
+    expect(mig158Code).toContain('feeder pig area already occupied');
+    const overlapCalls = mig158Code.match(/public\._pasture_areas_overlap\(a\.id, p_to_land_area_id\)/g) || [];
+    expect(overlapCalls.length).toBe(2); // feeder conflict candidates + inserted overlaps
+    // The old bare ST_Intersects-against-destination overlap check is gone.
+    expect(mig158Code).not.toContain('extensions.ST_Intersects(public._land_area_current_geom(a.id), v_to_geom)');
+
+    // 3) Both read functions PRESERVE the prior guards AND add the positive-area gate.
+    expect(mig158Code).toContain('CREATE OR REPLACE FUNCTION public._land_area_is_occupied');
+    expect(mig158Code).toContain('CREATE OR REPLACE FUNCTION public._land_area_summary');
+    // orphan (149): destination link required for occupancy + last-touch...
+    expect(mig158Code).toContain('l.to_land_area_id IS NOT NULL');
+    expect(mig158Code).toContain('e.to_land_area_id IS NOT NULL');
+    // ...and from link required for a real departure.
+    expect(mig158Code).toMatch(/impact_kind = 'departure'[\s\S]*?e\.from_land_area_id IS NOT NULL/);
+    // child-parent suppression (147).
+    expect(mig158Code).toContain('c.parent_id = p_id');
+    // same-move departure beats overlap (155).
+    expect(mig158Code).toMatch(
+      /i\.impact_kind = 'overlap'[\s\S]*?d\.move_id = i\.move_id[\s\S]*?d\.land_area_id = i\.land_area_id[\s\S]*?d\.impact_kind = 'departure'/,
+    );
+    // NEW positive-area gate: overlap counts for occupancy / last-touch only on a
+    // real overlap with the destination; a destination impact always counts.
+    expect(mig158Code).toMatch(
+      /i\.impact_kind = 'destination'\s*OR public\._pasture_areas_overlap\(p_id, l\.to_land_area_id\)/,
+    );
+    expect(mig158Code).toMatch(
+      /i\.impact_kind = 'destination'\s*OR public\._pasture_areas_overlap\(p_id, e\.to_land_area_id\)/,
+    );
+    // NEW positive-area gate: a departure rests p_id only when it IS the departed
+    // area or shares real area with the from area.
+    expect(mig158Code).toMatch(
+      /e\.from_land_area_id = p_id\s*OR public\._pasture_areas_overlap\(p_id, e\.from_land_area_id\)/,
+    );
+    // Read-only fix: no schema / RLS / designation-stroke change; return shape kept.
+    expect(mig158Code).not.toContain('ALTER TABLE');
+    expect(mig158Code).not.toContain('#1d4ed8');
+    expect(mig158Code).not.toContain('#4ade80');
+    expect(mig158Code).toContain("'rest_state', v_rest_state");
+    // New predicate + reissued exposed RPC -> PostgREST schema reload.
+    expect(mig158).toMatch(/NOTIFY pgrst, 'reload schema';\s*$/);
   });
 
   it('mig 150 update_land_area_track reshapes a saved line in place (mgmt/admin, line-only)', () => {
