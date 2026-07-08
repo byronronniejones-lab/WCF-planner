@@ -147,13 +147,20 @@ function StatCard({label, value, sub, color}) {
   );
 }
 
+// Read the ACTUAL read-only dry_run contract the Edge Function returns
+// (tasksFetched, plannerRows, buckets) — never the write-path insert/update/skip
+// fields, which runDryRun does not compute. The full review packet renders in
+// <DryRunReport/> below; this one-liner is the InlineNotice headline.
 function dryRunSummary(plan) {
   const p = plan || {};
-  return `Dry run: ${Number(p.tasksFetched || 0).toLocaleString()} tasks, ${Number(
-    p.wouldInsert || 0,
-  ).toLocaleString()} inserts, ${Number(p.wouldUpdate || 0).toLocaleString()} updates, ${Number(
-    p.wouldSkip || 0,
-  ).toLocaleString()} unchanged.`;
+  const b = p.buckets || {};
+  return `Dry run: ${Number(p.tasksFetched || 0).toLocaleString()} Asana tasks vs ${Number(
+    p.plannerRows || 0,
+  ).toLocaleString()} planner rows — ${Number(b.matched || 0).toLocaleString()} matched, ${Number(
+    b.historical || 0,
+  ).toLocaleString()} historical, ${Number(b.import_exception || 0).toLocaleString()} exceptions, ${Number(
+    b.needs_review || 0,
+  ).toLocaleString()} needs review, ${Number(b.milestone || 0).toLocaleString()} milestones.`;
 }
 
 function syncSummary(counts) {
@@ -163,6 +170,224 @@ function syncSummary(counts) {
   ).toLocaleString()} inserted, ${Number(c.recordsUpdated || 0).toLocaleString()} updated, ${Number(
     c.errors || 0,
   ).toLocaleString()} errors.`;
+}
+
+// Read-only review packet for the last dry run (buildDryRunReport shape). Renders
+// the buckets + the review-grade detail (needs-review / import-exception entries,
+// duplicate/collision report, pig match candidates, drift preview) so an admin can
+// review a dry run in-page before ever authorizing a write sync. Nothing here
+// mutates anything — it just displays the Edge Function's read-only plan.
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+function DryRunReport({plan}) {
+  if (!plan || !plan.buckets) return null;
+  const b = plan.buckets;
+  const col = plan.collisions || {};
+  const CAP = 25;
+  const cap = (arr) => (Array.isArray(arr) ? arr.slice(0, CAP) : []);
+  const more = (arr) => (Array.isArray(arr) && arr.length > CAP ? arr.length - CAP : 0);
+
+  const chipStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 12,
+    fontWeight: 700,
+    color: T.ink,
+    background: T.chipBg,
+    border: `1px solid ${T.border}`,
+    borderRadius: 999,
+    padding: '4px 11px',
+  };
+  const rowStyle = {fontSize: 12.5, color: T.ink, padding: '5px 0', borderTop: `1px solid ${T.rowBorder}`};
+  const dim = {color: T.muted};
+  const chips = [
+    ['Tasks', plan.tasksFetched],
+    ['Planner rows', plan.plannerRows],
+    ['Matched', b.matched],
+    ['Historical', b.historical],
+    ['Exceptions', b.import_exception],
+    ['Needs review', b.needs_review],
+    ['Milestones', b.milestone],
+  ];
+
+  const renderSection = (title, count, node) =>
+    count > 0 ? (
+      <div style={{marginTop: 14}}>
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 800,
+            color: T.label,
+            textTransform: 'uppercase',
+            letterSpacing: '.04em',
+            marginBottom: 6,
+          }}
+        >
+          {title} ({Number(count).toLocaleString()})
+        </div>
+        {node}
+      </div>
+    ) : null;
+
+  const review = Array.isArray(plan.review) ? plan.review : [];
+  const needsReview = review.filter((r) => r && r.bucket === 'needs_review');
+  const exceptions = review.filter((r) => r && r.bucket === 'import_exception');
+  const milestones = Array.isArray(plan.milestones) ? plan.milestones : [];
+  const pigs = Array.isArray(plan.pigCandidates) ? plan.pigCandidates : [];
+  const drift = Array.isArray(plan.driftPreview) ? plan.driftPreview : [];
+  const moreNote = (arr) =>
+    more(arr) > 0 ? <div style={{...dim, ...rowStyle}}>+{more(arr).toLocaleString()} more</div> : null;
+
+  return (
+    <div
+      data-processing-dry-run-report="1"
+      style={{
+        background: T.card,
+        border: `1px solid ${T.border}`,
+        borderRadius: 12,
+        padding: '16px 18px',
+        marginBottom: 18,
+      }}
+    >
+      <div style={{fontSize: 14, fontWeight: 800, color: T.ink, marginBottom: 10}}>
+        Dry-run review <span style={{...dim, fontWeight: 600}}>(read-only — nothing was imported)</span>
+      </div>
+      <div style={{display: 'flex', flexWrap: 'wrap', gap: 8}}>
+        {chips.map(([label, value]) => (
+          <span key={label} style={chipStyle}>
+            {label} <span style={dim}>{Number(value || 0).toLocaleString()}</span>
+          </span>
+        ))}
+      </div>
+
+      {renderSection(
+        'Needs review — ambiguous planner match',
+        needsReview.length,
+        <>
+          {cap(needsReview).map((r) => (
+            <div key={r.gid} style={rowStyle}>
+              <span style={{fontWeight: 700}}>{r.code || r.title}</span>{' '}
+              <span style={dim}>
+                · {r.program || '—'} · {r.processing_date || 'no date'} · {r.number_processed ?? '—'} head
+              </span>
+              <div style={{...dim, marginTop: 2}}>
+                candidates: {(r.candidates || []).map((c) => c.title || c.source_id || c.id).join(', ') || '—'}
+              </div>
+            </div>
+          ))}
+          {moreNote(needsReview)}
+        </>,
+      )}
+
+      {renderSection(
+        'Import exceptions — unmatched, need a planner batch',
+        exceptions.length,
+        <>
+          {cap(exceptions).map((r) => (
+            <div key={r.gid} style={rowStyle}>
+              <span style={{fontWeight: 700}}>{r.code || r.title}</span>{' '}
+              <span style={dim}>
+                · {r.program || 'no program'} · {r.processing_date || 'no date'} · {r.reason}
+              </span>
+            </div>
+          ))}
+          {moreNote(exceptions)}
+        </>,
+      )}
+
+      {renderSection(
+        'Milestones (planning placeholders, not batches)',
+        milestones.length,
+        <>
+          {cap(milestones).map((m) => (
+            <div key={m.gid} style={rowStyle}>
+              <span style={{fontWeight: 700}}>{m.title}</span>{' '}
+              <span style={dim}>· {m.program || m.section || 'no program'}</span>
+            </div>
+          ))}
+          {moreNote(milestones)}
+        </>,
+      )}
+
+      {renderSection(
+        'Duplicate Asana codes',
+        (col.duplicateAsanaCodes || []).length,
+        cap(col.duplicateAsanaCodes).map((d) => (
+          <div key={`${d.program}:${d.code}`} style={rowStyle}>
+            <span style={{fontWeight: 700}}>{d.code}</span>{' '}
+            <span style={dim}>
+              · {d.program} · {(d.gids || []).length} tasks
+            </span>
+          </div>
+        )),
+      )}
+
+      {renderSection(
+        'Ambiguous candidate collisions (one task → multiple planner rows)',
+        (col.ambiguousCandidates || []).length,
+        cap(col.ambiguousCandidates).map((a) => (
+          <div key={a.gid} style={rowStyle}>
+            <span style={{fontWeight: 700}}>{a.code || a.title}</span>{' '}
+            <span style={dim}>
+              · {a.program} · {(a.candidateIds || []).length} planner candidates
+            </span>
+          </div>
+        )),
+      )}
+
+      {renderSection(
+        'Planner rows with multiple matches',
+        (col.plannerContested || []).length,
+        cap(col.plannerContested).map((p) => (
+          <div key={p.recordId} style={rowStyle}>
+            <span style={{fontWeight: 700}}>{p.title || p.recordId}</span>{' '}
+            <span style={dim}>
+              · {p.program} · {(p.gids || []).length} Asana tasks {p.source_id ? `· ${p.source_id}` : ''}
+            </span>
+          </div>
+        )),
+      )}
+
+      {renderSection(
+        'Pig match candidates',
+        pigs.length,
+        <>
+          {cap(pigs).map((p) => (
+            <div key={p.gid} style={rowStyle}>
+              <span style={{fontWeight: 700}}>{p.title}</span>{' '}
+              <span style={dim}>
+                · {p.date || 'no date'} · {p.count ?? '—'} head · {p.method} · tokens:{' '}
+                {(p.tokens || []).join(', ') || '—'}
+              </span>
+              <div style={{...dim, marginTop: 2}}>
+                candidates: {(p.candidates || []).map((c) => c.title || c.source_id || c.id).join(', ') || '—'}
+              </div>
+            </div>
+          ))}
+          {moreNote(pigs)}
+        </>,
+      )}
+
+      {renderSection(
+        'Drift preview (Asana vs Planner — informational, never applied)',
+        drift.length,
+        <>
+          {cap(drift).map((d) => (
+            <div key={d.gid} style={rowStyle}>
+              <span style={{fontWeight: 700}}>{d.recordTitle || d.recordId}</span>{' '}
+              <span style={dim}>
+                ·{' '}
+                {Object.entries(d.drift || {})
+                  .map(([k, v]) => `${k}: ${v.asana}≠${v.planner}`)
+                  .join(' · ')}
+              </span>
+            </div>
+          ))}
+          {moreNote(drift)}
+        </>,
+      )}
+    </div>
+  );
 }
 
 // eslint-disable-next-line no-unused-vars -- Header is a JSX-only prop component
@@ -200,6 +425,7 @@ export default function ProcessingCalendarView({Header, authState}) {
   const [asanaSyncBusy, setAsanaSyncBusy] = useState(null);
   const [asanaSyncNotice, setAsanaSyncNotice] = useState(null);
   const [dryRunReady, setDryRunReady] = useState(false);
+  const [dryRunPlan, setDryRunPlan] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -263,15 +489,18 @@ export default function ProcessingCalendarView({Header, authState}) {
       const result = await invokeProcessingAsanaSync(sb, {action});
       if (action === 'dry_run') {
         setDryRunReady(true);
+        setDryRunPlan((result && result.plan) || null);
         setAsanaSyncNotice({kind: 'success', message: dryRunSummary(result && result.plan)});
       } else {
         setDryRunReady(false);
+        setDryRunPlan(null);
         setAsanaSyncNotice({kind: 'success', message: syncSummary(result && result.counts)});
         await load();
         await refreshAsanaStatus({current: false});
       }
     } catch (e) {
       setDryRunReady(false);
+      setDryRunPlan(null);
       setAsanaSyncNotice({kind: 'error', message: `Asana sync failed. ${(e && e.message) || e}`});
     } finally {
       setAsanaSyncBusy(null);
@@ -758,6 +987,7 @@ export default function ProcessingCalendarView({Header, authState}) {
             <InlineNotice notice={asanaSyncNotice} onDismiss={() => setAsanaSyncNotice(null)} />
           </div>
         )}
+        {isAdmin && dryRunPlan && <DryRunReport plan={dryRunPlan} />}
 
         {/* Stat cards */}
         <div style={{display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 22}}>

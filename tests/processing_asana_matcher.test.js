@@ -18,6 +18,7 @@ import {
   classifyBucket,
   matchAsanaTaskToPlanner,
   computeDrift,
+  buildDryRunReport,
 } from '../supabase/functions/_shared/processingAsanaShape.js';
 
 // ── Fixture builders (shaped like Asana `opt_fields` responses) ──────────────
@@ -426,5 +427,177 @@ describe('computeDrift', () => {
 
   it('returns {} for a null planner row', () => {
     expect(computeDrift(codedTask(), null)).toEqual({});
+  });
+});
+
+// ── buildDryRunReport — read-only review packet mirrors the write path ────────
+
+describe('buildDryRunReport', () => {
+  const BROILER = 'WCF Broiler Processing';
+  const PIG = 'WCF Pig Processing';
+
+  // A representative fetch: matched(+drift) / historical / import_exception /
+  // needs_review(ambiguous) / duplicate-code + planner-contested / milestones /
+  // pig auto-match — one of each so every bucket + collision path is exercised.
+  function scenario() {
+    const plannerRows = [
+      planner('prc-b10', {
+        program: 'broiler',
+        title: 'WCF-B-26-10',
+        processing_date: '2026-07-10',
+        number_processed: 700,
+        status: 'planned',
+        source_id: 'broiler:B-26-10',
+      }),
+      planner('prc-20a', {program: 'broiler', title: 'WCF-B-26-20', source_id: 'broiler:B-26-20a'}),
+      planner('prc-20b', {program: 'broiler', title: 'WCF-B-26-20', source_id: 'broiler:B-26-20b'}),
+      planner('prc-30', {
+        program: 'broiler',
+        title: 'WCF-B-26-30',
+        processing_date: '2026-07-13',
+        number_processed: 700,
+        status: 'Reserved',
+        source_id: 'broiler:B-26-30',
+      }),
+      planner('pig-1', {
+        program: 'pig',
+        processing_date: '2026-05-01',
+        number_processed: 40,
+        sub_batch_attribution: ['SubA'],
+        source_id: '111:222',
+      }),
+    ];
+    const tasks = [
+      // matched + drift (date 07-13 vs planner 07-10, status Reserved vs planned)
+      {task: codedTask(), sectionName: BROILER},
+      // historical (no planner code, year 2023)
+      {
+        task: codedTask({
+          name: 'WCF-B-23-05',
+          batchName: 'WCF-B-23-05',
+          actual: '2023-05-01',
+          planned: null,
+          due: null,
+          created: '2023-01-01',
+        }),
+        sectionName: BROILER,
+      },
+      // import_exception (no planner code, year 2026)
+      {
+        task: codedTask({
+          name: 'WCF-B-26-77',
+          batchName: 'WCF-B-26-77',
+          actual: '2026-08-08',
+          planned: null,
+          due: null,
+        }),
+        sectionName: BROILER,
+      },
+      // needs_review ambiguous (two planner rows share the code)
+      {task: codedTask({name: 'WCF-B-26-20: x', batchName: 'WCF-B-26-20'}), sectionName: BROILER},
+      // duplicate Asana code + planner contested (two tasks auto-match prc-30)
+      {task: codedTask({name: 'WCF-B-26-30: A', batchName: 'WCF-B-26-30'}), sectionName: BROILER},
+      {task: codedTask({name: 'WCF-B-26-30: B', batchName: 'WCF-B-26-30'}), sectionName: BROILER},
+      // milestones: an Asana milestone, and a task with no resolvable program
+      {task: codedTask({resource_subtype: 'milestone', name: 'Kickoff milestone'}), sectionName: BROILER},
+      {task: codedTask({name: 'Loose planning note', batchName: null}), sectionName: null},
+      // pig auto-match
+      {task: pigTask({actual: '2026-05-01', animals: 40, batchName: 'SubA', name: 'Pig SubA'}), sectionName: PIG},
+    ];
+    return {plannerRows, tasks, report: buildDryRunReport(tasks, plannerRows)};
+  }
+
+  it('totals reflect fetched tasks and planner rows', () => {
+    const {report} = scenario();
+    expect(report.tasksFetched).toBe(9);
+    expect(report.plannerRows).toBe(5);
+  });
+
+  it('assigns the SAME buckets the write path would', () => {
+    const {report} = scenario();
+    expect(report.buckets).toEqual({matched: 4, historical: 1, import_exception: 1, needs_review: 1, milestone: 2});
+  });
+
+  it('emits per-record review entries for needs_review (with candidates) and import_exception (with reason)', () => {
+    const {report} = scenario();
+    const needs = report.review.filter((r) => r.bucket === 'needs_review');
+    const exc = report.review.filter((r) => r.bucket === 'import_exception');
+    expect(needs).toHaveLength(1);
+    expect(needs[0].candidateIds.sort()).toEqual(['prc-20a', 'prc-20b']);
+    expect(needs[0].candidates.map((c) => c.source_id).sort()).toEqual(['broiler:B-26-20a', 'broiler:B-26-20b']);
+    expect(exc).toHaveLength(1);
+    expect(exc[0].code).toBe('WCF-B-26-77');
+    expect(exc[0].reason).toBe('unmatched_ge_2024');
+  });
+
+  it('lists milestones (Asana milestone + no-program task)', () => {
+    const {report} = scenario();
+    expect(report.milestones).toHaveLength(2);
+    expect(report.milestones.map((m) => m.title).sort()).toEqual(['Kickoff milestone', 'Loose planning note']);
+  });
+
+  it('reports duplicate Asana codes, ambiguous candidate collisions, and planner-contested rows', () => {
+    const {report} = scenario();
+    const dup = report.collisions.duplicateAsanaCodes;
+    expect(dup).toHaveLength(1);
+    expect(dup[0].code).toBe('WCF-B-26-30');
+    expect(dup[0].gids).toHaveLength(2);
+    expect(report.collisions.ambiguousCandidates).toHaveLength(1);
+    expect(report.collisions.ambiguousCandidates[0].candidateIds.sort()).toEqual(['prc-20a', 'prc-20b']);
+    const contested = report.collisions.plannerContested;
+    expect(contested).toHaveLength(1);
+    expect(contested[0].recordId).toBe('prc-30');
+    expect(contested[0].gids).toHaveLength(2);
+  });
+
+  it('surfaces pig match candidates with date/count/tokens/method + candidate detail', () => {
+    const {report} = scenario();
+    expect(report.pigCandidates).toHaveLength(1);
+    const p = report.pigCandidates[0];
+    expect(p.date).toBe('2026-05-01');
+    expect(p.count).toBe(40);
+    expect(p.tokens).toEqual(['suba']);
+    expect(p.method).toBe('auto_exact');
+    expect(p.candidates.map((c) => c.id)).toEqual(['pig-1']);
+    expect(p.candidates[0].source_id).toBe('111:222');
+  });
+
+  it('previews drift for auto_exact matches only (informational, never applied)', () => {
+    const {report} = scenario();
+    expect(report.driftPreview).toHaveLength(1);
+    const d = report.driftPreview[0];
+    expect(d.recordId).toBe('prc-b10');
+    expect(d.drift.processing_date).toEqual({asana: '2026-07-13', planner: '2026-07-10'});
+    expect(d.drift.status).toEqual({asana: 'Reserved', planner: 'planned'});
+  });
+
+  it('does not flag pig many-to-one (N sub-batch tasks → one trip) as planner-contested', () => {
+    const plannerRows = [
+      planner('pig-1', {
+        program: 'pig',
+        processing_date: '2026-05-01',
+        number_processed: 40,
+        sub_batch_attribution: ['SubA', 'SubB'],
+      }),
+    ];
+    const tasks = [
+      {task: pigTask({actual: '2026-05-01', animals: 40, batchName: 'SubA', name: 'Pig A'}), sectionName: PIG},
+      {task: pigTask({actual: '2026-05-01', animals: 40, batchName: 'SubB', name: 'Pig B'}), sectionName: PIG},
+    ];
+    const report = buildDryRunReport(tasks, plannerRows);
+    expect(report.buckets.matched).toBe(2);
+    expect(report.collisions.plannerContested).toHaveLength(0);
+  });
+
+  it('is safe on empty input (all zero buckets, empty detail)', () => {
+    const report = buildDryRunReport([], []);
+    expect(report.tasksFetched).toBe(0);
+    expect(report.plannerRows).toBe(0);
+    expect(report.buckets).toEqual({matched: 0, historical: 0, import_exception: 0, needs_review: 0, milestone: 0});
+    expect(report.review).toEqual([]);
+    expect(report.milestones).toEqual([]);
+    expect(report.pigCandidates).toEqual([]);
+    expect(report.driftPreview).toEqual([]);
+    expect(report.collisions).toEqual({duplicateAsanaCodes: [], ambiguousCandidates: [], plannerContested: []});
   });
 });

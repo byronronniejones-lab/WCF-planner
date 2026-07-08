@@ -46,6 +46,47 @@ describe('processing wiring - admin Asana sync controls', () => {
   });
 });
 
+describe('processing wiring — dry-run report reads the real Edge contract', () => {
+  it('dryRunSummary reports tasksFetched/plannerRows/buckets, not the removed would-insert/update/skip fields', () => {
+    expect(processingCalendar).toContain('p.buckets');
+    expect(processingCalendar).toContain('tasksFetched');
+    expect(processingCalendar).toContain('plannerRows');
+    // The old UI bug (reading fields runDryRun never returns) is gone.
+    expect(processingCalendar).not.toContain('wouldInsert');
+    expect(processingCalendar).not.toContain('wouldUpdate');
+    expect(processingCalendar).not.toContain('wouldSkip');
+  });
+
+  it('renders a read-only DryRunReport panel driven by plan.buckets + review-grade detail', () => {
+    expect(processingCalendar).toContain('function DryRunReport');
+    expect(processingCalendar).toContain('data-processing-dry-run-report="1"');
+    expect(processingCalendar).toContain('plan.buckets');
+    for (const key of [
+      'plan.review',
+      'plan.milestones',
+      'plan.collisions',
+      'plan.pigCandidates',
+      'plan.driftPreview',
+    ]) {
+      expect(processingCalendar).toContain(key);
+    }
+    // Stored from the dry_run result and rendered admin-only.
+    expect(processingCalendar).toContain('setDryRunPlan((result && result.plan) || null)');
+    expect(processingCalendar).toContain('isAdmin && dryRunPlan && <DryRunReport plan={dryRunPlan} />');
+  });
+
+  it('the DryRunReport panel is read-only (no write/import affordance inside it)', () => {
+    const start = processingCalendar.indexOf('function DryRunReport');
+    const end = processingCalendar.indexOf('export default function ProcessingCalendarView', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const body = processingCalendar.slice(start, end);
+    expect(body).not.toContain('runAsanaSyncAction');
+    expect(body).not.toContain('sync_once');
+    expect(body).not.toMatch(/onClick=/);
+  });
+});
+
 describe('processing wiring — ActivityLogView labels + filter', () => {
   it('labels processing.record as Processing', () => {
     expect(activityLogView).toContain("'processing.record': 'Processing'");

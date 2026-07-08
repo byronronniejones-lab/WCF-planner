@@ -85,6 +85,7 @@ import {
   matchAsanaTaskToPlanner,
   normalizeWcfCode,
   computeDrift,
+  buildDryRunReport,
 } from '../_shared/processingAsanaShape.js';
 
 // Defensive trim: pasted Dashboard secrets often pick up a trailing newline.
@@ -355,28 +356,15 @@ function codeForTask(task: Record<string, unknown>, row: Record<string, unknown>
 // ─── dry_run (read-only match preview) ───────────────────────────────────────
 
 async function runDryRun(svc: ReturnType<typeof createClient>): Promise<Record<string, unknown>> {
-  // NO reconcile (that writes) and NO sync-run row. Planner rows are as-of the
-  // last reconcile; the tallies use the current matcher rules.
+  // Read-only review preview: NO reconcile (that writes), NO sync-run row, NO
+  // Asana/DB writes. Planner rows are as-of the last reconcile; the classification
+  // uses the SAME matcher rules the write path (runSync) applies. The full review
+  // packet (buckets, review entries, milestones, duplicate/collision report, pig
+  // candidates, drift preview) is assembled by the PURE, unit-tested
+  // buildDryRunReport so the read preview and the write path can never diverge.
   const plannerRows = await loadPlannerRows(svc);
   const tasks = await fetchTasks(null);
-  const buckets = {auto_exact: 0, needs_review: 0, historical: 0, milestone: 0};
-  for (const t of tasks) {
-    if (classifyRecordType(t.task, {sectionName: t.sectionName, program: t.program}) === 'milestone') {
-      buckets.milestone += 1;
-      continue;
-    }
-    const row = mapAsanaTaskToProcessingRow(t.task, {sectionName: t.sectionName, customFieldsByName: t.cf});
-    const match = matchAsanaTaskToPlanner(t.task, {
-      program: t.program,
-      code: codeForTask(t.task, row),
-      plannerRows,
-      customFieldsByName: t.cf,
-    });
-    if (match.method === 'auto_exact') buckets.auto_exact += 1;
-    else if (match.method === 'historical') buckets.historical += 1;
-    else buckets.needs_review += 1;
-  }
-  return {tasksFetched: tasks.length, plannerRows: plannerRows.length, buckets};
+  return buildDryRunReport(tasks, plannerRows) as Record<string, unknown>;
 }
 
 // ─── sync (write) ────────────────────────────────────────────────────────────

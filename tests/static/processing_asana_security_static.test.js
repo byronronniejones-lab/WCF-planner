@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {describe, it, expect} from 'vitest';
 import {
   buildDiffPlan,
+  buildDryRunReport,
   mapAsanaTaskToProcessingRow,
   sectionToProgram,
 } from '../../supabase/functions/_shared/processingAsanaShape.js';
@@ -122,6 +123,63 @@ describe('processing-asana — pure, deterministic shape/diff layer', () => {
   it("sectionToProgram maps 'WCF Lamb Processing' -> 'sheep'", () => {
     expect(shapeSrc).toContain("'WCF Lamb Processing': 'sheep'");
     expect(sectionToProgram('WCF Lamb Processing')).toBe('sheep');
+  });
+});
+
+describe('processing-asana — read-only dry_run review report', () => {
+  it('the shared module exports a pure buildDryRunReport', () => {
+    expect(shapeSrc).toContain('export function buildDryRunReport');
+    expect(typeof buildDryRunReport).toBe('function');
+  });
+
+  it('buildDryRunReport carries write-path-parity buckets + review-grade detail', () => {
+    // Buckets mirror the write path's counts.* classification names.
+    for (const key of ['matched:', 'historical:', 'import_exception:', 'needs_review:', 'milestone:']) {
+      expect(shapeSrc).toContain(key);
+    }
+    // Detail collections the report must surface.
+    for (const key of ['review', 'milestones', 'collisions', 'pigCandidates', 'driftPreview']) {
+      expect(shapeSrc).toContain(key);
+    }
+    // Collision sub-reports.
+    for (const key of ['duplicateAsanaCodes', 'ambiguousCandidates', 'plannerContested']) {
+      expect(shapeSrc).toContain(key);
+    }
+    // Live shape check (not just source text): every documented key is present.
+    const report = buildDryRunReport([], []);
+    expect(Object.keys(report.buckets).sort()).toEqual([
+      'historical',
+      'import_exception',
+      'matched',
+      'milestone',
+      'needs_review',
+    ]);
+    expect(Object.keys(report.collisions).sort()).toEqual([
+      'ambiguousCandidates',
+      'duplicateAsanaCodes',
+      'plannerContested',
+    ]);
+    for (const key of ['tasksFetched', 'plannerRows', 'review', 'milestones', 'pigCandidates', 'driftPreview']) {
+      expect(report).toHaveProperty(key);
+    }
+  });
+
+  it('runDryRun is READ-ONLY: builds the report, never reconciles / writes / starts a sync run', () => {
+    const start = edgeFn.indexOf('async function runDryRun');
+    expect(start).toBeGreaterThan(-1);
+    const body = edgeFn.slice(start, edgeFn.indexOf('\n}', start));
+    expect(body).toContain('buildDryRunReport(tasks, plannerRows)');
+    expect(body).not.toContain('reconcile_planner_to_processing');
+    expect(body).not.toContain('start_processing_sync_run');
+    expect(body).not.toMatch(/svc\.rpc\(/);
+    expect(body).not.toMatch(/\.(insert|update|upsert|delete)\(/);
+  });
+
+  it('the dry_run action returns the read preview plan and skips the write bracket', () => {
+    // action==='dry_run' returns { plan: <report> } and never enters runSync.
+    expect(edgeFn).toMatch(/if \(action === 'dry_run'\)[\s\S]*?runDryRun\(svc\)[\s\S]*?plan/);
+    // dry_run is still gated behind the Asana token like the write actions.
+    expect(edgeFn).toMatch(/if \(!ASANA_ACCESS_TOKEN\)[\s\S]*?asanaConfigured: false/);
   });
 });
 

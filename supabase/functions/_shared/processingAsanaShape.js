@@ -646,3 +646,193 @@ export function buildDiffPlan(asanaRows, nativeByGid) {
   }
   return plan;
 }
+
+// ── Read-only dry-run report (mirrors the write-path classification) ──────────
+
+// Build the review packet the /processing "Dry run" surfaces. For each Asana task
+// it assigns the SAME bucket the write path (runSync) would, WITHOUT writing:
+//   matched          — auto_exact link to a senior Planner record (+ drift preview)
+//   historical       — unmatched, date-derived year < 2024
+//   import_exception — unmatched, year >= 2024 OR no derivable year, no candidates
+//   needs_review     — >=2 planner candidates / Name↔BN disagreement (deferred)
+//   milestone        — Asana milestone OR no resolvable program
+// and collects per-record review detail, milestones, duplicate/collision reports,
+// pig match candidates, and a drift preview for auto_exact links.
+//
+// PURE + deterministic: no I/O, no writes, no Date.now(). The edge function feeds
+// it fetched Asana tasks + reconciled planner_batch rows and returns it verbatim.
+//   fetchedTasks: [{ task, sectionName, cf? }]  (cf optional; derived if absent)
+//   plannerRows:  record_type='planner_batch' rows (see loadPlannerRows)
+export function buildDryRunReport(fetchedTasks, plannerRows) {
+  const tasks = Array.isArray(fetchedTasks) ? fetchedTasks : [];
+  const rows = Array.isArray(plannerRows) ? plannerRows : [];
+  const plannerById = new Map();
+  for (const r of rows) if (r && r.id != null) plannerById.set(String(r.id), r);
+
+  const buckets = {matched: 0, historical: 0, import_exception: 0, needs_review: 0, milestone: 0};
+  const review = [];
+  const milestones = [];
+  const pigCandidates = [];
+  const driftPreview = [];
+
+  // Collision accumulators.
+  const codeIndex = new Map(); // `${program}::${code}` -> [{gid, title}]
+  const matchedByRecord = new Map(); // recordId -> [{gid, program}]
+  const ambiguousCandidates = []; // one Asana task -> >=2 planner candidates
+
+  const candDetail = (ids) =>
+    (Array.isArray(ids) ? ids : []).map((id) => {
+      const r = plannerById.get(String(id));
+      return r
+        ? {id: r.id, title: r.title ?? null, source_id: r.source_id ?? null, source_kind: r.source_kind ?? null}
+        : {id, title: null, source_id: null, source_kind: null};
+    });
+
+  for (const ft of tasks) {
+    const task = (ft && ft.task) || {};
+    const sectionName = ft ? ft.sectionName : null;
+    const cf = normalizeCfMap(ft && ft.cf != null ? ft.cf : indexCustomFields(task));
+    const gid = task && task.gid != null ? String(task.gid) : null;
+    const title = task && task.name != null ? String(task.name) : '(untitled)';
+
+    // Reuse the exact mapping/program/code the write path uses.
+    const row = mapAsanaTaskToProcessingRow(task, {sectionName, customFieldsByName: cf});
+    const program = row.program;
+    const code =
+      normalizeWcfCode(task && task.name) || normalizeWcfCode((row.historical_snapshot || {}).batch_name) || null;
+
+    // Milestone (Asana milestone OR no resolvable program) — excluded from matching.
+    if (classifyRecordType(task, {sectionName, program}) === 'milestone') {
+      buckets.milestone += 1;
+      milestones.push({
+        gid,
+        title,
+        program,
+        section: sectionName != null ? String(sectionName).trim() || null : null,
+      });
+      continue;
+    }
+
+    // Track Asana program+code duplicates (coded programs only; pig has no code).
+    if (code) {
+      const key = `${program}::${code}`;
+      if (!codeIndex.has(key)) codeIndex.set(key, []);
+      codeIndex.get(key).push({gid, title});
+    }
+
+    const match = matchAsanaTaskToPlanner(task, {program, code, plannerRows: rows, customFieldsByName: cf});
+
+    // Pig review aid: surface signals + candidates for EVERY pig task.
+    if (program === 'pig') {
+      pigCandidates.push({
+        gid,
+        title,
+        date: toDateOnly(firstNonEmpty(cf[CF.ACTUAL_PROC], cf[CF.PLANNED_PROC], task && task.due_on)),
+        count: toInt(cf[CF.ANIMALS]),
+        tokens: Array.from(pigSubBatchTokens(cf[CF.BATCH_NAME])),
+        method: match.method,
+        candidates: candDetail(match.method === 'auto_exact' && match.recordId ? [match.recordId] : match.candidateIds),
+      });
+    }
+
+    if (match.method === 'auto_exact' && match.recordId) {
+      buckets.matched += 1;
+      const rid = String(match.recordId);
+      if (!matchedByRecord.has(rid)) matchedByRecord.set(rid, []);
+      matchedByRecord.get(rid).push({gid, program});
+      const plannerRow = plannerById.get(rid) || null;
+      const drift = computeDrift(task, plannerRow, {customFieldsByName: cf});
+      if (drift && Object.keys(drift).length > 0) {
+        driftPreview.push({
+          gid,
+          recordId: rid,
+          recordTitle: plannerRow ? (plannerRow.title ?? null) : null,
+          source_id: plannerRow ? (plannerRow.source_id ?? null) : null,
+          drift,
+        });
+      }
+      continue;
+    }
+
+    if (match.method === 'historical') {
+      buckets.historical += 1;
+      continue;
+    }
+
+    // needs_review (>=1 candidate → deferred crosswalk) vs import_exception (no
+    // candidate: unmatched >=2024 or no derivable year). Mirrors runSync exactly.
+    const candidateIds = Array.isArray(match.candidateIds) ? match.candidateIds : [];
+    if (candidateIds.length > 0) {
+      buckets.needs_review += 1;
+      review.push({
+        gid,
+        program,
+        title,
+        code,
+        processing_date: row.processing_date,
+        number_processed: row.number_processed,
+        bucket: 'needs_review',
+        reason: 'ambiguous_multiple_candidates',
+        candidateIds,
+        candidates: candDetail(candidateIds),
+      });
+      if (candidateIds.length >= 2) ambiguousCandidates.push({gid, title, program, code, candidateIds});
+      continue;
+    }
+
+    buckets.import_exception += 1;
+    review.push({
+      gid,
+      program,
+      title,
+      code,
+      processing_date: row.processing_date,
+      number_processed: row.number_processed,
+      bucket: 'import_exception',
+      reason: deriveProcessingYear(task, cf) != null ? 'unmatched_ge_2024' : 'no_derivable_year',
+      candidateIds: [],
+      candidates: [],
+    });
+  }
+
+  const duplicateAsanaCodes = [];
+  for (const [key, list] of codeIndex) {
+    if (list.length >= 2) {
+      const sep = key.indexOf('::');
+      duplicateAsanaCodes.push({
+        program: key.slice(0, sep),
+        code: key.slice(sep + 2),
+        gids: list.map((x) => x.gid),
+        titles: list.map((x) => x.title),
+      });
+    }
+  }
+
+  // Planner rows taking >=2 auto matches. Pig legitimately links N Asana sub-batch
+  // rows to one trip, so only coded programs are flagged as contested.
+  const plannerContested = [];
+  for (const [recordId, hits] of matchedByRecord) {
+    if (hits.length < 2) continue;
+    const r = plannerById.get(recordId);
+    const program = r ? r.program : hits[0].program;
+    if (program === 'pig') continue;
+    plannerContested.push({
+      recordId,
+      title: r ? (r.title ?? null) : null,
+      source_id: r ? (r.source_id ?? null) : null,
+      program,
+      gids: hits.map((x) => x.gid),
+    });
+  }
+
+  return {
+    tasksFetched: tasks.length,
+    plannerRows: rows.length,
+    buckets,
+    review,
+    milestones,
+    collisions: {duplicateAsanaCodes, ambiguousCandidates, plannerContested},
+    pigCandidates,
+    driftPreview,
+  };
+}
