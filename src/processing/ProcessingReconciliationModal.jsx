@@ -346,6 +346,26 @@ function ReconciliationPanel({onClose}) {
     runMutation(() => supersedeProcessingAsanaDuplicate(sb, asanaGid, canonicalId || null), 'Blocked as duplicate.');
   const ackDrift = (asanaGid) => runMutation(() => acknowledgeProcessingDrift(sb, asanaGid), 'Drift acknowledged.');
   const skipNext = (asanaGid) => setSkipped((prev) => new Set(prev).add(asanaGid));
+  const previewComments = () =>
+    runMutation(
+      () => invokeProcessingAsanaSync(sb, {action: 'comments_dry_run'}),
+      (r) => {
+        const c = (r && r.report) || {};
+        return `Comments preview — ${num(c.linkedTasks)} linked tasks scanned, ${num(
+          c.commentsFound,
+        )} Asana comments found (nothing imported).`;
+      },
+    );
+  const importComments = () =>
+    runMutation(
+      () => invokeProcessingAsanaSync(sb, {action: 'sync_comments'}),
+      (r) => {
+        const c = (r && r.counts) || {};
+        return `Comments imported — ${num(c.inserted)} new, ${num(c.skipped)} already present, ${num(
+          c.errors,
+        )} errors across ${num(c.linkedTasks)} linked tasks (comments only — no subtasks/attachments).`;
+      },
+    );
 
   const loaded = !loading && !loadError;
   const hasAnyLink = links.length > 0;
@@ -502,6 +522,48 @@ function ReconciliationPanel({onClose}) {
                   {busy ? 'Working…' : 'Populate review queue'}
                 </button>
               </div>
+
+              {hasAnyLink && (
+                <div
+                  data-reconciliation-comments="1"
+                  style={{
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 14,
+                    padding: '13px 16px',
+                    marginBottom: 16,
+                    display: 'flex',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div style={{flex: 1, minWidth: 200}}>
+                    <div style={{fontSize: 13.5, fontWeight: 800, color: T.ink}}>Asana comments</div>
+                    <div style={{fontSize: 12, color: T.muted, fontWeight: 600, marginTop: 3, lineHeight: 1.45}}>
+                      Import the discussion from each already-linked Asana task (comments only — no subtasks,
+                      attachments, or files). Idempotent — re-running skips comments already imported.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={previewComments}
+                    disabled={busy}
+                    data-reconciliation-comments-preview-btn="1"
+                    style={secondaryBtn(busy)}
+                  >
+                    {busy ? 'Working…' : 'Preview comments'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={importComments}
+                    disabled={busy}
+                    data-reconciliation-comments-import-btn="1"
+                    style={primaryBtn(busy)}
+                  >
+                    {busy ? 'Working…' : 'Import comments'}
+                  </button>
+                </div>
+              )}
 
               {!hasAnyLink ? (
                 <div

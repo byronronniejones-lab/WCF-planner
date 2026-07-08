@@ -367,6 +367,70 @@ async function runDryRun(svc: ReturnType<typeof createClient>): Promise<Record<s
   return buildDryRunReport(tasks, plannerRows) as Record<string, unknown>;
 }
 
+// ─── comments-only import (Lane A) ───────────────────────────────────────────
+
+interface CommentImportCounts {
+  linkedTasks: number;
+  commentsFound: number;
+  inserted: number;
+  skipped: number;
+  errors: number;
+  dryRun: boolean;
+}
+
+// Import Asana COMMENTS ONLY. For each ALREADY-LINKED task (read-only lookup of the
+// existing processing_asana_links rows that have a non-null processing_record_id —
+// NO reconcile, NO rematch), fetch its Asana comment stories and persist them via
+// record_processing_comment (idempotent on asana_comment_gid; parent resolved via
+// the link). Deliberately does NOT touch subtasks, attachments, Storage, or the
+// sync_once artifact path. dryRun scans + counts without writing anything.
+async function runCommentsImport(svc: ReturnType<typeof createClient>, dryRun: boolean): Promise<CommentImportCounts> {
+  const counts: CommentImportCounts = {
+    linkedTasks: 0,
+    commentsFound: 0,
+    inserted: 0,
+    skipped: 0,
+    errors: 0,
+    dryRun,
+  };
+  const {data: links, error} = await svc
+    .from('processing_asana_links')
+    .select('asana_gid, processing_record_id')
+    .not('processing_record_id', 'is', null);
+  if (error) throw new Error(`load linked rows: ${error.message}`);
+
+  for (const l of (links || []) as Array<{asana_gid: string | null}>) {
+    const gid = l.asana_gid;
+    if (!gid) continue;
+    counts.linkedTasks += 1;
+    try {
+      const stories = await asanaGetAll(`/tasks/${gid}/stories`, {opt_fields: STORY_OPT_FIELDS});
+      for (const s of stories) {
+        if (!isRealComment(s)) continue;
+        counts.commentsFound += 1;
+        if (dryRun) continue;
+        const c = mapAsanaComment(s);
+        const {data, error: cErr} = await svc.rpc('record_processing_comment', {
+          p_row: {
+            parent_asana_gid: gid,
+            asana_comment_gid: c.asana_comment_gid,
+            body: c.body,
+            original_author_name: c.original_author_name,
+            created_at: c.created_at,
+          },
+        });
+        if (cErr) counts.errors += 1;
+        else if ((data as {action?: string})?.action === 'skipped') counts.skipped += 1;
+        else counts.inserted += 1;
+      }
+    } catch (e) {
+      counts.errors += 1;
+      console.error(`comments ${gid}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return counts;
+}
+
 // ─── sync (write) ────────────────────────────────────────────────────────────
 
 interface SyncCounts {
@@ -680,6 +744,8 @@ const ACTIONS = new Set([
   'dry_run',
   'sync_planner_to_processing',
   'sync_review_queue',
+  'comments_dry_run',
+  'sync_comments',
   'sync_once',
   'sync_since',
   'attachment_backfill',
@@ -746,6 +812,48 @@ serve(async (req: Request) => {
       return jsonResponse({ok: true, action, plan});
     } catch (e) {
       return jsonResponse({ok: false, action, error: e instanceof Error ? e.message : String(e)}, 500);
+    }
+  }
+
+  // comments_dry_run: read-only preview — scan already-linked tasks + count Asana
+  // comments, no DB write, no sync-run row.
+  if (action === 'comments_dry_run') {
+    try {
+      const report = await runCommentsImport(svc, true);
+      return jsonResponse({ok: true, action, report});
+    } catch (e) {
+      return jsonResponse({ok: false, action, error: e instanceof Error ? e.message : String(e)}, 500);
+    }
+  }
+
+  // sync_comments: COMMENTS ONLY — record_processing_comment for already-linked
+  // tasks. NO subtasks/attachments/Storage; never the sync_once artifact path.
+  // Bracketed in a sync-run row for observability.
+  if (action === 'sync_comments') {
+    let commentsRunId = '';
+    try {
+      const {data: run, error: startErr} = await svc.rpc('start_processing_sync_run', {p_action: action});
+      if (startErr) throw new Error(`start_processing_sync_run: ${startErr.message}`);
+      commentsRunId = (run as {id?: string})?.id || '';
+      const counts = await runCommentsImport(svc, false);
+      await svc.rpc('finish_processing_sync_run', {
+        p_run_id: commentsRunId,
+        p_status: 'ok',
+        p_counts: counts,
+        p_error: null,
+      });
+      return jsonResponse({ok: true, action, runId: commentsRunId, counts});
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (commentsRunId) {
+        await svc.rpc('finish_processing_sync_run', {
+          p_run_id: commentsRunId,
+          p_status: 'error',
+          p_counts: {},
+          p_error: msg,
+        });
+      }
+      return jsonResponse({ok: false, action, error: msg}, 500);
     }
   }
 
