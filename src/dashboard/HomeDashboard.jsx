@@ -321,8 +321,24 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
   React.useEffect(() => {
     let cancelled = false;
     Promise.all([
-      sb.from('equipment_service_materials').select('*').eq('active', true),
-      sb.from('equipment_material_clears').select('*'),
+      sb
+        .from('equipment_service_materials')
+        .select('*')
+        .eq('active', true)
+        .order('equipment_id', {ascending: true})
+        .order('source_kind', {ascending: true})
+        .order('interval_unit', {ascending: true})
+        .order('interval_value', {ascending: true})
+        .order('attachment_name', {ascending: true})
+        .order('sort_order', {ascending: true})
+        .order('material_name', {ascending: true}),
+      sb
+        .from('equipment_material_clears')
+        .select('*')
+        .order('material_id', {ascending: true})
+        .order('due_bucket_unit', {ascending: true})
+        .order('due_bucket_value', {ascending: true})
+        .order('cleared_at', {ascending: true}),
     ]).then(([matRes, clrRes]) => {
       if (cancelled) return;
       if (matRes.error && /does not exist|relation/i.test(matRes.error.message || '')) {

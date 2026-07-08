@@ -28,6 +28,40 @@ import {computeIntervalStatus, latestSaneReading} from './equipment.js';
 export const HOURS_WINDOW = 100;
 export const KM_WINDOW = 5000;
 
+const INTERVAL_UNIT_ORDER = {hours: 0, km: 1, use: 2};
+
+function numOrMax(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+}
+
+function textCompare(a, b) {
+  return String(a || '').localeCompare(String(b || ''));
+}
+
+function compareMaterialGroups(a, b) {
+  const ao = a.status?.overdue ? 0 : 1;
+  const bo = b.status?.overdue ? 0 : 1;
+  if (ao !== bo) return ao - bo;
+  const ad = a.status?.next_due ?? a.status?.until_due ?? 1e9;
+  const bd = b.status?.next_due ?? b.status?.until_due ?? 1e9;
+  if (ad !== bd) return ad - bd;
+  const ak = a.source_kind === 'service_interval' ? 0 : 1;
+  const bk = b.source_kind === 'service_interval' ? 0 : 1;
+  if (ak !== bk) return ak - bk;
+  const au = INTERVAL_UNIT_ORDER[a.interval_unit] ?? 9;
+  const bu = INTERVAL_UNIT_ORDER[b.interval_unit] ?? 9;
+  if (au !== bu) return au - bu;
+  const av = numOrMax(a.interval_value);
+  const bv = numOrMax(b.interval_value);
+  if (av !== bv) return av - bv;
+  const at = textCompare(a.attachment_name, b.attachment_name);
+  if (at !== 0) return at;
+  const al = textCompare(a.service_label, b.service_label);
+  if (al !== 0) return al;
+  return textCompare(a.groupKey, b.groupKey);
+}
+
 // Build completions list shaped for computeIntervalStatus from the raw
 // equipment_fuelings rows. Mirrors the inline build in
 // EquipmentFuelingWebform.jsx (the historical convention) — each completion
@@ -117,7 +151,7 @@ function buildIntervalStatusByKey(eq, fuelings, currentReading) {
 // Decide whether a material is in the rolling window for the given interval
 // status. 'use' materials are always in-window. Returns the due_bucket
 // {value, unit} for clear-key lookup.
-function inWindow(material, status, eq) {
+function inWindow(material, status) {
   if (material.interval_unit === 'use') {
     return {inWindow: true, dueBucketValue: null, dueBucketUnit: 'use'};
   }
@@ -184,7 +218,7 @@ export function buildMaterialChecklist({equipment, fuelingsBy, materials, clears
     for (const m of eqMaterials) {
       const groupKey = `${m.source_kind}|${m.interval_unit}|${m.interval_value ?? ''}|${m.attachment_name ?? ''}`;
       const status = byKey.get(groupKey) || null;
-      const {inWindow: ok, dueBucketValue, dueBucketUnit} = inWindow(m, status, eq);
+      const {inWindow: ok, dueBucketValue, dueBucketUnit} = inWindow(m, status);
       if (!ok) continue;
       // Skip if cleared in this bucket.
       const matClears = clearsByMat.get(m.id) || [];
@@ -215,18 +249,9 @@ export function buildMaterialChecklist({equipment, fuelingsBy, materials, clears
         return (a.material_name || '').localeCompare(b.material_name || '');
       });
     }
-    // Sort groups by overdue first, then nearest-due, attachments after main intervals.
-    const sortedGroups = Array.from(groups.values()).sort((a, b) => {
-      const ao = a.status?.overdue ? 0 : 1;
-      const bo = b.status?.overdue ? 0 : 1;
-      if (ao !== bo) return ao - bo;
-      const ad = a.status?.until_due ?? 1e9;
-      const bd = b.status?.until_due ?? 1e9;
-      if (ad !== bd) return ad - bd;
-      const ak = a.source_kind === 'service_interval' ? 0 : 1;
-      const bk = b.source_kind === 'service_interval' ? 0 : 1;
-      return ak - bk;
-    });
+    // Sort groups by due priority, then structural identity so a Clear/refetch
+    // cannot shuffle equal-due checklist groups.
+    const sortedGroups = Array.from(groups.values()).sort(compareMaterialGroups);
     out.push({equipment: eq, current_reading: currentReading, groups: sortedGroups});
   }
   // Sort equipment alphabetically by name for stable display.

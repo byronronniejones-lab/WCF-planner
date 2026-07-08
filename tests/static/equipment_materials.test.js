@@ -521,6 +521,152 @@ describe('equipmentMaterials.js — clear-one behavior', () => {
     expect(names).toEqual(expect.arrayContaining(['Grease', 'Loctite 567']));
   });
 
+  it('keeps equal-due service groups in interval order after clearing one group', () => {
+    const eq = {
+      id: 'eq-order',
+      slug: 'order',
+      name: 'Order',
+      status: 'active',
+      tracking_unit: 'hours',
+      current_hours: 1100,
+      current_km: null,
+      service_intervals: [
+        {kind: 'hours', hours_or_km: 300, label: 'Every 300h'},
+        {kind: 'hours', hours_or_km: 600, label: 'Every 600h'},
+        {kind: 'hours', hours_or_km: 1200, label: 'Every 1200h'},
+      ],
+      attachment_checklists: [],
+    };
+    const mat300 = {...m1, id: 'm300', equipment_id: 'eq-order', interval_value: 300, material_name: 'Lift Oil Filter'};
+    const mat600 = {...m1, id: 'm600', equipment_id: 'eq-order', interval_value: 600, material_name: 'Grease'};
+    const mat1200 = {
+      ...m1,
+      id: 'm1200',
+      equipment_id: 'eq-order',
+      interval_value: 1200,
+      material_name: 'Cab Air Filter',
+    };
+    const fuelingsBy = new Map([
+      [
+        'eq-order',
+        [
+          {
+            id: 'f900',
+            equipment_id: 'eq-order',
+            date: '2026-06-01',
+            hours_reading: 900,
+            km_reading: null,
+            service_intervals_completed: [
+              {interval: 300, kind: 'hours', label: 'Every 300h', items_completed: [], total_tasks: 0},
+            ],
+          },
+          {
+            id: 'f600',
+            equipment_id: 'eq-order',
+            date: '2026-05-01',
+            hours_reading: 600,
+            km_reading: null,
+            service_intervals_completed: [
+              {interval: 600, kind: 'hours', label: 'Every 600h', items_completed: [], total_tasks: 0},
+            ],
+          },
+        ],
+      ],
+    ]);
+    const groupValues = (clears = []) =>
+      buildMaterialChecklist({
+        equipment: [eq],
+        fuelingsBy,
+        // Intentionally scrambled to prove row/refetch order cannot drive group order.
+        materials: [mat600, mat1200, mat300],
+        clears,
+      })[0].groups.map((g) => g.interval_value);
+
+    expect(groupValues()).toEqual([300, 600, 1200]);
+    expect(groupValues([{material_id: 'm600', due_bucket_value: 1200, due_bucket_unit: 'hours'}])).toEqual([300, 1200]);
+  });
+
+  it('keeps the 300h group above 600h/1200h after clearing one 600h material', () => {
+    const eq = {
+      id: 'eq-pw100',
+      slug: 'pw100',
+      name: '2023 New Holland Powerstar 100',
+      status: 'active',
+      tracking_unit: 'hours',
+      current_hours: 1105.6,
+      current_km: null,
+      service_intervals: [
+        {kind: 'hours', hours_or_km: 300, label: 'Every 300h'},
+        {kind: 'hours', hours_or_km: 600, label: 'Every 600h'},
+        {kind: 'hours', hours_or_km: 1200, label: 'Every 1200h'},
+      ],
+      attachment_checklists: [],
+    };
+    const mat600Grease = {...m1, id: 'pw-grease', equipment_id: eq.id, interval_value: 600, material_name: 'Grease'};
+    const mat600Def = {
+      ...m1,
+      id: 'pw-def',
+      equipment_id: eq.id,
+      interval_value: 600,
+      material_name: 'DEF INLINE FILTER - 47802545',
+      sort_order: 20,
+    };
+    const mat1200 = {
+      ...m1,
+      id: 'pw-cab',
+      equipment_id: eq.id,
+      interval_value: 1200,
+      material_name: 'CAB AIR FILTER - 47565055',
+    };
+    const mat300 = {
+      ...m1,
+      id: 'pw-lift',
+      equipment_id: eq.id,
+      interval_value: 300,
+      material_name: 'Lift Oil Filter - CNH-84581942',
+    };
+    const fuelingsBy = new Map([
+      [
+        eq.id,
+        [
+          {
+            id: 'pw-f900',
+            equipment_id: eq.id,
+            date: '2026-06-01',
+            hours_reading: 900,
+            service_intervals_completed: [
+              {interval: 300, kind: 'hours', label: 'Every 300h', items_completed: [], total_tasks: 0},
+            ],
+          },
+          {
+            id: 'pw-f600',
+            equipment_id: eq.id,
+            date: '2026-05-01',
+            hours_reading: 600,
+            service_intervals_completed: [
+              {interval: 600, kind: 'hours', label: 'Every 600h', items_completed: [], total_tasks: 0},
+            ],
+          },
+        ],
+      ],
+    ]);
+
+    const result = buildMaterialChecklist({
+      equipment: [eq],
+      fuelingsBy,
+      // Mirrors the bad refetch shape: 600h rows arrive before 1200h, then 300h.
+      materials: [mat600Grease, mat600Def, mat1200, mat300],
+      clears: [{material_id: 'pw-grease', due_bucket_value: 1200, due_bucket_unit: 'hours'}],
+    });
+
+    expect(result[0].groups.map((g) => g.interval_value)).toEqual([300, 600, 1200]);
+    expect(result[0].groups.map((g) => g.materials.map((m) => m.material_name))).toEqual([
+      ['Lift Oil Filter - CNH-84581942'],
+      ['DEF INLINE FILTER - 47802545'],
+      ['CAB AIR FILTER - 47565055'],
+    ]);
+  });
+
   it("'use' interval clear persists indefinitely (bucket=NULL,'use')", () => {
     const eq = {
       id: 'eq-vt',
@@ -646,8 +792,22 @@ describe('HomeDashboard Materials Needed card (lane amendment)', () => {
   });
 
   it('loads materials + clears from the new tables', () => {
-    expect(dashboardSrc).toMatch(/sb\.from\('equipment_service_materials'\)\.select/);
-    expect(dashboardSrc).toMatch(/sb\.from\('equipment_material_clears'\)\.select/);
+    expect(dashboardSrc).toMatch(/sb\s*\.\s*from\('equipment_service_materials'\)[\s\S]*?\.select/);
+    expect(dashboardSrc).toMatch(/sb\s*\.\s*from\('equipment_material_clears'\)[\s\S]*?\.select/);
+  });
+
+  it('loads materials in a deterministic order so Clear/refetch does not reshuffle groups', () => {
+    for (const col of [
+      'equipment_id',
+      'source_kind',
+      'interval_unit',
+      'interval_value',
+      'attachment_name',
+      'sort_order',
+      'material_name',
+    ]) {
+      expect(dashboardSrc).toContain(`.order('${col}', {ascending: true})`);
+    }
   });
 
   it('inserts into equipment_material_clears with due_bucket_value + due_bucket_unit on Clear', () => {
