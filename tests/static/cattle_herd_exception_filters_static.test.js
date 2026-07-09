@@ -114,6 +114,18 @@ describe('Cattle herd rows - grouped default + flat controlled results', () => {
     expect(herdsView).not.toContain('function CowListRow');
   });
 
+  it('renders each herd section as a collapsible tile (persisted, keyboard-accessible)', () => {
+    // Per-herd collapse toggle: chevron header, persisted per surface, and the
+    // table body only mounts when the tile is expanded. openableProps supplies
+    // the role=button + Enter/Space keyboard activation (no hover-class needed).
+    expect(herdsView).toContain("import {openableProps} from '../shared/openable.js'");
+    expect(herdsView).toContain("usePersistentViewState('cattle.herds.collapsedHerds'");
+    expect(herdsView).toContain('data-cattle-herd-toggle={section.key}');
+    expect(herdsView).toContain('data-cattle-herd-collapsed=');
+    expect(herdsView).toContain('aria-expanded={!collapsed}');
+    expect(herdsView).toContain('{!collapsed && (');
+  });
+
   it('offers every field in the column picker (saved in views), tag always shown', () => {
     expect(herdsView).toContain('const CATTLE_HERD_COLUMNS');
     expect(herdsView).toContain('data-cattle-column-toggle');

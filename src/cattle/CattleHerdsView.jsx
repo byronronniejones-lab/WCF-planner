@@ -53,6 +53,7 @@ import Badge from '../shared/Badge.jsx';
 import StatusText from '../shared/StatusText.jsx';
 import {recordSeqNavOptions} from '../lib/recordSequence.js';
 import {usePersistentViewState} from '../lib/usePersistentViewState.js';
+import {openableProps} from '../shared/openable.js';
 import {runMutation, recordFieldChange} from '../lib/entityMutations.js';
 import {buildChanges, countSummary} from '../lib/activityChangeDiff.js';
 import {softDeleteCattleAnimal} from '../lib/cattleDeleteApi.js';
@@ -370,6 +371,9 @@ const CattleHerdsHub = ({
   // Composable filter / sort state.
   const [filters, setFilters] = usePersistentViewState('cattle.herds.filters', {});
   const [sortRules, setSortRules] = usePersistentViewState('cattle.herds.sortRules', [{...DEFAULT_SORT_RULES[0]}]);
+  // Per-herd collapse state for the grouped tiles. Default is all-expanded so
+  // nothing is hidden on first load; toggling a tile persists per surface.
+  const [collapsedHerds, setCollapsedHerds] = usePersistentViewState('cattle.herds.collapsedHerds', {});
   const [lastActivityCache, setLastActivityCache] = usePersistentViewState(
     'cattle.herds.lastActivityCache',
     EMPTY_LAST_ACTIVITY_CACHE,
@@ -2293,36 +2297,60 @@ const CattleHerdsHub = ({
 
             {!loading && cattle.length > 0 && !hasActiveFilters && (
               <div data-cattle-grouped-herds="1" style={{display: 'flex', flexDirection: 'column', gap: 10}}>
-                {groupedHerdSections.map((section) => (
-                  <section
-                    key={section.key}
-                    data-cattle-herd-section={section.key}
-                    style={{
-                      background: 'white',
-                      border: '1px solid var(--border)',
-                      borderRadius: 12,
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <div
+                {groupedHerdSections.map((section) => {
+                  const collapsed = !!collapsedHerds[section.key];
+                  return (
+                    <section
+                      key={section.key}
+                      data-cattle-herd-section={section.key}
                       style={{
-                        padding: '10px 16px',
-                        borderBottom: '1px solid var(--border)',
-                        background: 'var(--surface-2)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 8,
+                        background: 'white',
+                        border: '1px solid var(--border)',
+                        borderRadius: 12,
+                        overflow: 'hidden',
                       }}
                     >
-                      <span style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)'}}>{section.label}</span>
-                      <span style={{fontSize: 11, color: 'var(--ink-muted)'}}>
-                        {section.rows.length} {section.rows.length === 1 ? 'animal' : 'cattle'}
-                      </span>
-                    </div>
-                    <CattleDataTable navList={section.rows} surfaceKey={'cattle-herds-' + section.key} />
-                  </section>
-                ))}
+                      <div
+                        {...openableProps(() =>
+                          setCollapsedHerds((prev) => ({...prev, [section.key]: !prev[section.key]})),
+                        )}
+                        data-cattle-herd-toggle={section.key}
+                        data-cattle-herd-collapsed={collapsed ? '1' : '0'}
+                        aria-expanded={!collapsed}
+                        title={collapsed ? 'Expand ' + section.label : 'Collapse ' + section.label}
+                        style={{
+                          padding: '10px 16px',
+                          borderBottom: collapsed ? 'none' : '1px solid var(--border)',
+                          background: 'var(--surface-2)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--ink-muted)',
+                            width: 10,
+                            flex: 'none',
+                            textAlign: 'center',
+                          }}
+                        >
+                          {collapsed ? '▶' : '▼'}
+                        </span>
+                        <span style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)'}}>{section.label}</span>
+                        <span style={{fontSize: 11, color: 'var(--ink-muted)', marginLeft: 'auto'}}>
+                          {section.rows.length} {section.rows.length === 1 ? 'animal' : 'cattle'}
+                        </span>
+                      </div>
+                      {!collapsed && (
+                        <CattleDataTable navList={section.rows} surfaceKey={'cattle-herds-' + section.key} />
+                      )}
+                    </section>
+                  );
+                })}
               </div>
             )}
           </>
