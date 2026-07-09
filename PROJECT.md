@@ -116,7 +116,11 @@ Design/function invariants that govern cross-surface behavior live in
   are refused. Customer/Processor option-list editing is live from server-backed
   settings (`162`). `processing-asana-sync` live Edge remains version 6 from the
   comments lane; the new template-import and attachment-dry-run actions from
-  `5250222` are committed but not deployed yet. The private
+  `5250222` are committed but not deployed yet. `ASANA_ACCESS_TOKEN` is live on
+  the PROD Edge secret (the dry-run and comments lanes proved live Asana
+  connectivity and it remains set), so redeploying the Edge for the new actions
+  does not require re-setting the token — just probe `asanaConfigured` after
+  deploy to confirm. The private
   `processing-attachments` bucket exists from `163`, with operational-only
   SELECT and no authenticated INSERT, but no attachment bytes have been copied.
   Template import, subtask/artifact import, attachment byte-copy/backfill, and
@@ -435,13 +439,16 @@ This is the canonical home for outstanding build/design work.
    - Remaining gates:
      - Deploy `processing-asana-sync` from `5250222` before trying
        `import_templates_dry_run`, `import_templates`, or `attachment_dry_run`;
-       use the deploy as the Deno/typecheck point and verify the Asana token
-       secret before calling Asana-backed actions.
+       use the deploy as the Deno/typecheck point. `ASANA_ACCESS_TOKEN` is
+       currently live on PROD (the comments/dry-run lanes proved it), so no
+       re-set is expected — probe `asanaConfigured` right after deploy to confirm
+       before calling Asana-backed actions.
      - Run `import_templates_dry_run`, review ready/unchanged/conflict/no-program
        results, then run `import_templates` only with explicit approval.
-     - Run `attachment_dry_run` before any attachment byte-copy. Although
-       migration `163` created the private bucket, no attachment bytes have been
-       copied yet.
+     - Run `attachment_dry_run` before any attachment byte-copy. The private
+       bucket is in place via `163` (idempotent; the bucket row already existed
+       on PROD, where `163` mainly added the operational SELECT policy), but no
+       attachment bytes have been copied yet.
      - Only after explicit Ronnie approval, run `attachment_backfill` and/or any
        broader Asana artifact sync. Final transition to Asana
        history-only/read-only is controlled separately by
@@ -454,7 +461,10 @@ This is the canonical home for outstanding build/design work.
      `scripts/apply_test_mig_161.cjs`, `scripts/apply_test_mig_162.cjs`,
      `scripts/proof_reconciler_blockers.cjs`,
      `scripts/proof_reconciler_enumeration.cjs`, and the Processing static/unit
-     suites). Final PROD artifact/template movement requires live dry-run
+     suites). Migration `163` has no committed TEST proof script; it is covered
+     by the `processing_attachments_storage_static` guard, and its TEST/PROD
+     applies confirmed the bucket exists and is private with only the operational
+     SELECT policy. Final PROD artifact/template movement requires live dry-run
      reports, idempotent re-run proof, no duplicate planner-vs-Asana rows, and
      spot checks for comments, subtasks, attachments, drift, and local subtask
      ownership.
@@ -1405,6 +1415,8 @@ Workflow/worktable entities:
   (`Planned`) or pigs already in the feeder workflow (`In Process`).
 - The Asana token is a live secret and must not be committed, pasted into docs,
   or stored in source. The deployed Edge Function reads it from Supabase secrets.
+  It is currently SET on the PROD Edge secret (the dry-run + comments lanes
+  proved live connectivity); redeploying the Edge does not re-set it.
 - Existing CP0/design-system contracts apply. Do not copy prototype styles that
   conflict with true-black text, radius floor, closed badge set, table hover,
   row-lift openable affordance, or program-accent rules unless Ronnie approves
