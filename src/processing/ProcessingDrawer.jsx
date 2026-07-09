@@ -50,7 +50,10 @@ import InlineNotice from '../shared/InlineNotice.jsx';
 import RecordCollaborationSection from '../shared/RecordCollaborationSection.jsx';
 
 const OPERATIONAL_ROLES = ['admin', 'management', 'farm_team'];
-const CUSTOMER_OPTIONS = ["Sonny's", 'Coastal Pastures - CONFIRMED', 'Coastal Pastures - POTENTIAL'];
+// Fallback only if the settings-backed customer_options can't be fetched; the
+// live list comes from get_processing_settings (mig 162) via the customerOptions
+// prop. See ProcessingOptionsModal for editing.
+const CUSTOMER_OPTIONS_FALLBACK = ["Sonny's", 'Coastal Pastures - CONFIRMED', 'Coastal Pastures - POTENTIAL'];
 const PEOPLE = ['Ronnie Jones', 'Isabel Hermann', 'Brian Naide', 'Brett Post', 'Jessica Torres'];
 
 const T = {
@@ -95,8 +98,16 @@ function FieldRow({label, children}) {
   );
 }
 
-export default function ProcessingDrawer({sb, authState, recordId, onClose, onChanged}) {
-  const {useState, useEffect, useCallback, useRef} = React;
+export default function ProcessingDrawer({
+  sb,
+  authState,
+  recordId,
+  onClose,
+  onChanged,
+  customerOptions = [],
+  processorOptions = [],
+}) {
+  const {useState, useEffect, useCallback, useRef, useMemo} = React;
   const role = authState?.role;
   const canOperate = OPERATIONAL_ROLES.includes(role);
 
@@ -187,7 +198,16 @@ export default function ProcessingDrawer({sb, authState, recordId, onClose, onCh
   const statusLabel = record ? deriveDisplayStatus(record, sourceInfo) : '';
   const isComplete = record ? record.completed_at != null || statusLabel === PROCESSING_STATUS_DISPLAY.complete : false;
   const blockers = record ? computeCompletionBlockers(record, subtasks) : [];
-  const customerSelected = Array.isArray(record?.customer) ? record.customer : [];
+  const customerSelected = useMemo(() => (Array.isArray(record?.customer) ? record.customer : []), [record?.customer]);
+  // Customer chips = the server option list (mig 162) unioned with any values
+  // already stored on this record, so legacy/off-list values stay visible and
+  // toggleable rather than silently disappearing from the picker.
+  const customerChoices = useMemo(() => {
+    const base = Array.isArray(customerOptions) && customerOptions.length ? customerOptions : CUSTOMER_OPTIONS_FALLBACK;
+    const merged = base.slice();
+    for (const c of customerSelected) if (c && !merged.includes(c)) merged.push(c);
+    return merged;
+  }, [customerOptions, customerSelected]);
 
   // ── field mutations ────────────────────────────────────────────────────────
   function saveProcessor() {
@@ -491,9 +511,15 @@ export default function ProcessingDrawer({sb, authState, recordId, onClose, onCh
                         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
                         placeholder="Processor"
                         aria-label="Processor"
+                        list="processing-processor-choices"
                         data-processing-processor-input
                         style={{...inputStyle, textAlign: 'right', width: 200, maxWidth: '52vw'}}
                       />
+                      <datalist id="processing-processor-choices">
+                        {(Array.isArray(processorOptions) ? processorOptions : []).map((p) => (
+                          <option key={p} value={p} />
+                        ))}
+                      </datalist>
                     </div>
                   ) : (
                     <span style={{fontSize: 13.5, color: record.processor ? T.ink : T.faint, fontWeight: 600}}>
@@ -507,7 +533,7 @@ export default function ProcessingDrawer({sb, authState, recordId, onClose, onCh
                   <FieldRow label="Customer">
                     {canOperate ? (
                       <div style={{display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end'}}>
-                        {CUSTOMER_OPTIONS.map((opt) => {
+                        {customerChoices.map((opt) => {
                           const on = customerSelected.includes(opt);
                           return (
                             <button

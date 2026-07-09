@@ -17,7 +17,12 @@
 // ============================================================================
 import React from 'react';
 import {sb} from '../lib/supabase.js';
-import {listProcessingTemplates, upsertProcessingTemplate, friendlyProcessingError} from '../lib/processingApi.js';
+import {
+  listProcessingTemplates,
+  upsertProcessingTemplate,
+  invokeProcessingAsanaSync,
+  friendlyProcessingError,
+} from '../lib/processingApi.js';
 import {programDotStyle, getProgramColor} from '../lib/programColors.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import InlineNotice from '../shared/InlineNotice.jsx';
@@ -125,6 +130,9 @@ function TemplatesEditor({onClose}) {
   const [loadError, setLoadError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
+  // Asana task-template import (admin; behind the ASANA token + Edge deploy gate).
+  const [importBusy, setImportBusy] = useState(false);
+  const [importReport, setImportReport] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -191,6 +199,41 @@ function TemplatesEditor({onClose}) {
       setNotice({kind: 'error', message: friendlyProcessingError(e)});
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Read-only preview of the Asana task-template import.
+  async function runImportPreview() {
+    setImportBusy(true);
+    setImportReport(null);
+    setNotice(null);
+    try {
+      const r = await invokeProcessingAsanaSync(sb, {action: 'import_templates_dry_run'});
+      setImportReport(r.report || null);
+    } catch (e) {
+      setNotice({kind: 'error', message: friendlyProcessingError(e)});
+    } finally {
+      setImportBusy(false);
+    }
+  }
+  // Apply the import — writes only the 'ready' (single, program-mapped, changed)
+  // templates as new active versions; unchanged/conflict/unmapped are skipped.
+  async function applyImport() {
+    setImportBusy(true);
+    setNotice(null);
+    try {
+      const r = await invokeProcessingAsanaSync(sb, {action: 'import_templates'});
+      const written = (r.report && r.report.written) || [];
+      setNotice({
+        kind: 'success',
+        message: `Imported ${written.length} template${written.length === 1 ? '' : 's'} from Asana.`,
+      });
+      setImportReport(null);
+      await load();
+    } catch (e) {
+      setNotice({kind: 'error', message: friendlyProcessingError(e)});
+    } finally {
+      setImportBusy(false);
     }
   }
 
@@ -359,6 +402,65 @@ function TemplatesEditor({onClose}) {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Asana task-template import (admin) */}
+        <div
+          style={{
+            padding: '4px 20px 8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            flex: 'none',
+          }}
+        >
+          <button
+            type="button"
+            onClick={runImportPreview}
+            disabled={importBusy}
+            data-processing-template-import-btn
+            style={{
+              background: '#fff',
+              border: `1px solid #D2D6DB`,
+              color: T.muted,
+              borderRadius: 10,
+              padding: '7px 12px',
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: importBusy ? 'default' : 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {importBusy ? 'Checking Asana…' : 'Import from Asana'}
+          </button>
+          {importReport && importReport.summary && (
+            <span style={{fontSize: 12, color: T.muted, fontWeight: 600}}>
+              {importReport.summary.ready} to import · {importReport.summary.unchanged} unchanged ·{' '}
+              {importReport.summary.conflict} conflict · {importReport.summary.no_program} unmapped
+            </span>
+          )}
+          {importReport && importReport.summary && importReport.summary.ready > 0 && (
+            <button
+              type="button"
+              onClick={applyImport}
+              disabled={importBusy}
+              data-processing-template-import-apply
+              style={{
+                background: importBusy ? '#EAECEF' : T.green,
+                color: importBusy ? '#9AA1AB' : '#fff',
+                border: 'none',
+                borderRadius: 10,
+                padding: '7px 14px',
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: importBusy ? 'default' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Apply {importReport.summary.ready}
+            </button>
+          )}
         </div>
 
         {/* Body */}

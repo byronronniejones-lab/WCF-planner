@@ -86,6 +86,7 @@ import {
   normalizeWcfCode,
   computeDrift,
   buildDryRunReport,
+  buildTemplateImportPlan,
 } from '../_shared/processingAsanaShape.js';
 
 // Defensive trim: pasted Dashboard secrets often pick up a trailing newline.
@@ -183,6 +184,31 @@ const STORY_OPT_FIELDS = ['type', 'text', 'created_at', 'created_by.name'].join(
 const ATTACH_OPT_FIELDS = ['name', 'resource_subtype', 'download_url', 'view_url', 'created_at', 'size', 'host'].join(
   ',',
 );
+
+// Task-template recipe fields (dot-notation) — the recipe's subtasks are compact
+// (name + subtype only) and custom_fields carry name/type/default. See
+// mapAsanaTemplateToProcessing in the shared module.
+const TEMPLATE_DETAIL_OPT_FIELDS = [
+  'name',
+  'created_at',
+  'created_by.name',
+  'project.gid',
+  'template.name',
+  'template.task_resource_subtype',
+  'template.description',
+  'template.relative_start_on',
+  'template.relative_due_on',
+  'template.due_time',
+  'template.subtasks.name',
+  'template.subtasks.task_resource_subtype',
+  'template.custom_fields.gid',
+  'template.custom_fields.name',
+  'template.custom_fields.type',
+  'template.custom_fields.display_value',
+  'template.custom_fields.number_value',
+  'template.custom_fields.text_value',
+  'template.custom_fields.enum_options.name',
+].join(',');
 
 interface AsanaPage {
   data?: unknown[];
@@ -426,6 +452,76 @@ async function runCommentsImport(svc: ReturnType<typeof createClient>, dryRun: b
     } catch (e) {
       counts.errors += 1;
       console.error(`comments ${gid}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return counts;
+}
+
+// Read-only attachment preview: for every already-linked task, count the Asana
+// attachments and how many are NEW (not yet in processing_attachments), and
+// report whether the private bucket exists yet. NO byte copy, NO DB write, NO
+// Storage write — the safe preview before attachment_backfill / sync_once.
+interface AttachmentDryRunCounts {
+  linkedTasks: number;
+  attachmentsFound: number;
+  newAttachments: number;
+  alreadyStored: number;
+  bucketReady: boolean;
+  errors: number;
+  dryRun: true;
+}
+
+async function runAttachmentDryRun(svc: ReturnType<typeof createClient>): Promise<AttachmentDryRunCounts> {
+  const counts: AttachmentDryRunCounts = {
+    linkedTasks: 0,
+    attachmentsFound: 0,
+    newAttachments: 0,
+    alreadyStored: 0,
+    bucketReady: false,
+    errors: 0,
+    dryRun: true,
+  };
+
+  // Bucket presence — the gated Storage dependency (migration 163, held).
+  try {
+    const {data: bucket} = await svc.storage.getBucket(ATTACHMENT_BUCKET);
+    counts.bucketReady = !!bucket;
+  } catch (_e) {
+    counts.bucketReady = false;
+  }
+
+  // Already-stored attachment gids (idempotency baseline).
+  const stored = new Set<string>();
+  {
+    const {data, error} = await svc.from('processing_attachments').select('asana_attachment_gid');
+    if (error) throw new Error(`load stored attachments: ${error.message}`);
+    for (const r of (data || []) as Array<{asana_attachment_gid: string | null}>) {
+      if (r.asana_attachment_gid) stored.add(String(r.asana_attachment_gid));
+    }
+  }
+
+  const {data: links, error} = await svc
+    .from('processing_asana_links')
+    .select('asana_gid, processing_record_id')
+    .not('processing_record_id', 'is', null);
+  if (error) throw new Error(`load linked rows: ${error.message}`);
+
+  for (const l of (links || []) as Array<{asana_gid: string | null}>) {
+    const gid = l.asana_gid;
+    if (!gid) continue;
+    counts.linkedTasks += 1;
+    try {
+      const atts = await asanaGetAll(`/tasks/${gid}/attachments`, {opt_fields: ATTACH_OPT_FIELDS});
+      for (const att of atts) {
+        counts.attachmentsFound += 1;
+        const a = att as Record<string, unknown>;
+        const agid = a && a.gid != null ? String(a.gid) : null;
+        if (agid && stored.has(agid)) counts.alreadyStored += 1;
+        else counts.newAttachments += 1;
+      }
+    } catch (e) {
+      counts.errors += 1;
+      console.error(`attachments ${gid}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   return counts;
@@ -738,6 +834,86 @@ async function runSync(
   return counts;
 }
 
+// ─── Task-template import (sub-lane 5) ───────────────────────────────────────
+
+// A caller-JWT client so template WRITES run as the admin user (auth.uid()
+// present) — upsert_processing_template is admin-gated, so the service-role
+// client cannot call it. Returns null when there's no Authorization header.
+function userClientFromReq(req: Request): ReturnType<typeof createClient> | null {
+  const authHeader = req.headers.get('authorization');
+  if (!authHeader) return null;
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {persistSession: false, autoRefreshToken: false},
+    global: {headers: {Authorization: authHeader}},
+  });
+}
+
+// Fetch every task template on the SF Processing Calendar project, then GET each
+// one's full recipe (subtasks + custom fields). Read-only.
+async function fetchAsanaTemplates(): Promise<Record<string, unknown>[]> {
+  const compact = await asanaGetAll('/task_templates', {project: ASANA_PROJECT_GID, opt_fields: 'name'});
+  const out: Record<string, unknown>[] = [];
+  for (const c of compact) {
+    const gid = c && (c as Record<string, unknown>).gid;
+    if (gid == null) continue;
+    const page = await asanaGet(`/task_templates/${gid}`, {opt_fields: TEMPLATE_DETAIL_OPT_FIELDS});
+    const rec = (page as unknown as {data?: unknown}).data;
+    if (rec && typeof rec === 'object') out.push(rec as Record<string, unknown>);
+  }
+  return out;
+}
+
+// Active processing_templates keyed by program (service-role read, BYPASSRLS) —
+// the idempotency baseline for the import plan.
+async function loadActiveTemplatesByProgram(
+  svc: ReturnType<typeof createClient>,
+): Promise<Record<string, {fields: unknown; checklist: unknown}>> {
+  const {data, error} = await svc
+    .from('processing_templates')
+    .select('program, fields, checklist')
+    .eq('is_active', true);
+  if (error) throw new Error(`load active templates: ${error.message}`);
+  const out: Record<string, {fields: unknown; checklist: unknown}> = {};
+  for (const row of Array.isArray(data) ? (data as Record<string, unknown>[]) : []) {
+    if (row && row.program) out[String(row.program)] = {fields: row.fields, checklist: row.checklist};
+  }
+  return out;
+}
+
+// Read-only preview (apply=false) or admin write (apply=true). The write upserts
+// ONLY 'ready' items (single template per program, program inferred, content
+// changed) via the caller's admin JWT. upsert_processing_template auto-versions,
+// so re-importing an unchanged template is a no-op. Never touches
+// batch/link/subtask/attachment writes.
+async function runTemplateImport(
+  svc: ReturnType<typeof createClient>,
+  userClient: ReturnType<typeof createClient> | null,
+  apply: boolean,
+): Promise<Record<string, unknown>> {
+  const raw = await fetchAsanaTemplates();
+  const activeByProgram = await loadActiveTemplatesByProgram(svc);
+  const plan = buildTemplateImportPlan(raw, activeByProgram) as {
+    items: Array<Record<string, unknown>>;
+    summary: Record<string, number>;
+  };
+  if (!apply) return {applied: false, ...plan};
+
+  if (!userClient) throw new Error('admin user client required to write templates');
+  const written: Array<Record<string, unknown>> = [];
+  const errors: Array<Record<string, unknown>> = [];
+  for (const item of plan.items) {
+    if (item.status !== 'ready') continue;
+    const {data, error} = await userClient.rpc('upsert_processing_template', {
+      p_program: item.program,
+      p_fields: item.fields,
+      p_checklist: item.checklist,
+    });
+    if (error) errors.push({program: item.program, error: error.message});
+    else written.push({program: item.program, version: (data as {version?: number})?.version ?? null});
+  }
+  return {applied: true, written, errors, summary: plan.summary};
+}
+
 // ─── Main handler ────────────────────────────────────────────────────────────
 
 const ACTIONS = new Set([
@@ -749,6 +925,9 @@ const ACTIONS = new Set([
   'sync_once',
   'sync_since',
   'attachment_backfill',
+  'attachment_dry_run',
+  'import_templates_dry_run',
+  'import_templates',
 ]);
 
 serve(async (req: Request) => {
@@ -823,6 +1002,57 @@ serve(async (req: Request) => {
       return jsonResponse({ok: true, action, report});
     } catch (e) {
       return jsonResponse({ok: false, action, error: e instanceof Error ? e.message : String(e)}, 500);
+    }
+  }
+
+  // attachment_dry_run: read-only preview of the attachment byte-copy — counts
+  // new vs already-stored attachments per linked task + whether the bucket
+  // exists. No byte copy, no DB/Storage write, no sync-run row.
+  if (action === 'attachment_dry_run') {
+    try {
+      const report = await runAttachmentDryRun(svc);
+      return jsonResponse({ok: true, action, report});
+    } catch (e) {
+      return jsonResponse({ok: false, action, error: e instanceof Error ? e.message : String(e)}, 500);
+    }
+  }
+
+  // import_templates_dry_run: read-only preview of the Asana task-template import
+  // (fetch + map + diff vs active templates). No writes, no sync-run row.
+  if (action === 'import_templates_dry_run') {
+    try {
+      const report = await runTemplateImport(svc, null, false);
+      return jsonResponse({ok: true, action, report});
+    } catch (e) {
+      return jsonResponse({ok: false, action, error: e instanceof Error ? e.message : String(e)}, 500);
+    }
+  }
+
+  // import_templates: admin write — upsert changed templates via the caller's
+  // admin JWT (upsert_processing_template auto-versions). Admin-only; bracketed
+  // in a sync-run row. Kept separate from batch/link/artifact writes.
+  if (action === 'import_templates') {
+    if (mode !== 'admin') return jsonResponse({ok: false, error: 'import_templates is admin-only'}, 403);
+    const userClient = userClientFromReq(req);
+    let tRunId = '';
+    try {
+      const {data: run, error: startErr} = await svc.rpc('start_processing_sync_run', {p_action: action});
+      if (startErr) throw new Error(`start_processing_sync_run: ${startErr.message}`);
+      tRunId = (run as {id?: string})?.id || '';
+      const report = await runTemplateImport(svc, userClient, true);
+      await svc.rpc('finish_processing_sync_run', {
+        p_run_id: tRunId,
+        p_status: 'ok',
+        p_counts: (report.summary as Record<string, number>) || {},
+        p_error: null,
+      });
+      return jsonResponse({ok: true, action, runId: tRunId, report});
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (tRunId) {
+        await svc.rpc('finish_processing_sync_run', {p_run_id: tRunId, p_status: 'error', p_counts: {}, p_error: msg});
+      }
+      return jsonResponse({ok: false, action, error: msg}, 500);
     }
   }
 

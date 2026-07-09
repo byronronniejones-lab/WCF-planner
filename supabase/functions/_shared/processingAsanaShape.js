@@ -836,3 +836,192 @@ export function buildDryRunReport(fetchedTasks, plannerRows) {
     driftPreview,
   };
 }
+
+// ── Asana task-template → processing_templates mapping (sub-lane 5) ────────────
+// Asana task templates carry no section, so the WCF program is inferred from the
+// template NAME. The single-template GET recipe (template.*) is the source: its
+// subtasks are COMPACT (name + subtype only — no assignee/description/recursion)
+// and its custom_fields expose name/type/default. We map:
+//   recipe.subtasks[].name  → checklist[].{label, assignee:null}
+//   recipe.custom_fields[]  → fields[].{name, type, asana_gid, default?, options?}
+// matching the shapes upsert_processing_template + ProcessingTemplatesModal use.
+// Everything here is PURE + deterministic (importable by vitest and the edge fn).
+
+// Infer a WCF program from a template name. Returns a program only when exactly
+// one program's keyword appears (word-boundary); none or ambiguous → null so the
+// importer defers to an admin instead of guessing.
+export function inferProgramFromTemplateName(name) {
+  const s = cleanStr(name);
+  if (!s) return null;
+  const KW = [
+    ['broiler', 'broiler'],
+    ['broilers', 'broiler'],
+    ['chicken', 'broiler'],
+    ['chickens', 'broiler'],
+    ['poultry', 'broiler'],
+    ['cattle', 'cattle'],
+    ['beef', 'cattle'],
+    ['cow', 'cattle'],
+    ['cows', 'cattle'],
+    ['lamb', 'sheep'],
+    ['lambs', 'sheep'],
+    ['sheep', 'sheep'],
+    ['mutton', 'sheep'],
+    ['pig', 'pig'],
+    ['pigs', 'pig'],
+    ['pork', 'pig'],
+    ['hog', 'pig'],
+    ['hogs', 'pig'],
+    ['swine', 'pig'],
+  ];
+  const found = new Set();
+  for (const [kw, prog] of KW) {
+    if (new RegExp(`\\b${kw}\\b`, 'i').test(s)) found.add(prog);
+  }
+  return found.size === 1 ? Array.from(found)[0] : null;
+}
+
+// Asana custom-field type (cf.type / resource_subtype) → our template field type.
+function asanaTemplateFieldType(cf) {
+  const t = cf && (cf.type || cf.resource_subtype);
+  switch (t) {
+    case 'enum':
+      return 'single';
+    case 'multi_enum':
+      return 'multi';
+    case 'number':
+      return 'number';
+    case 'date':
+      return 'date';
+    case 'people':
+      return 'people';
+    case 'text':
+      return 'text';
+    default:
+      return 'text';
+  }
+}
+
+// Map ONE Asana task-template GET response into {program, fields[], checklist[]}
+// plus provenance + warnings for anything the read API cannot carry.
+export function mapAsanaTemplateToProcessing(templateResponse, opts = {}) {
+  const tpl = templateResponse || {};
+  const recipe = tpl.template || {};
+  const warnings = [];
+
+  const templateName = cleanStr(tpl.name) || cleanStr(recipe.name) || null;
+  const program = (opts && opts.program) || inferProgramFromTemplateName(templateName);
+  if (!program) warnings.push('no_program_inferred');
+
+  const subs = Array.isArray(recipe.subtasks) ? recipe.subtasks : [];
+  const checklist = [];
+  for (const st of subs) {
+    const label = cleanStr(st && st.name);
+    if (label) checklist.push({label, assignee: null});
+  }
+  // The recipe's compact subtasks never carry an assignee — flag it once.
+  if (subs.length > 0) warnings.push('subtask_assignees_not_readable');
+
+  const cfs = Array.isArray(recipe.custom_fields) ? recipe.custom_fields : [];
+  const fields = [];
+  for (const cf of cfs) {
+    const name = cleanStr(cf && cf.name);
+    if (!name) continue;
+    const field = {name, type: asanaTemplateFieldType(cf)};
+    if (cf && cf.gid != null) field.asana_gid = String(cf.gid);
+    const def = customFieldDisplay(cf);
+    if (def != null && def !== '') field.default = def;
+    if (Array.isArray(cf.enum_options)) {
+      const options = cf.enum_options.map((o) => cleanStr(o && o.name)).filter((x) => x != null);
+      if (options.length) field.options = options;
+    }
+    fields.push(field);
+  }
+
+  return {
+    asana_template_gid: tpl.gid != null ? String(tpl.gid) : null,
+    templateName,
+    program,
+    fields,
+    checklist,
+    warnings,
+    meta: {
+      task_name: cleanStr(recipe.name),
+      relative_start_on: recipe.relative_start_on ?? null,
+      relative_due_on: recipe.relative_due_on ?? null,
+      description: cleanStr(recipe.description),
+    },
+  };
+}
+
+// Stable content key over ONLY the fields upsert_processing_template stores +
+// the editor edits ({name,type} / {label,assignee}). Extra option/color data on
+// a stored field is ignored so a re-import that matches is a no-op (idempotent)
+// and never clobbers hand-authored richness.
+export function templateContentKey(template) {
+  const t = template || {};
+  const fields = (Array.isArray(t.fields) ? t.fields : []).map((f) => ({
+    name: cleanStr(f && f.name),
+    type: cleanStr(f && f.type) || 'text',
+  }));
+  const checklist = (Array.isArray(t.checklist) ? t.checklist : []).map((c) => ({
+    label: cleanStr(c && c.label),
+    assignee: cleanStr(c && c.assignee),
+  }));
+  return stableStringify({fields, checklist});
+}
+
+// Build the import plan for a set of Asana task-template responses against the
+// currently-active processing_templates (keyed by program). PURE + deterministic.
+// Per item status:
+//   'ready'      — single template for its program, differs from active → write
+//   'unchanged'  — single template equal to the active one → skip (idempotent)
+//   'conflict'   — >=2 templates map to the same program → skip, admin resolves
+//   'no_program' — program couldn't be inferred → skip, admin resolves
+// activeByProgram: { [program]: {fields, checklist} } (from processing_templates
+// where is_active). Only 'ready' items should be written.
+export function buildTemplateImportPlan(rawTemplates, activeByProgram = {}) {
+  const list = Array.isArray(rawTemplates) ? rawTemplates : [];
+  const items = [];
+  const byProgram = {};
+  for (const raw of list) {
+    const m = mapAsanaTemplateToProcessing(raw);
+    const item = {
+      asana_template_gid: m.asana_template_gid,
+      templateName: m.templateName,
+      program: m.program,
+      fields: m.fields,
+      checklist: m.checklist,
+      warnings: m.warnings.slice(),
+      status: m.program ? 'ready' : 'no_program',
+    };
+    if (m.program) {
+      if (!byProgram[m.program]) byProgram[m.program] = [];
+      byProgram[m.program].push(item);
+    }
+    items.push(item);
+  }
+  for (const arr of Object.values(byProgram)) {
+    if (arr.length >= 2) {
+      for (const it of arr) {
+        it.status = 'conflict';
+        it.warnings.push('multiple_templates_for_program');
+      }
+      continue;
+    }
+    const it = arr[0];
+    const active = activeByProgram && activeByProgram[it.program];
+    if (active && templateContentKey(it) === templateContentKey(active)) it.status = 'unchanged';
+  }
+  const count = (s) => items.filter((i) => i.status === s).length;
+  return {
+    items,
+    summary: {
+      total: items.length,
+      ready: count('ready'),
+      unchanged: count('unchanged'),
+      conflict: count('conflict'),
+      no_program: count('no_program'),
+    },
+  };
+}

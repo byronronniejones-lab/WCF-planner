@@ -22,8 +22,9 @@ const PROGRAMS = [
   {key: 'pig', label: 'Pig'},
   {key: 'sheep', label: 'Lamb'},
 ];
-const CUSTOMER_OPTIONS = ["Sonny's", 'Coastal Pastures - CONFIRMED', 'Coastal Pastures - POTENTIAL'];
-const PEOPLE = ['Ronnie Jones', 'Isabel Hermann', 'Brian Naide', 'Brett Post', 'Jessica Torres'];
+// Fallback only if the settings-backed customer_options can't be fetched (mig
+// 162); the live list arrives via the customerOptions prop.
+const CUSTOMER_OPTIONS_FALLBACK = ["Sonny's", 'Coastal Pastures - CONFIRMED', 'Coastal Pastures - POTENTIAL'];
 
 const T = {
   card: '#fff',
@@ -57,7 +58,13 @@ const inputStyle = {
   boxSizing: 'border-box',
 };
 
-export default function AddMilestoneModal({initialProgram, onClose, onCreated}) {
+export default function AddMilestoneModal({
+  initialProgram,
+  onClose,
+  onCreated,
+  customerOptions = [],
+  processorOptions = [],
+}) {
   const {useState} = React;
   const validInitial = PROGRAMS.some((p) => p.key === initialProgram) ? initialProgram : 'broiler';
   const [program, setProgram] = useState(validInitial);
@@ -69,6 +76,11 @@ export default function AddMilestoneModal({initialProgram, onClose, onCreated}) 
   const [notice, setNotice] = useState(null);
 
   const isBroiler = program === 'broiler';
+  // Customer chips come from the server option list (mig 162), falling back to
+  // the seeded constant; any already-selected off-list value is kept visible.
+  const baseCustomer =
+    Array.isArray(customerOptions) && customerOptions.length ? customerOptions : CUSTOMER_OPTIONS_FALLBACK;
+  const customerChoices = [...baseCustomer, ...customer.filter((c) => c && !baseCustomer.includes(c))];
 
   function toggleCustomer(opt) {
     setCustomer((cur) => (cur.includes(opt) ? cur.filter((c) => c !== opt) : [...cur, opt]));
@@ -229,15 +241,15 @@ export default function AddMilestoneModal({initialProgram, onClose, onCreated}) 
           <div style={{marginBottom: isBroiler ? 14 : 6}}>
             <label style={labelStyle}>Processor (optional)</label>
             <input
-              list="processing-people"
+              list="processing-processor-choices"
               value={processor}
               onChange={(e) => setProcessor(e.target.value)}
               placeholder="e.g. Atlanta Poultry Processing"
               data-processing-milestone-processor
               style={inputStyle}
             />
-            <datalist id="processing-people">
-              {PEOPLE.map((p) => (
+            <datalist id="processing-processor-choices">
+              {(Array.isArray(processorOptions) ? processorOptions : []).map((p) => (
                 <option key={p} value={p} />
               ))}
             </datalist>
@@ -247,7 +259,7 @@ export default function AddMilestoneModal({initialProgram, onClose, onCreated}) 
             <div style={{marginBottom: 6}}>
               <label style={labelStyle}>Customer (optional)</label>
               <div style={{display: 'flex', gap: 7, flexWrap: 'wrap'}}>
-                {CUSTOMER_OPTIONS.map((opt) => {
+                {customerChoices.map((opt) => {
                   const on = customer.includes(opt);
                   return (
                     <button

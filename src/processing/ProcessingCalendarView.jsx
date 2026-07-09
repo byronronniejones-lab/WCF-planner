@@ -43,6 +43,8 @@ import AddMilestoneModal from './AddMilestoneModal.jsx';
 import ProcessingTemplatesModal from './ProcessingTemplatesModal.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import ProcessingReconciliationModal from './ProcessingReconciliationModal.jsx';
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+import ProcessingOptionsModal from './ProcessingOptionsModal.jsx';
 
 // Program sections, in display order. `key` is the stored program string; note
 // the Lamb section maps to the 'sheep' program (Lamb == sheep, CP0).
@@ -431,6 +433,10 @@ export default function ProcessingCalendarView({Header, authState}) {
   const [addMilestoneProgram, setAddMilestoneProgram] = useState(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showReconciliation, setShowReconciliation] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
+  // Server-backed Customer/Processor picker choices (mig 162). Fetched for all
+  // operational roles; drives the drawer + Add Milestone pickers.
+  const [optionLists, setOptionLists] = useState({processor: [], customer: []});
   // One-time Asana import + reconciliation controls live behind this collapsed
   // admin maintenance area so they stay out of the day-to-day scheduling flow.
   const [adminOpen, setAdminOpen] = useState(false);
@@ -461,6 +467,33 @@ export default function ProcessingCalendarView({Header, authState}) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Customer/Processor picker choices come from settings (mig 162). Available to
+  // every operational role (get_processing_settings is operational-gated), so the
+  // drawer + Add Milestone can render the authored lists.
+  const refreshOptionLists = useCallback(
+    async (cancelledRef = {current: false}) => {
+      if (!canOperate) return;
+      try {
+        const settings = await getProcessingSettings(sb);
+        if (cancelledRef.current) return;
+        setOptionLists({
+          processor: Array.isArray(settings?.processor_options) ? settings.processor_options : [],
+          customer: Array.isArray(settings?.customer_options) ? settings.customer_options : [],
+        });
+      } catch (_e) {
+        /* leave defaults; pickers fall back to seeded constants */
+      }
+    },
+    [canOperate],
+  );
+  useEffect(() => {
+    const cancelledRef = {current: false};
+    refreshOptionLists(cancelledRef);
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [refreshOptionLists]);
 
   const refreshAsanaStatus = useCallback(
     async (cancelledRef = {current: false}) => {
@@ -1034,6 +1067,27 @@ export default function ProcessingCalendarView({Header, authState}) {
               >
                 Templates
               </button>
+              <button
+                type="button"
+                data-processing-options-btn="1"
+                onClick={() => setShowOptions(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  background: T.card,
+                  color: T.muted,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 10,
+                  padding: '9px 14px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Customer &amp; processor choices
+              </button>
             </div>
             <div style={{fontSize: 11.5, color: T.faint, fontWeight: 600, marginTop: 10, lineHeight: 1.4}}>
               One-time Asana import + reconciliation controls — not needed for day-to-day scheduling.
@@ -1355,12 +1409,16 @@ export default function ProcessingCalendarView({Header, authState}) {
           recordId={openRecordId}
           onClose={() => setOpenRecordId(null)}
           onChanged={load}
+          customerOptions={optionLists.customer}
+          processorOptions={optionLists.processor}
         />
       )}
       {showAddMilestone && (
         <AddMilestoneModal
           initialProgram={addMilestoneProgram}
           onClose={() => setShowAddMilestone(false)}
+          customerOptions={optionLists.customer}
+          processorOptions={optionLists.processor}
           onCreated={(id) => {
             setShowAddMilestone(false);
             load();
@@ -1371,6 +1429,14 @@ export default function ProcessingCalendarView({Header, authState}) {
       {showTemplates && <ProcessingTemplatesModal authState={authState} onClose={() => setShowTemplates(false)} />}
       {showReconciliation && (
         <ProcessingReconciliationModal authState={authState} onClose={() => setShowReconciliation(false)} />
+      )}
+      {showOptions && isAdmin && (
+        <ProcessingOptionsModal
+          processorOptions={optionLists.processor}
+          customerOptions={optionLists.customer}
+          onClose={() => setShowOptions(false)}
+          onSaved={refreshOptionLists}
+        />
       )}
     </div>
   );

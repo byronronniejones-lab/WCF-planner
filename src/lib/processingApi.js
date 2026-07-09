@@ -67,6 +67,18 @@ export async function getProcessingSettings(sb) {
   return data || {};
 }
 
+// set_processing_option_list(p_kind, p_options) -> {ok, kind, options}. Admin
+// only. kind is 'processor' | 'customer'; replaces that list wholesale (server
+// trims/de-dupes). Never rejects or rewrites stored record values.
+export async function setProcessingOptionList(sb, kind, options) {
+  const {data, error} = await sb.rpc('set_processing_option_list', {
+    p_kind: kind,
+    p_options: Array.isArray(options) ? options : [],
+  });
+  if (error) throw new Error(`setProcessingOptionList: ${error.message || String(error)}`);
+  return data;
+}
+
 // list_processing_templates(p_program) -> active templates (optionally one
 // program). Each: id, program, version, fields[], checklist[], is_active.
 export async function listProcessingTemplates(sb, program = null) {
