@@ -4,12 +4,15 @@
 import {describe, expect, it} from 'vitest';
 import {
   PROCESSING_FIELD_PALETTE,
+  PROCESSING_FIELD_TYPES,
   DEFAULT_OPTION_COLOR,
   normalizeFieldOption,
   normalizeFieldDef,
   optionKeyFromLabel,
   defaultProcessingFields,
   defaultProcessingChecklist,
+  defaultProcessingTemplateSuite,
+  validateTemplateDraft,
   RESERVED_PROCESSING_FIELD_IDS,
   isReservedProcessingFieldId,
   resolveFarmArrival,
@@ -60,6 +63,88 @@ describe('defaults (handoff §6, stable ids)', () => {
   it('palette has exactly 12 bg/ink pairs and grey is the default', () => {
     expect(PROCESSING_FIELD_PALETTE).toHaveLength(12);
     expect(DEFAULT_OPTION_COLOR).toEqual({bg: '#C8CDD3', ink: '#3F4650'});
+  });
+  it('checkbox + url are supported control types', () => {
+    expect(PROCESSING_FIELD_TYPES).toEqual([
+      'text',
+      'number',
+      'date',
+      'single',
+      'multi',
+      'people',
+      'checkbox',
+      'url',
+      'formula',
+    ]);
+  });
+  it('Processor is a settings-sourced select (no baked options) in every program default', () => {
+    for (const program of ['broiler', 'cattle', 'pig', 'sheep']) {
+      const proc = defaultProcessingFields(program).find((f) => f.id === 'processor');
+      expect(proc.type).toBe('single');
+      expect(proc.optionsSource).toBe('settings.processor_options');
+      expect(proc.options).toBeUndefined();
+    }
+  });
+  it('defaultProcessingTemplateSuite covers all four programs with valid drafts', () => {
+    const suite = defaultProcessingTemplateSuite();
+    expect(Object.keys(suite).sort()).toEqual(['broiler', 'cattle', 'pig', 'sheep']);
+    for (const program of Object.keys(suite)) {
+      expect(validateTemplateDraft(suite[program].fields, suite[program].checklist).ok).toBe(true);
+    }
+    // broiler carries Customer; the mammal programs do not
+    expect(suite.broiler.fields.some((f) => f.id === 'customer')).toBe(true);
+    expect(suite.cattle.fields.some((f) => f.id === 'customer')).toBe(false);
+  });
+});
+
+describe('validateTemplateDraft (publish validation)', () => {
+  it('accepts a clean draft', () => {
+    const verdict = validateTemplateDraft(
+      [
+        {id: 'a', name: 'A', type: 'text'},
+        {id: 'b', name: 'B', type: 'single', options: [{key: 'x', label: 'X'}]},
+        {id: 'proc', name: 'Processor', type: 'single', optionsSource: 'settings.processor_options'},
+        {id: 'c', name: 'C', type: 'checkbox'},
+        {id: 'd', name: 'D', type: 'url'},
+      ],
+      [{label: 'Step'}],
+    );
+    expect(verdict).toEqual({ok: true, problems: []});
+  });
+  it('rejects duplicate ids, blank names, unsupported types, optionless selects, duplicate options, blank steps', () => {
+    const verdict = validateTemplateDraft(
+      [
+        {id: 'a', name: 'A', type: 'text'},
+        {id: 'a', name: 'A2', type: 'text'}, // duplicate id
+        {id: 'b', name: '  ', type: 'text'}, // blank name
+        {id: 'c', name: 'C', type: 'select'}, // unsupported type
+        {id: 'd', name: 'D', type: 'single', options: []}, // no options, no source
+        {id: 'e', name: 'E', type: 'multi', options: ['X', 'X']}, // duplicate option
+        {
+          id: 'g',
+          name: 'G',
+          type: 'single',
+          options: [
+            {key: 'x', label: 'Same'},
+            {key: 'y', label: 'same'},
+          ],
+        },
+        {id: 'h', name: 'H', type: 'single', options: ['Valid', '  ']}, // blank option
+        {name: 'F', type: 'text'}, // missing id
+      ],
+      [{label: ''}],
+    );
+    expect(verdict.ok).toBe(false);
+    const text = verdict.problems.join(' | ');
+    expect(text).toContain('duplicate id "a"');
+    expect(text).toContain('name is required');
+    expect(text).toContain('unsupported type "select"');
+    expect(text).toContain('needs at least one option');
+    expect(text).toContain('duplicate option "X"');
+    expect(text).toContain('duplicate option "same"');
+    expect(text).toContain('option #2 needs a label');
+    expect(text).toContain('missing a stable id');
+    expect(text).toContain('Checklist step #1: label is required');
   });
 });
 

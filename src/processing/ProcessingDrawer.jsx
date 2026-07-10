@@ -150,6 +150,25 @@ function DetailFieldRow({
     if (field.type === 'date') text = value ? formatDate(value) : null;
     if (Array.isArray(value)) text = value.join(', ');
     if (field.type === 'people' && value) text = profileName(value) || String(value);
+    if (field.type === 'checkbox') text = value === true ? 'Yes' : value === false ? 'No' : null;
+    if (field.type === 'url' && value && /^https?:\/\/\S+$/i.test(String(value))) {
+      return (
+        <FieldRow label={field.name}>
+          <a
+            href={String(value)}
+            target="_blank"
+            rel="noreferrer noopener"
+            style={{fontSize: 13, color: T.green, fontWeight: 700}}
+            data-processing-field-link={field.id}
+          >
+            {String(value)
+              .replace(/^https?:\/\//i, '')
+              .slice(0, 40)}{' '}
+            ↗
+          </a>
+        </FieldRow>
+      );
+    }
     return (
       <FieldRow label={field.name}>
         <span style={{fontSize: 13, color: text ? T.ink : T.faint, fontWeight: 600}}>{text || '—'}</span>
@@ -253,6 +272,71 @@ function DetailFieldRow({
       </FieldRow>
     );
   }
+  if (field.type === 'checkbox') {
+    return (
+      <FieldRow label={field.name}>
+        <input
+          type="checkbox"
+          checked={value === true}
+          disabled={busy}
+          onChange={(e) => saveLocalField(field, e.target.checked)}
+          data-processing-field-input={field.id}
+          aria-label={field.name}
+          style={{width: 16, height: 16, cursor: busy ? 'default' : 'pointer'}}
+        />
+      </FieldRow>
+    );
+  }
+  if (field.type === 'url') {
+    // Editable link: draft-buffered input (commit on blur) + an open button
+    // when a valid http(s) value is stored.
+    const draft = fieldDrafts[field.id] !== undefined ? fieldDrafts[field.id] : value == null ? '' : String(value);
+    const commitUrl = () => {
+      const raw = fieldDrafts[field.id];
+      if (raw === undefined) return;
+      setFieldDrafts((d) => {
+        const next = {...d};
+        delete next[field.id];
+        return next;
+      });
+      const trimmed = String(raw).trim();
+      const prev = value == null ? '' : String(value);
+      if (trimmed === prev) return;
+      if (trimmed !== '' && !/^https?:\/\/\S+$/i.test(trimmed)) {
+        setNotice({kind: 'error', message: `${field.name} expects an http(s) link.`});
+        return;
+      }
+      saveLocalField(field, trimmed === '' ? null : trimmed);
+    };
+    return (
+      <FieldRow label={field.name}>
+        <span style={{display: 'inline-flex', alignItems: 'center', gap: 6}}>
+          {value && /^https?:\/\/\S+$/i.test(String(value)) && (
+            <a
+              href={String(value)}
+              target="_blank"
+              rel="noreferrer noopener"
+              style={{fontSize: 12, color: T.green, fontWeight: 700, textDecoration: 'none'}}
+              data-processing-field-link={field.id}
+            >
+              Open ↗
+            </a>
+          )}
+          <input
+            type="url"
+            value={draft}
+            disabled={busy}
+            placeholder="https://…"
+            onChange={(e) => setFieldDrafts((d) => ({...d, [field.id]: e.target.value}))}
+            onBlur={commitUrl}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            data-processing-field-input={field.id}
+            style={{...inputStyle, textAlign: 'right', width: 190, maxWidth: '52vw'}}
+          />
+        </span>
+      </FieldRow>
+    );
+  }
   // text / number: draft-buffered input, commit on blur / Enter.
   const draft = fieldDrafts[field.id] !== undefined ? fieldDrafts[field.id] : value == null ? '' : String(value);
   const commit = () => {
@@ -315,7 +399,6 @@ export default function ProcessingDrawer({
   const [template, setTemplate] = useState(null); // active template for record.program
 
   // Local editable buffers.
-  const [processorDraft, setProcessorDraft] = useState('');
   const [titleDraft, setTitleDraft] = useState('');
   const [dateDraft, setDateDraft] = useState('');
   const [newSubtask, setNewSubtask] = useState('');
@@ -341,7 +424,6 @@ export default function ProcessingDrawer({
       const d = await getProcessingRecord(sb, recordId);
       setData(d);
       if (d && d.record) {
-        setProcessorDraft(d.record.processor || '');
         setTitleDraft(d.record.title || '');
         setDateDraft(isoDateInput(d.record.processing_date));
         setFieldDrafts({});
@@ -453,9 +535,9 @@ export default function ProcessingDrawer({
   }, [template, isMilestone]);
 
   // ── field mutations ────────────────────────────────────────────────────────
-  function saveProcessor() {
-    if ((record.processor || '') === (processorDraft || '')) return;
-    runMutation(() => setProcessingProcessor(sb, record.id, processorDraft.trim() || null));
+  function saveProcessorSelect(value) {
+    if ((record.processor || '') === (value || '')) return;
+    runMutation(() => setProcessingProcessor(sb, record.id, value || null));
   }
   function toggleCustomer(option) {
     const next = customerSelected.includes(option)
@@ -872,27 +954,31 @@ export default function ProcessingDrawer({
                   </FieldRow>
                 )}
 
-                {/* Processor — editable Processing-owned field */}
+                {/* Processor — TRUE SELECT from the admin-configured
+                    processor_options (mig 162). Arbitrary typing is impossible;
+                    a stored legacy/off-list value stays visible + selectable
+                    until deliberately replaced; '—' clears. */}
                 <FieldRow label="Processor">
                   {canOperate ? (
-                    <div style={{display: 'inline-flex', alignItems: 'center', gap: 6}}>
-                      <input
-                        value={processorDraft}
-                        onChange={(e) => setProcessorDraft(e.target.value)}
-                        onBlur={saveProcessor}
-                        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                        placeholder="Processor"
-                        aria-label="Processor"
-                        list="processing-processor-choices"
-                        data-processing-processor-input
-                        style={{...inputStyle, textAlign: 'right', width: 200, maxWidth: '52vw'}}
-                      />
-                      <datalist id="processing-processor-choices">
-                        {(Array.isArray(processorOptions) ? processorOptions : []).map((p) => (
-                          <option key={p} value={p} />
-                        ))}
-                      </datalist>
-                    </div>
+                    <select
+                      value={record.processor || ''}
+                      disabled={busy}
+                      onChange={(e) => saveProcessorSelect(e.target.value)}
+                      aria-label="Processor"
+                      data-processing-processor-select
+                      style={{...inputStyle, maxWidth: 220}}
+                    >
+                      <option value="">—</option>
+                      {record.processor &&
+                        !(Array.isArray(processorOptions) ? processorOptions : []).includes(record.processor) && (
+                          <option value={record.processor}>{record.processor} (legacy)</option>
+                        )}
+                      {(Array.isArray(processorOptions) ? processorOptions : []).map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
                   ) : (
                     <span style={{fontSize: 13.5, color: record.processor ? T.ink : T.faint, fontWeight: 600}}>
                       {record.processor || '—'}

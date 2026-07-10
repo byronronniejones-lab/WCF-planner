@@ -54,11 +54,16 @@ describe('admin options editor', () => {
 });
 
 describe('drawer + Add Milestone read from settings (not hardcoded)', () => {
-  it('drawer renders customer chips from the merged option list + a processor datalist', () => {
+  it('drawer renders customer chips from the merged option list + a TRUE processor select', () => {
     expect(drawer).toContain('customerOptions = []');
     expect(drawer).toContain('processorOptions = []');
     expect(drawer).toContain('customerChoices.map');
-    expect(drawer).toContain('processing-processor-choices');
+    // Template-suite lane: the free-text/datalist processor is retired — the
+    // control is a select over processor_options; a stored legacy value stays
+    // visible/selectable; arbitrary typing is impossible.
+    expect(drawer).toContain('data-processing-processor-select');
+    expect(drawer).not.toContain('processing-processor-choices');
+    expect(drawer).not.toContain('datalist');
     // legacy/off-list stored values are merged back in so they stay toggleable
     expect(drawer).toMatch(/for \(const c of customerSelected\) if \(c && !merged\.includes\(c\)\)/);
     // the old hardcoded map is gone (constant kept only as a fetch-failure fallback)
@@ -66,11 +71,12 @@ describe('drawer + Add Milestone read from settings (not hardcoded)', () => {
     expect(drawer).toContain('CUSTOMER_OPTIONS_FALLBACK');
   });
 
-  it('Add Milestone uses settings options + a real processor datalist (not staff names)', () => {
+  it('Add Milestone uses settings options + a TRUE processor select (not staff names)', () => {
     expect(addMilestone).toContain('customerOptions = []');
     expect(addMilestone).toContain('processorOptions = []');
     expect(addMilestone).toContain('customerChoices.map');
-    expect(addMilestone).toContain('processing-processor-choices');
+    expect(addMilestone).toMatch(/<select[\s\S]{0,400}data-processing-milestone-processor/);
+    expect(addMilestone).not.toContain('datalist');
     // the mislabeled PEOPLE datalist is removed
     expect(addMilestone).not.toContain('processing-people');
     expect(addMilestone).not.toMatch(/const PEOPLE =/);

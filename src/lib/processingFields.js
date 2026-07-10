@@ -39,7 +39,17 @@ export const PROCESSING_FIELD_PALETTE = Object.freeze([
 ]);
 export const DEFAULT_OPTION_COLOR = PROCESSING_FIELD_PALETTE[11];
 
-export const PROCESSING_FIELD_TYPES = Object.freeze(['text', 'number', 'date', 'single', 'multi', 'people', 'formula']);
+export const PROCESSING_FIELD_TYPES = Object.freeze([
+  'text',
+  'number',
+  'date',
+  'single',
+  'multi',
+  'people',
+  'checkbox',
+  'url',
+  'formula',
+]);
 
 // ── Option normalization ─────────────────────────────────────────────────────
 // Template select options are stored as {key, label, color:{bg,ink}}. Accepts
@@ -144,7 +154,10 @@ function baseFields() {
     {id: 'plannedTOF', name: 'Planned Time on Farm', type: 'formula'},
     {id: 'timeRemaining', name: 'Time Remaining Until Processing', type: 'formula'},
     {id: 'productPickup', name: 'Product Pick-up Date', type: 'date'},
-    {id: 'processor', name: 'Processor', type: 'text'},
+    // Processor is a TRUE SELECT whose choices come from the server-backed
+    // processing_asana_sync_settings.processor_options at runtime (mig 162) —
+    // never baked into the template. Legacy/off-list stored values stay visible.
+    {id: 'processor', name: 'Processor', type: 'single', optionsSource: 'settings.processor_options'},
   ];
 }
 
@@ -159,10 +172,14 @@ export function defaultProcessingFields(program) {
       options: CUSTOMER_OPTIONS_DEFAULT,
     });
   }
-  return fields.map((f) => ({
-    ...f,
-    options: f.options ? f.options.map((o) => ({...o, color: {...o.color}})) : undefined,
-  }));
+  // Deep-copy so callers can mutate their copy; fields without options carry NO
+  // options key at all (an `options: undefined` key would survive spreads and
+  // desync object-identity comparisons against parsed jsonb).
+  return fields.map((f) => {
+    const copy = {...f};
+    if (f.options) copy.options = f.options.map((o) => ({...o, color: {...o.color}}));
+    return copy;
+  });
 }
 
 // ── Default per-program checklists (handoff prototype DSUB) ──────────────────
@@ -435,4 +452,70 @@ export function isFieldEditable(field, record) {
   if (field.type === 'formula') return false;
   if (isReservedProcessingFieldId(field.id)) return false;
   return true;
+}
+
+// ── Template suite (canonical four-program defaults) ─────────────────────────
+// One deterministic object for every consumer: the Templates manager reset, the
+// migration-172 seed (a static asserts the SQL-embedded JSON equals this), the
+// e2e seeds, and the drawer preview.
+export function defaultProcessingTemplateSuite() {
+  const out = {};
+  for (const program of ['broiler', 'cattle', 'pig', 'sheep']) {
+    out[program] = {
+      fields: defaultProcessingFields(program),
+      checklist: defaultProcessingChecklist(program),
+    };
+  }
+  return out;
+}
+
+// ── Publish validation (Templates manager) ───────────────────────────────────
+// A template draft may not activate with duplicate/missing ids, blank names,
+// unsupported types, or selects without valid options. Returns
+// {ok, problems: string[]} — pure so the rules are unit-testable.
+export function validateTemplateDraft(fields, checklist) {
+  const problems = [];
+  const seenIds = new Set();
+  for (const [i, f] of (Array.isArray(fields) ? fields : []).entries()) {
+    const label = f && f.name ? `"${f.name}"` : `#${i + 1}`;
+    if (!f || !String(f.name || '').trim()) problems.push(`Field ${label}: name is required`);
+    if (!f || !f.id || !String(f.id).trim()) problems.push(`Field ${label}: missing a stable id`);
+    else if (seenIds.has(f.id)) problems.push(`Field ${label}: duplicate id "${f.id}"`);
+    else seenIds.add(f.id);
+    if (!f || !PROCESSING_FIELD_TYPES.includes(f.type)) {
+      problems.push(`Field ${label}: unsupported type "${f && f.type}"`);
+      continue;
+    }
+    if (f.type === 'single' || f.type === 'multi') {
+      const rawOpts = Array.isArray(f.options) ? f.options : [];
+      const opts = [];
+      for (const [optionIndex, rawOpt] of rawOpts.entries()) {
+        const opt = normalizeFieldOption(rawOpt);
+        if (!opt) {
+          problems.push(`Field ${label}: option #${optionIndex + 1} needs a label`);
+          continue;
+        }
+        opts.push(opt);
+      }
+      // A select sourced from server settings (Processor) carries no baked options.
+      if (opts.length === 0 && !f.optionsSource) {
+        problems.push(`Field ${label}: a select needs at least one option`);
+      }
+      const seenKeys = new Set();
+      const seenLabels = new Set();
+      for (const o of opts) {
+        if (seenKeys.has(o.key)) problems.push(`Field ${label}: duplicate option "${o.label}"`);
+        const foldedLabel = o.label.toLocaleLowerCase();
+        if (seenLabels.has(foldedLabel) && !seenKeys.has(o.key)) {
+          problems.push(`Field ${label}: duplicate option "${o.label}"`);
+        }
+        seenKeys.add(o.key);
+        seenLabels.add(foldedLabel);
+      }
+    }
+  }
+  for (const [i, c] of (Array.isArray(checklist) ? checklist : []).entries()) {
+    if (!c || !String(c.label || '').trim()) problems.push(`Checklist step #${i + 1}: label is required`);
+  }
+  return {ok: problems.length === 0, problems};
 }

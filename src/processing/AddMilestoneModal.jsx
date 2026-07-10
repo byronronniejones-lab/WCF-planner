@@ -306,19 +306,21 @@ export default function AddMilestoneModal({
 
           <div style={{marginBottom: isBroiler ? 14 : 6}}>
             <label style={labelStyle}>Processor (optional)</label>
-            <input
-              list="processing-processor-choices"
+            {/* TRUE SELECT from the admin-configured processor_options (mig
+                162): arbitrary typing is impossible; '—' means none. */}
+            <select
               value={processor}
               onChange={(e) => setProcessor(e.target.value)}
-              placeholder="e.g. Atlanta Poultry Processing"
               data-processing-milestone-processor
-              style={inputStyle}
-            />
-            <datalist id="processing-processor-choices">
+              style={{...inputStyle, width: 260, cursor: 'pointer'}}
+            >
+              <option value="">—</option>
               {(Array.isArray(processorOptions) ? processorOptions : []).map((p) => (
-                <option key={p} value={p} />
+                <option key={p} value={p}>
+                  {p}
+                </option>
               ))}
-            </datalist>
+            </select>
           </div>
 
           {isBroiler && (

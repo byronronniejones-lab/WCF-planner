@@ -38,6 +38,7 @@ import {
   defaultProcessingFields,
   defaultProcessingChecklist,
   isReservedProcessingFieldId,
+  validateTemplateDraft,
 } from '../lib/processingFields.js';
 import {loadEligibleProfilesById} from '../lib/tasksCenterApi.js';
 import {programDotStyle, getProgramColor} from '../lib/programColors.js';
@@ -57,6 +58,8 @@ const FIELD_TYPES = [
   {value: 'single', label: 'Single select'},
   {value: 'multi', label: 'Multi select'},
   {value: 'people', label: 'Person'},
+  {value: 'checkbox', label: 'Checkbox'},
+  {value: 'url', label: 'URL'},
   {value: 'formula', label: 'Formula'},
 ];
 
@@ -80,6 +83,134 @@ const rowInput = {
   background: '#fff',
   outline: 'none',
 };
+
+// Drawer-control preview for the CURRENT DRAFT (fields render as the disabled
+// control the record drawer would mount; checklist lists its steps). Module
+// scope on purpose — a nested component type would remount per keystroke.
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+function TemplatePreviewPane({fields, checklist, profilesById}) {
+  const previewControl = (f) => {
+    const disabled = {pointerEvents: 'none', opacity: 0.75};
+    const base = {
+      border: `1px solid #E2E5E9`,
+      borderRadius: 10,
+      padding: '5px 9px',
+      fontSize: 12.5,
+      fontWeight: 600,
+      color: T.ink,
+      background: '#fff',
+      fontFamily: 'inherit',
+    };
+    if (isReservedProcessingFieldId(f.id) || f.type === 'formula') {
+      return <span style={{fontSize: 12, color: T.faint, fontWeight: 700}}>read-only (source/derived)</span>;
+    }
+    switch (f.type) {
+      case 'date':
+        return <input type="date" readOnly tabIndex={-1} style={{...base, ...disabled}} />;
+      case 'number':
+        return <input type="number" readOnly tabIndex={-1} placeholder="0" style={{...base, ...disabled, width: 90}} />;
+      case 'checkbox':
+        return <input type="checkbox" readOnly tabIndex={-1} style={disabled} />;
+      case 'url':
+        return (
+          <input type="url" readOnly tabIndex={-1} placeholder="https://…" style={{...base, ...disabled, width: 160}} />
+        );
+      case 'people':
+        return (
+          <select tabIndex={-1} style={{...base, ...disabled}}>
+            <option>— person —</option>
+          </select>
+        );
+      case 'single':
+      case 'multi': {
+        if (f.optionsSource) {
+          return (
+            <span style={{fontSize: 12, color: T.muted, fontWeight: 700}}>select · choices from admin settings</span>
+          );
+        }
+        const opts = (Array.isArray(f.options) ? f.options : []).map(normalizeFieldOption).filter(Boolean);
+        return (
+          <span style={{display: 'inline-flex', gap: 5, flexWrap: 'wrap'}}>
+            {opts.slice(0, 6).map((o) => (
+              <span
+                key={o.key}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  borderRadius: 999,
+                  padding: '2px 8px',
+                  background: o.color.bg,
+                  color: o.color.ink,
+                }}
+              >
+                {o.label}
+              </span>
+            ))}
+            {opts.length > 6 && <span style={{fontSize: 11, color: T.faint}}>+{opts.length - 6}</span>}
+          </span>
+        );
+      }
+      default:
+        return (
+          <input type="text" readOnly tabIndex={-1} placeholder="text" style={{...base, ...disabled, width: 140}} />
+        );
+    }
+  };
+  return (
+    <div
+      data-processing-template-preview="1"
+      style={{border: `1px dashed ${T.border}`, borderRadius: 12, padding: '12px 14px', marginBottom: 14}}
+    >
+      <div style={{fontSize: 12, fontWeight: 800, color: T.label, textTransform: 'uppercase', letterSpacing: '.05em'}}>
+        Drawer preview (draft)
+      </div>
+      {fields
+        .filter((f) => f && String(f.name || '').trim())
+        .map((f) => (
+          <div
+            key={f.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              padding: '6px 0',
+              borderBottom: `1px solid #F4F5F6`,
+            }}
+          >
+            <span style={{fontSize: 12.5, color: T.muted, fontWeight: 600}}>{f.name}</span>
+            {previewControl(f)}
+          </div>
+        ))}
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: T.label,
+          textTransform: 'uppercase',
+          letterSpacing: '.05em',
+          margin: '12px 0 4px',
+        }}
+      >
+        Checklist ({checklist.filter((c) => c && String(c.label || '').trim()).length} steps)
+      </div>
+      {checklist
+        .filter((c) => c && String(c.label || '').trim())
+        .map((c, i) => (
+          <div key={i} style={{display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0'}}>
+            <span
+              aria-hidden="true"
+              style={{width: 13, height: 13, borderRadius: '50%', border: '1.4px solid #CDD2D8', flex: 'none'}}
+            />
+            <span style={{fontSize: 12.5, color: T.ink, fontWeight: 600, flex: 1, minWidth: 0}}>{c.label}</span>
+            <span style={{fontSize: 11, color: T.faint, fontWeight: 600}}>
+              {(c.assignee_profile_id && profilesById[c.assignee_profile_id]?.full_name) || c.assignee || '—'}
+            </span>
+          </div>
+        ))}
+    </div>
+  );
+}
 
 export default function ProcessingTemplatesModal({authState, onClose}) {
   // Guard: admin-only. Render a small notice (still dismissible) for anyone else.
@@ -147,6 +278,12 @@ function TemplatesEditor({onClose}) {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState(null);
   const [profilesById, setProfilesById] = useState({});
+  // Active/Draft state: the loaded ACTIVE version (null = no template yet) and
+  // its snapshot; any local divergence is an unsaved DRAFT until Save activates
+  // a new version. Preview renders the draft's drawer controls + checklist.
+  const [activeVersion, setActiveVersion] = useState(null);
+  const [baseline, setBaseline] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
   // HTML5 drag state: {kind: 'field'|'step', index} while dragging.
   const [drag, setDrag] = useState(null);
   // Open color-palette popover: {fieldIndex, optionIndex} or null.
@@ -165,14 +302,18 @@ function TemplatesEditor({onClose}) {
       const active = (Array.isArray(templates) ? templates : []).find((t) => t.is_active) || templates[0] || null;
       // Normalize on load: stable ids for legacy id-less fields, options into
       // {key,label,color} shape. Saving persists the normalized form.
-      setFields((Array.isArray(active?.fields) ? active.fields : []).map((f) => normalizeFieldDef(f)).filter(Boolean));
-      setChecklist(
-        (Array.isArray(active?.checklist) ? active.checklist : []).map((c) => ({
-          label: c?.label || '',
-          assignee: c?.assignee || null,
-          assignee_profile_id: c?.assignee_profile_id || null,
-        })),
-      );
+      const loadedFields = (Array.isArray(active?.fields) ? active.fields : [])
+        .map((f) => normalizeFieldDef(f))
+        .filter(Boolean);
+      const loadedChecklist = (Array.isArray(active?.checklist) ? active.checklist : []).map((c) => ({
+        label: c?.label || '',
+        assignee: c?.assignee || null,
+        assignee_profile_id: c?.assignee_profile_id || null,
+      }));
+      setFields(loadedFields);
+      setChecklist(loadedChecklist);
+      setActiveVersion(active ? active.version : null);
+      setBaseline(JSON.stringify({fields: loadedFields, checklist: loadedChecklist}));
     } catch (e) {
       setFields([]);
       setChecklist([]);
@@ -205,6 +346,9 @@ function TemplatesEditor({onClose}) {
       ),
     [profilesById],
   );
+
+  // Unsaved-draft detection against the loaded ACTIVE snapshot.
+  const isDirty = useMemo(() => JSON.stringify({fields, checklist}) !== baseline, [fields, checklist, baseline]);
 
   // ── reorder helper (shared by fields + checklist drag) ─────────────────────
   function reorder(list, from, to) {
@@ -319,9 +463,28 @@ function TemplatesEditor({onClose}) {
   async function save() {
     setSaving(true);
     setNotice(null);
-    const cleanFields = fields
-      .map((f) => normalizeFieldDef({...f, name: String(f.name || '').trim()}))
-      .filter((f) => f && f.name)
+    // Validate the authored draft BEFORE normalization. Normalizing first would
+    // silently discard blank rows and coerce unsupported types to text, making
+    // the publish gate appear green while changing the administrator's draft.
+    const draftFields = fields.map((f) => ({...f, name: String(f?.name || '').trim()}));
+    const draftChecklist = checklist.map((c) => ({
+      ...c,
+      label: String(c?.label || '').trim(),
+    }));
+    const verdict = validateTemplateDraft(draftFields, draftChecklist);
+    if (!verdict.ok) {
+      setNotice({
+        kind: 'error',
+        message: `Cannot activate this template: ${verdict.problems.slice(0, 4).join(' · ')}${
+          verdict.problems.length > 4 ? ` · +${verdict.problems.length - 4} more` : ''
+        }`,
+      });
+      setSaving(false);
+      return;
+    }
+
+    const cleanFields = draftFields
+      .map((f) => normalizeFieldDef(f))
       .map((f) => {
         const out = {id: f.id, name: f.name, type: f.type};
         if (f.type === 'single' || f.type === 'multi') {
@@ -334,15 +497,16 @@ function TemplatesEditor({onClose}) {
         }
         if (f.asana_gid) out.asana_gid = f.asana_gid;
         if (f.default != null) out.default = f.default;
+        // Settings-sourced selects (Processor) carry no baked options; the
+        // marker must survive every save or the runtime control loses its source.
+        if (f.optionsSource) out.optionsSource = f.optionsSource;
         return out;
       });
-    const cleanChecklist = checklist
-      .map((c) => ({
-        label: String(c.label || '').trim(),
-        assignee: c.assignee || null,
-        assignee_profile_id: c.assignee_profile_id || null,
-      }))
-      .filter((c) => c.label);
+    const cleanChecklist = draftChecklist.map((c) => ({
+      label: c.label,
+      assignee: c.assignee || null,
+      assignee_profile_id: c.assignee_profile_id || null,
+    }));
     try {
       await upsertProcessingTemplate(sb, {program, fields: cleanFields, checklist: cleanChecklist});
       setNotice({kind: 'success', message: 'Template saved (a new version is now active).'});
@@ -492,13 +656,64 @@ function TemplatesEditor({onClose}) {
           }}
         >
           <div style={{flex: 1, minWidth: 0}}>
-            <div style={{fontSize: 16, fontWeight: 800, letterSpacing: '-.01em', color: T.ink}}>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                letterSpacing: '-.01em',
+                color: T.ink,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
               {PROGRAMS.find((p) => p.key === program)?.label} record template
+              <span
+                data-processing-template-state={isDirty ? 'draft' : activeVersion == null ? 'none' : 'active'}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  borderRadius: 999,
+                  padding: '3px 9px',
+                  background: isDirty ? '#F7EFD6' : activeVersion == null ? '#F1F3F4' : '#E6F4EC',
+                  color: isDirty ? '#8A6A1E' : activeVersion == null ? T.muted : '#1F7A4D',
+                }}
+              >
+                {activeVersion == null
+                  ? isDirty
+                    ? 'Draft — no template active yet'
+                    : 'No template yet'
+                  : isDirty
+                    ? `Draft (unsaved) · editing Active v${activeVersion}`
+                    : `Active v${activeVersion}`}
+              </span>
             </div>
             <div style={{fontSize: 12, color: T.faint, fontWeight: 600, marginTop: 2}}>
-              Field layout &amp; checklist for every {PROGRAMS.find((p) => p.key === program)?.label} batch
+              Field layout &amp; checklist for every {PROGRAMS.find((p) => p.key === program)?.label} batch — Save
+              activates a new version
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowPreview((v) => !v)}
+            data-processing-template-preview-toggle
+            aria-pressed={showPreview}
+            style={{
+              background: showPreview ? '#E6F4EC' : '#fff',
+              border: `1px solid ${showPreview ? T.green : T.border}`,
+              color: showPreview ? '#1F7A4D' : T.muted,
+              borderRadius: 10,
+              padding: '7px 12px',
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              marginRight: 8,
+            }}
+          >
+            {showPreview ? 'Hide preview' : 'Preview'}
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -626,6 +841,10 @@ function TemplatesEditor({onClose}) {
         {/* Body */}
         <div style={{flex: 1, overflow: 'auto', padding: '14px 20px 10px'}}>
           <InlineNotice notice={notice} onDismiss={() => setNotice(null)} />
+
+          {!loading && !loadError && showPreview && (
+            <TemplatePreviewPane fields={fields} checklist={checklist} profilesById={profilesById} />
+          )}
 
           {loading && <div style={{color: T.faint, fontSize: 13, fontWeight: 600}}>Loading template…</div>}
 

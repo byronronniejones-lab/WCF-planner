@@ -21,6 +21,7 @@
 // mid-way through the next invocation's seeds (records vanish, links wiped by
 // the CASCADE). Give the previous run ~30s to drain before re-running.
 import {test, expect} from './fixtures.js';
+import {defaultProcessingTemplateSuite} from '../src/lib/processingFields.js';
 
 const BATCH_ID = 'ptest-batch-1';
 const SUB_ID = 'ptest-sub-1';
@@ -490,6 +491,127 @@ test.describe('Processing Calendar', () => {
       if (objs && objs.length) {
         await supabaseAdmin.storage.from('processing-attachments').remove(objs.map((o) => `${TASK}/${o.name}`));
       }
+    }
+  });
+
+  test('template suite: all four programs render template Details; Processor is a true select with legacy visibility', async ({
+    page,
+    supabaseAdmin,
+    resetDb,
+  }) => {
+    await resetDb();
+    const adminId = await adminProfileId(supabaseAdmin);
+
+    // Seed the CANONICAL suite (same JSON migration 172 seeds) as the active
+    // template for every program.
+    const suite = defaultProcessingTemplateSuite();
+    for (const program of ['broiler', 'cattle', 'pig', 'sheep']) {
+      const {error} = await supabaseAdmin.from('processing_templates').upsert(
+        {
+          id: `ptpl-default-${program}`,
+          program,
+          version: 1,
+          fields: suite[program].fields,
+          checklist: suite[program].checklist,
+          is_active: true,
+          created_by: adminId,
+        },
+        {onConflict: 'id'},
+      );
+      expect(error, error && error.message).toBeFalsy();
+    }
+
+    // Known processor choices (restore the shared singleton afterwards).
+    const {data: baseSettings} = await supabaseAdmin
+      .from('processing_asana_sync_settings')
+      .select('processor_options')
+      .eq('id', 'singleton')
+      .single();
+    await supabaseAdmin
+      .from('processing_asana_sync_settings')
+      .update({processor_options: ['Atlanta Poultry Processing', 'Springer Mountain']})
+      .eq('id', 'singleton');
+
+    try {
+      // One historical record per program; the broiler one carries a LEGACY
+      // off-list processor that must remain visible in the select.
+      const rows = ['broiler', 'cattle', 'pig', 'sheep'].map((program) => ({
+        id: `ptest-suite-${program}`,
+        record_type: 'asana_historical',
+        program,
+        title: `TEST Suite ${program}`,
+        processing_date: '2026-04-01',
+        status: 'planned',
+        processor: program === 'broiler' ? 'Old Legacy Processors LLC' : null,
+        match_status: 'unmatched',
+        created_by: adminId,
+      }));
+      const {error: recErr} = await supabaseAdmin.from('processing_records').upsert(rows, {onConflict: 'id'});
+      expect(recErr, recErr && recErr.message).toBeFalsy();
+
+      await resetFreshnessStamp(supabaseAdmin);
+      await page.goto('/processing');
+      await page.waitForSelector('[data-processing-loaded="1"]');
+
+      // Every program's record opens with template-driven Details (Condemed is
+      // a template field on all four programs).
+      for (const program of ['broiler', 'cattle', 'pig', 'sheep']) {
+        await page.locator(`[data-processing-row="ptest-suite-${program}"]`).click();
+        const drawer = page.locator(`[data-processing-drawer="ptest-suite-${program}"]`);
+        await expect(drawer).toBeVisible();
+        await expect(drawer.locator('[data-processing-details-section]')).toBeVisible();
+        await expect(drawer.locator('[data-processing-field-input="condemned"]')).toBeVisible();
+        // Customer chips are broiler-only (no duplicate/ghost row elsewhere).
+        if (program === 'broiler') {
+          await expect(drawer.locator('[data-processing-customer-chip]').first()).toBeVisible();
+        } else {
+          await expect(drawer.locator('[data-processing-customer-chip]')).toHaveCount(0);
+        }
+        // Processor is a TRUE SELECT — arbitrary typing impossible by element type.
+        const procSelect = drawer.locator('[data-processing-processor-select]');
+        await expect(procSelect).toBeVisible();
+        expect(await procSelect.evaluate((el) => el.tagName)).toBe('SELECT');
+        await page.keyboard.press('Escape');
+        await expect(drawer).toHaveCount(0);
+      }
+
+      // Legacy visibility + configured save + clearing on the broiler record.
+      await page.locator('[data-processing-row="ptest-suite-broiler"]').click();
+      const drawer = page.locator('[data-processing-drawer="ptest-suite-broiler"]');
+      const procSelect = drawer.locator('[data-processing-processor-select]');
+      await expect(procSelect).toHaveValue('Old Legacy Processors LLC');
+      await expect(procSelect.locator('option', {hasText: 'Old Legacy Processors LLC (legacy)'})).toHaveCount(1);
+      // Pick a configured choice — persists server-side.
+      await procSelect.selectOption('Springer Mountain');
+      await expect
+        .poll(async () => {
+          const {data} = await supabaseAdmin
+            .from('processing_records')
+            .select('processor')
+            .eq('id', 'ptest-suite-broiler')
+            .single();
+          return data.processor;
+        })
+        .toBe('Springer Mountain');
+      // The legacy value was deliberately replaced — it leaves the choices.
+      await expect(procSelect.locator('option', {hasText: '(legacy)'})).toHaveCount(0);
+      // Clearing works ('—').
+      await procSelect.selectOption('');
+      await expect
+        .poll(async () => {
+          const {data} = await supabaseAdmin
+            .from('processing_records')
+            .select('processor')
+            .eq('id', 'ptest-suite-broiler')
+            .single();
+          return data.processor;
+        })
+        .toBeNull();
+    } finally {
+      await supabaseAdmin
+        .from('processing_asana_sync_settings')
+        .update({processor_options: baseSettings.processor_options})
+        .eq('id', 'singleton');
     }
   });
 
