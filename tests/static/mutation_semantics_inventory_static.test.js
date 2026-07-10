@@ -314,6 +314,13 @@ function hasFeedInputDeleteRpc() {
   );
 }
 
+function hasAuditedUserManagementRpcs() {
+  return (
+    fs.existsSync(path.join(ROOT, 'src/lib/userManagementApi.js')) &&
+    fs.existsSync(path.join(ROOT, 'supabase-migrations/171_audited_user_management.sql'))
+  );
+}
+
 function expectedLiteralMutationTotals() {
   const expected = new Map(EXPECTED_LITERAL_MUTATION_TOTALS);
   // The two literal calving deletes (CattleAnimalPage + CattleHerdsView) route
@@ -359,6 +366,12 @@ function expectedLiteralMutationTotals() {
   if (hasFeedInputDeleteRpc()) {
     expected.set('delete', expected.get('delete') - 1);
   }
+  // mig 171 moves UsersModal's four profile updates + redundant profile delete
+  // behind audited SECDEF RPCs / the Auth-owned cascade.
+  if (hasAuditedUserManagementRpcs()) {
+    expected.set('delete', expected.get('delete') - 1);
+    expected.set('update', expected.get('update') - 4);
+  }
   return expected;
 }
 
@@ -394,6 +407,10 @@ function expectedOwnerOperationCounts() {
   // cattle_feed_tests delete remains; deleteFeedPermanently moves to the RPC).
   if (hasFeedInputDeleteRpc()) {
     expected.set('src/admin/LivestockFeedInputsPanel.jsx|delete', 1);
+  }
+  if (hasAuditedUserManagementRpcs()) {
+    expected.delete('src/auth/UsersModal.jsx|delete');
+    expected.delete('src/auth/UsersModal.jsx|update');
   }
   return expected;
 }
@@ -432,6 +449,10 @@ function expectedTableOperationCounts() {
   // deleteTest is unaffected).
   if (hasFeedInputDeleteRpc()) {
     expected.delete('cattle_feed_inputs|delete');
+  }
+  if (hasAuditedUserManagementRpcs()) {
+    expected.delete('profiles|delete');
+    expected.delete('profiles|update');
   }
   return expected;
 }
