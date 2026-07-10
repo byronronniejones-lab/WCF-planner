@@ -221,14 +221,20 @@ const EXPECTED_RUN_MUTATION_CALLERS = new Map([
   ['src/cattle/CattleHerdsView.jsx', 2],
   ['src/equipment/EquipmentDetail.jsx', 1],
   ['src/livestock/WeighInSessionPage.jsx', 5],
-  // Processing drawer batch/milestone lifecycle actions route through the
-  // entityMutations runMutation wrapper (RPC-backed via processingApi.js), not
-  // direct .from() table writes.
-  ['src/processing/ProcessingDrawer.jsx', 13],
-  // Reconciliation crosswalk modal (mig 157): reconcile-planner / resolve-link /
-  // acknowledge-drift route through its own runMutation wrapper, which calls the
-  // processingApi RPC wrappers — NO direct .from() table writes.
-  ['src/processing/ProcessingReconciliationModal.jsx', 3],
+  // Processing drawer (processing-complete lane, per-caller reviewed): 19 sites,
+  // every one an RPC-backed processingApi wrapper — saveProcessor, toggleCustomer,
+  // saveAssignee, saveMilestoneTitle, saveMilestoneDate, saveMilestoneStatus,
+  // saveLocalField (set_processing_field), markComplete, reopen, toggleSubtask,
+  // addSubtask, saveSubtaskLabel, reassignSubtask, deleteSubtask, moveSubtask
+  // (reorder RPC), applyTemplate, doDeleteMilestone, doArchiveRecord,
+  // doRestoreRecord. NO direct .from() table writes.
+  ['src/processing/ProcessingDrawer.jsx', 19],
+  // Reconciliation workbench modal (migs 157/159 + comments lane, per-caller
+  // reviewed): 8 sites — reconcile-planner, populate review queue
+  // (sync_review_queue via Edge), resolve-link, triage, supersede-duplicate,
+  // acknowledge-drift, comments preview, comments import. All RPC/Edge-backed;
+  // NO direct .from() table writes.
+  ['src/processing/ProcessingReconciliationModal.jsx', 8],
   ['src/sheep/SheepAnimalPage.jsx', 1],
 ]);
 
@@ -526,7 +532,7 @@ describe('mutation semantics inventory', () => {
     const callers = collectRunMutationCallers();
     const {unexpected, missing, wrongCounts} = diffMap(EXPECTED_RUN_MUTATION_CALLERS, callers);
 
-    expect([...callers.values()].reduce((sum, count) => sum + count, 0)).toBe(35);
+    expect([...callers.values()].reduce((sum, count) => sum + count, 0)).toBe(46);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);
