@@ -11,7 +11,8 @@ Last updated: 2026-07-11.
 Product checkpoint covered by this wrap: `029899c` (Processing engine/import completion,
 audited user management, farm-team-safe processing detach, template suite,
 conversation fidelity, and the simplified Processing UI). Last code/product
-checkpoint: `029899c`. This documentation-only wrap follows that product commit.
+checkpoint: `029899c`. This documentation-only wrap follows that product commit
+and records the next Processing integration build in Build Queue item 3.
 Shipped history lives in `git log` and `archive/SESSION_LOG.md`; durable behavior
 lives in the Load-Bearing Contracts below; migration/live state lives in Current
 State and Backend And Data State. Do not re-enumerate the changelog in this header.
@@ -258,7 +259,129 @@ This is the canonical home for outstanding build/design work.
      duplicate writes on rerun and representative Broiler/Cattle/Pig/Sheep
      checks; final cutover occurs only after explicit approval.
 
-3. User-management residual verification and audit-scope decisions
+3. Processing planner integration and final-stage workflow
+   - Status: PRODUCT DECISIONS LOCKED; READY FOR A FRESH CC BUILD LANE. This
+     intentionally replaces the current actual-trip-only Pig enumeration and
+     configurable Processing field-template model. No implementation, TEST
+     apply, deploy, or PROD operation was performed in this wrap.
+   - Class: `ENH`/`DEFECT`/`DB-GATE`/`DATA-MIGRATION`/`TEST`.
+   - Ownership and identity:
+     - Broiler, Cattle, Sheep, and Pig planners remain authoritative for source
+       dates, counts, animals, ages, weights, and trip details. Processing owns
+       its workflow status, processor, optional Broiler customer, subtasks,
+       comments, attachments, and Activity.
+     - Extend the existing source mapping; do not create a parallel mapping
+       system. Every record has direct two-way navigation between Processing and
+       its native batch/trip.
+     - Source fields are read-only in Processing and stay mirrored after edits,
+       fulfillment, split/reallocation, archive, restore, and completion.
+   - Program tables:
+     - Broiler: Batch / Status / Hatch Date / Processing Date / Processor /
+       Count / Customer.
+     - Cattle and Sheep: Batch / Status / Processing Date / Processor / Count /
+       Age. Farm Arrival is removed.
+     - Pig: Trip / Batch / Status / Processing Date / Processor / Count / Age.
+     - Rename Number to Count throughout Processing. Broiler Hatch Date comes
+       from authoritative `ppp-v4.hatchDate`, replacing the incorrect Farm
+       Arrival display. All counts come from the native source; the final
+       surviving/processed Broiler count is entered on the Broiler batch after
+       the processor reports it.
+     - Status, Processor, and Customer render as three distinct, consistent
+       design-system tag treatments. Customer is Broiler-only and optional.
+   - Program detail model:
+     - Broiler uses a batch summary: Batch, Hatch Date, Processing Date, Age,
+       Count, Processor, and Customer; it has no individual-animal table.
+     - Cattle and Sheep show read-only individual tag, age on Processing Date,
+       latest live weight, and hanging weight when available. Missing values say
+       `Not recorded`; never estimate them.
+     - Pig shows the source batch/trip plus read-only live weights and calculated
+       ages. Existing weigh-ins are tagless, so label them Pig 1, Pig 2, etc.;
+       never invent tags. Display real source tags automatically if added later.
+     - All programs retain their subtasks, comments, attachments, and Activity.
+       Processing search covers batch, Pig trip, animal tag, processor, and
+       customer, including values nested inside record details.
+   - Pig planned-trip lifecycle:
+     - Every persisted `plannedProcessingTrips` row immediately creates or
+       updates one Planned Processing record, including automatically generated,
+       unlocked trips. Use stable planned-trip identity.
+     - Show `Auto-planned` until the native trip is generically locked/scheduled
+       with a processor, then show `Processor scheduled` on the same record.
+       These are secondary signals, not lifecycle statuses. Do not add processor
+       names or processor-name templates to Pig Planner; the real processor is
+       selected only in Processing.
+     - Native date/count edits update the same Processing record. Actual
+       fulfillment promotes that record without losing processor, subtasks,
+       completion state, comments, attachments, or history.
+     - Under-send preserves the original as the actual lower-count trip and
+       moves the remainder into the next/new planned record. Over-send reduces
+       affected later plans correspondingly. Both planner and Processing must
+       remain matched, with traceable lineage and no duplicate records.
+     - Deleting an untouched planned trip removes its empty Processing record;
+       deleting one with work/history archives it. Restoring the source
+       reactivates that same record.
+     - Calendar labels use `Pig Trip · <exact batch name> · Trip <n>` and show
+       the Auto-planned/Processor scheduled signal as secondary text while event
+       color remains status-based. Calendar clicks open Processing detail.
+   - Processing status and completion:
+     - Processing status is independent of native program lifecycle status and
+       never mutates the source status. Vocabulary remains Planned / In Process /
+       Complete.
+     - A record exists only when its source has a Processing Date. It stays
+       Planned until that date begins in the farm timezone, then automatically
+       becomes In Process. Moving an uncompleted event back into the future
+       returns it to Planned unless an actual Pig trip already exists.
+     - Complete requires an explicit Mark complete action after the Processing
+       Date. Block completion until Processor is selected, source Count is
+       greater than zero, and every open template or manually added subtask is
+       completed or removed. Customer and missing live/hanging weights do not
+       block completion.
+     - Source-date removal follows the same empty-remove versus worked-archive
+       rule as Pig trip deletion. Archived/cancelled records are hidden by
+       default, available through Show archived, and retain source/history links.
+     - Default order: In Process oldest date first; Planned nearest date first;
+       Complete newest completion first.
+   - Templates, options, and assignments:
+     - Remove the configurable Field template surface; Processing fields are
+       fixed. Processor and Customer choices are two global lists, not
+       program-specific templates. Allow add, rename, and deactivate; never
+       erase historical tag values.
+     - Checklist/subtask templates remain separate for Broiler, Cattle, Sheep,
+       and Pig. New records receive only the current template for their program.
+     - Add optional `Apply latest template` on an existing record with a preview
+       and stable internal step ids. Merge additions, renames, and current
+       assignments without duplicating or reopening completed work; preserve
+       comments, attachments, completion/history, removed-template steps, and
+       manual steps. Repeated application must be idempotent.
+     - Processing subtasks and templates have no due-date UI or scheduling
+       rules. Clear existing imported Processing subtask due dates from storage
+       while preserving completion and Activity history.
+     - Resolve every imported name-only `Brett Post` Processing assignment to
+       the actual Accounting profile and every name-only `Isabel Hermann`
+       assignment to the actual Isabel profile, including active templates.
+       Resolve through stable identity/email rather than hardcoded UUIDs; keep
+       inactive historical template versions immutable.
+     - Assigned Processing subtasks appear in the assignee's normal To Do/task
+       view and link to the Processing record. New/reassigned work notifies the
+       assignee; the bulk Brett/Isabel correction is silent.
+   - Validation and gates:
+     - Reconcile and RPC changes must be idempotent, preserve planner-vs-
+       Processing ownership, and follow current RLS/security/audit boundaries.
+     - Focused proof must cover program headers/details, Broiler hatch/count
+       mapping, Cattle/Sheep animal detail, tagless Pig detail, planned-trip
+       creation and promotion, under/over-send lineage, reschedule, delete/
+       archive/restore, two-way links, status timing, completion blockers,
+       template merging, due-date removal, assignment correction, To Do, and
+       notification suppression/idempotence.
+     - Start from current `origin/main` in a fresh worktree. Ronnie approval is
+       required before any commit/push, TEST apply, Edge deploy, or PROD action;
+       PROD `exec_sql` remains forbidden.
+   - Success criteria: all four programs read as one seamless final planner
+     stage; source facts never diverge; every planned/actual Pig trip retains one
+     traceable Processing identity; fixed program-specific tables/details and
+     global options are clear; completion and assignments behave exactly as
+     above; full focused validation and production build pass.
+
+4. User-management residual verification and audit-scope decisions
    - Status: CORE HARDENING SHIPPED. Migration `171`, audited UsersModal RPCs,
      immutable `user_management_audit`, and the `rapid-processor` v29 delete
      handler are live. Retained farm-record foreign keys intentionally refuse
@@ -278,7 +401,7 @@ This is the canonical home for outstanding build/design work.
    - Gate: any SQL/RPC/Edge change needs focused TEST proof and a separate PROD
      migration/function-deploy approval.
 
-4. Processing lifecycle lock-order hardening
+5. Processing lifecycle lock-order hardening
    - Status: KNOWN CONCURRENCY FOLLOW-UP. Migration `170` aligns cattle/sheep
      attach/detach on batch -> matching weigh-ins -> animal with membership
      revalidation. Migration `100`'s sheep batch delete still locks animal rows
@@ -290,7 +413,7 @@ This is the canonical home for outstanding build/design work.
    - Gate: TEST concurrency/RPC proof first; PROD SQL only after explicit
      approval. Do not change role gates or lifecycle semantics incidentally.
 
-5. CI whole-app Playwright runtime
+6. CI whole-app Playwright runtime
    - Status: DEFECT. The `029899c` main workflow passed change detection,
      install, formatting, lint, all Vitest tests, and production build, then the
      serialized whole-app Playwright step exceeded the 30-minute job budget and
