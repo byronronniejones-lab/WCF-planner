@@ -7,11 +7,11 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-07-09.
-Current wrap checkpoint: `5250222` (Processing finish-out sub-lanes 4-6:
-server-backed Customer/Processor option lists, Asana task-template import code,
-and the Processing attachments Storage bucket). Last code/product checkpoint:
-`5250222`.
+Last updated: 2026-07-11.
+Product checkpoint covered by this wrap: `029899c` (Processing engine/import completion,
+audited user management, farm-team-safe processing detach, template suite,
+conversation fidelity, and the simplified Processing UI). Last code/product
+checkpoint: `029899c`. This documentation-only wrap follows that product commit.
 Shipped history lives in `git log` and `archive/SESSION_LOG.md`; durable behavior
 lives in the Load-Bearing Contracts below; migration/live state lives in Current
 State and Backend And Data State. Do not re-enumerate the changelog in this header.
@@ -67,19 +67,24 @@ Design/function invariants that govern cross-surface behavior live in
 
 ## Current State
 
-- Production deploy: Netlify auto-deploys from GitHub `main`. The latest
-  product checkpoint on `main`/`origin/main` is `5250222`, which ships the
-  Processing finish-out bundle after the reconciliation workbench, comments-only
-  import, Processing table cleanup/TOF/archive lanes, Pasture Map migration
-  `158`, the cattle nutrition dry-matter fix, and the Home materials-ordering
-  hotfix.
+- Production deploy: Netlify auto-deploys from GitHub `main`. The latest product
+  code is `029899c`; this documentation-only wrap follows it without changing
+  runtime code. The public `/processing` route and its `029899c` production
+  bundle were verified after deploy. There are no open GitHub pull requests at
+  this wrap.
+- Supabase live high-water: all repository migrations through `166` and
+  `170`-`174` are PROD-applied; numbers `167`-`169` are intentionally unused.
+  Current PROD Edge versions are `rapid-processor` v29,
+  `processing-asana-sync` v10, `tasks-cron` v6, `tasks-summary` v8, and
+  `newsletter-harvest` v6. TEST has `rapid-processor` v3 and
+  `newsletter-harvest` v1; no TEST `processing-asana-sync` deploy exists.
 - Newsletter live state: Autopilot + direction-first redesign + fact fixes +
   archive-link gating + the UX polish pass are merged. The polish pass adds
   debounced/autosaved admin direction, prevents local direction clobbering during
   refreshes, clarifies AI-vs-template/gather/fact workflow states, relabels
   newsletter runs, and brings the public reader into the WCF branded email
   family. Migrations `146`/`151`/`153` are PROD-applied; `newsletter-harvest` is
-  deployed (PROD v5 / TEST v1); `NEWSLETTER_AI_API_KEY` is a PROD-only Edge
+  deployed (PROD v6 / TEST v1); `NEWSLETTER_AI_API_KEY` is a PROD-only Edge
   Function secret (TEST intentionally unset); the monthly cron is off. The
   public archive is link-gated by a rotating `?key=`. See the Monthly Newsletter
   contract for behavior and Build Queue item 1 for the open first-issue /
@@ -96,35 +101,43 @@ Design/function invariants that govern cross-surface behavior live in
   is an installable PWA hub; the service-worker cache version is
   `2026-06-30-pasture-pwa-v1`. Light has pasture farm-team-level Map/Field access
   (migration `139`). See the Pasture Map contract for UI/behavior rules.
-- Migration high-water: migrations `112`-`116` and `125`-`163` are PROD-applied
-  (live state; see Supabase Migrations for per-migration detail). Migration `143`
-  remains deployed as a benign unused helper; no UI calls it.
+- Migration `143` remains deployed as a benign unused helper; no UI calls it.
 - Production legacy import: `Processing Events - ALL.xlsx` upserted 69 rows into
   `production_legacy_events` on PROD by stable `source_key` (frozen historical
   count).
-- Processing Calendar: migrations `156`-`163` are merged to `main` and
-  PROD-applied. Planner-only reconcile has run once in PROD and created 52 clean
-  `planner_batch` rows (broiler 27 / cattle 16 / pig 8 / sheep 1). The
-  reconciliation workbench is live; the review queue was populated and Ronnie
-  completed the manual reconciliation pass. The comments-only import lane is
-  complete: `sync_comments` inserted 121 Asana comments across 51 records, an
-  idempotent re-run inserted 0 new comments, and verification found zero
-  subtasks, attachments, or Storage writes from that lane. The table cleanup is
-  live: the main-table Subtasks column is removed, the Batch/title column is
-  sticky, one-time admin controls are collapsed, broiler Time-on-Farm is
-  server-derived, and Asana-owned rows can be soft-archived while planner rows
-  are refused. Customer/Processor option-list editing is live from server-backed
-  settings (`162`). `processing-asana-sync` live Edge remains version 6 from the
-  comments lane; the new template-import and attachment-dry-run actions from
-  `5250222` are committed but not deployed yet. `ASANA_ACCESS_TOKEN` is live on
-  the PROD Edge secret (the dry-run and comments lanes proved live Asana
-  connectivity and it remains set), so redeploying the Edge for the new actions
-  does not require re-setting the token — just probe `asanaConfigured` after
-  deploy to confirm. The private
-  `processing-attachments` bucket exists from `163`, with operational-only
-  SELECT and no authenticated INSERT, but no attachment bytes have been copied.
-  Template import, subtask/artifact import, attachment byte-copy/backfill, and
-  final Asana cutover remain explicit gates in Build Queue item 3.
+- Processing Calendar schema is PROD-applied through `174`; the live Edge is
+  `processing-asana-sync` v10, `ASANA_ACCESS_TOKEN` remains set, and
+  `asana_sync_enabled` is still true. Current PROD inventory is 119 Processing
+  records: 52 active `planner_batch`, 50 active
+  `asana_historical`, 16 archived `import_exception`, and 1 active milestone.
+  There are 117 Asana links, 110 attached to Processing records.
+- Processing artifacts already imported: 1,104 recursive Asana subtasks
+  (798 complete / 306 open; 557 assigned; 537 with due dates; 380 with start
+  dates), preserving imported completion state and local ownership rules.
+  Processing has 129 imported Asana comments across 52 records. Conversation
+  fidelity imported 8 comment-media files (about 20.4 MB) into private
+  `processing-attachments`; those bytes render both on their original imported
+  comments and in the record attachment index. B-26-04 is the representative
+  proof: 9 subtasks (8 complete / 1 open) and Brian Naide's two JPG posts are
+  present. Idempotent artifact/media reruns wrote no duplicates.
+- Processing work intentionally not run: the last broad attachment dry run
+  enumerated 67 Asana task attachments before the 8 conversation-media imports;
+  a fresh dry run must establish the remaining-new count. Historical Activity
+  import would add roughly 16,855 Asana system-story rows. Neither operation is
+  exposed in the day-to-day UI; both remain explicit data-volume decisions in
+  Build Queue item 2. Three deleted Asana cards linked to dismissed placeholders
+  consistently 404 and are skipped without aborting a run.
+- Processing UI is simplified and live. The former Admin/maintenance,
+  reconciliation, and historical-import controls are removed. Admins get a
+  direct **Templates** button; templates are local-only and contain Fields and
+  Checklist editing plus Customer/Processor choice management. Customer and
+  Processor are settings-backed single selects. Parent-record Assignee and the
+  six retired fields (Farm, Planned Processing Date, Actual/Planned Time on Farm,
+  Product Pickup Date, and Time Remaining) are absent from defaults and drawer.
+  Checklist-step assignees remain supported. The four active template v2 rows
+  have 11/10/10/10 fields and preserve their 8/16/11/16-item checklists; v1 rows
+  remain inactive for history. All 119 Processing records were unchanged by the
+  v2 migration.
 - Processing status labels are normalized to `Planned` / `In Process` / `Complete`
   via `src/lib/processingStatusDisplay.js` (display-only; stored values are
   unchanged). See the Processing Calendar contract for the mapping and the
@@ -154,28 +167,36 @@ Design/function invariants that govern cross-surface behavior live in
   best-effort Activity emits across live cattle, pig, weigh-in/webform,
   equipment, and processing-attach surfaces; PR2B (`d169757`) adds the remaining
   summary emits and the dedicated `equipment.fuel_bill` Activity entity via
-  migration `154`. No PROD data repair, daily-create policy change, detach
-  reroute, UsersModal change, or historical backfill has shipped. Remaining
-  audit work is tracked in Build Queue item 2.
+  migration `154`. Migration `170` now routes cattle/sheep detach workflows
+  through audited atomic RPCs and safely admits program-authorized `farm_team`;
+  migration `171` routes UsersModal profile mutations through admin-only audited
+  RPCs and gives `rapid-processor` v29 the guarded Auth hard-delete handler.
+  Accounts retained by farm-record foreign keys still cannot be hard-deleted and
+  must be deactivated. Historical Activity backfill remains unapproved.
+  User-management residual verification/scope decisions are Build Queue item 3;
+  the remaining processing lock-order hardening is item 4.
 - `tasks-cron` Edge Function is active in PROD: recurring + system-task generation
   with batch/group entity labels, plus To Do approval/originator notifications.
 - Broiler derived-data drift lane is closed and verified in PROD.
 - Dependency hardening is complete: Vite/Vitest/plugin-react majors upgraded,
   SheetJS pinned to the patched 0.20.3 tarball, Node pinned to 22 for Netlify, and
   `npm audit` is 0 on the hardened lockfile.
-- Known format drift: full `npm run format:check` still fails on three
-  pre-existing files (`src/main.jsx`, `tests/add_feed_parent_submission.spec.js`,
-  `tests/cattle_forecast.spec.js`). Recent lane files checked clean. Do not
-  attribute those three files to the mutation-audit or Processing lanes unless a
-  future formatting cleanup explicitly takes them on.
-- Worktree inventory at wrap: primary worktree `C:/Users/Ronni/WCF-planner` is
-  clean on `main` at `5250222` before this docs wrap. One old registered Codex
-  worktree remains at `C:/Users/Ronni/WCF-planner-codex-materials-needed-order`
-  on `codex/materials-needed-order` at `202ad1a`; that hotfix is already present
-  in `main` and the worktree is not active lane work. `gh pr list` returned no
-  open PRs. The workstation-local handoff folder
-  `design_handoff_processing_calendar/` is ignored by Git/Prettier and referenced
-  by Build Queue item 3.
+- Validation baseline at the shipped checkpoint: Prettier passes (the former
+  three-file drift was fixed by `c38a07c`), lint has 0 errors, 291 Vitest files /
+  7,070 tests pass, production build passes, the focused Processing Playwright
+  suite passes 9/9, and migration `174` passed its six guarded TEST proofs. The
+  GitHub whole-app Playwright step exceeded the workflow's 30-minute budget and
+  was cancelled after all earlier CI stages passed; CI segmentation/runtime is
+  an explicit defect in Build Queue item 5 rather than a product-test success.
+- Worktree inventory at audit start: `C:/Users/Ronni/WCF-planner-main-release`
+  was the clean `main`/`origin/main` release worktree at `029899c`; this wrap
+  changes only `PROJECT.md`. The primary worktree is clean on merged feature branch
+  `feature/processing-ui-simplify` at `83649ef`. Registered detach,
+  user-management, validation, template, customer-fields, and materials-order
+  worktrees are inactive; their commits are already merged or superseded.
+  Stashes dated 2026-07-10 for template-suite and customer-field drafts are
+  obsolete/superseded and must not be applied over current `main`. The ignored
+  `design_handoff_processing_calendar/` remains reference material only.
 
 ### Recent Shipped Checkpoints
 
@@ -184,13 +205,12 @@ Per-PR shipped history is not maintained here. For what shipped and when, read
 Durable behavior lives in the Load-Bearing Contracts below; current migration and
 live state lives in Current State and Backend And Data State.
 
-Most recent session: Pasture Map positive-area overlap fix (`fa4d5e0`),
-Processing rich dry-run/reconciliation workbench (`82ea688`/`ce16e88`),
-comments-only Asana import (`c4be0b4`), cattle nutrition dry-matter fix
-(`7ba2b3e`), Home materials-needed ordering hotfix (`202ad1a`), Processing table
-cleanup/broiler TOF/archive (`f09f6f8`), cattle herd collapsible-tile updates
-(`dd677e2`/`4ae8fa9`/`fdfd1dc`), and Processing finish-out option/template/
-attachments bundle (`5250222`). Earlier durable checkpoints remain in `git log`.
+Most recent session: audited processing detach (`cda13ea`), audited user
+management (`0b7e309`), formatting baseline cleanup (`c38a07c`), Processing
+engine/import/upload completion (`d036fb6`), template suite (`cba6b35`),
+conversation fidelity (`4978cf1`/`01bf915`), and Processing UI simplification
+(`83649ef`), merged through `029899c`. Earlier durable checkpoints remain in
+`git log`.
 
 ---
 
@@ -200,280 +220,88 @@ Treat these as product lanes, not hotfixes, unless Ronnie says otherwise.
 This is the canonical home for outstanding build/design work.
 
 1. Newsletter first production issue + PROD AI smoke
-   - Status: RELEASED TO `main` / SQL PROD-APPLIED / EDGE FUNCTION DEPLOYED.
-     PR #44 (Autopilot) merged as `a1cdcf7`; PR #54 (redesign), #55 (fact fix +
-     YoY), #59 (archive-link gating) also merged; migrations `146` -> `151` ->
-     `153` are PROD-applied and verified; `newsletter-harvest` is active in PROD
-     as version 5 (TEST v1). `NEWSLETTER_AI_API_KEY` is live as a PROD-only Edge
-     Function secret, so Anthropic AI is available in production; TEST
-     intentionally does not have the key. Cron remains off.
-   - Class: `ENH`/`AI`/`DB-GATE`/`SECURITY`/`AUTOMATION`/`STORAGE`.
-   - Product model shipped:
-     - Gather this month's facts first: planner data only, no AI and no draft.
-     - Ronnie steers: fact toggles, Monthly Q&A, tone, length/detail, and manual
-       facts.
-     - Write draft: AI writes from gathered facts + Ronnie direction and
-       proposes a photo plan/shot list.
-     - Revise draft: AI revises the current draft in place from an instruction
-       while preserving the rest of the draft.
-     - Photos: upload privately, approve/consent to public, assign to shot-list
-       slots, place planned photos into the draft, choose cover, preview, and
-       publish to public `/newsletter`.
-   - Released surface: shipped as described in the Monthly Newsletter contract
-     (migration `151` settings/coverage/photo-plan additions on top of
-     `144`/`145`/`146`; shared parity modules + tests; the `newsletter-harvest`
-     real-source harvest/coverage/revision/photo-plan/AI-probe support; and the
-     redesigned admin 7-step tracker + public reader). Migration `144`'s
-     exactly-three anon RPC surface remains the boundary.
-   - Safety boundaries to preserve:
-     - No finances or mortalities; births are born-alive; on-farm counts exclude
-       dead/sold/processed animals at source; AI key stays server-only.
-     - Structured-block whitelist only; renderer does not accept raw AI HTML.
-     - Photo consent remains admin approval: private staging first, public copy
-       only after approval.
+   - Status: PRODUCT/SQL/EDGE RELEASED; FIRST REAL ISSUE WORKFLOW NOT YET RUN.
+     Newsletter Autopilot, direction-first editing, archive-link gating, and
+     `newsletter-harvest` PROD v6 are live. `NEWSLETTER_AI_API_KEY` is a
+     PROD-only Edge secret; TEST intentionally has no key. Cron remains off.
+   - Class: `ENH`/`AI`/`DATA-OPERATION`.
    - Remaining actions:
-     - Probe `newsletter-harvest` from `/admin/newsletter` or an approved admin
-       call and confirm `aiConfigured: true` on PROD.
-     - On the June (or first) issue, re-gather facts (picks up the v5
-       broiler-processing fix) and Write/Rewrite the draft (appends the YoY
-       production section), then verify the numbers + section.
-     - Generate the first public archive link in `/admin/newsletter` ("Generate
-       link"; or it auto-mints on publish), then share it; the archive is locked
-       until a key exists.
-     - Run the first production issue workflow: gather facts, review coverage,
-       write/revise, approve/place photos, preview, publish, and verify the
-       link-gated public `/newsletter` output. Cron stays off until separately
-       approved.
+     - Confirm `aiConfigured: true` through an approved PROD admin probe.
+     - Gather/re-gather the first issue, review coverage and numbers, write or
+       rewrite the draft, approve/place photos, preview, and publish.
+     - Generate or confirm the rotating archive key, then verify the link-gated
+       public `/newsletter` result.
+     - Keep monthly cron off until Ronnie separately approves automation.
+   - Success criteria: one reviewed real issue is published, the keyed public
+     archive works, source coverage/numbers are checked, and no private or
+     unapproved media is exposed.
 
-2. Full mutation audit for audited workflow paths
-   - Status: PR1 / PR2A / PR2B SHIPPED; RESIDUAL AUDIT LANES STILL OPEN. Added after the
-     cattle record-page Herd dropdown defect: the dropdown had been using a
-     generic cattle row update, which bypassed the transfer RPC and skipped
-     `cattle_transfers`, `status.changed` Activity, and sale/death-date side
-     effects for some 2026-06-13 Mommas -> Sold changes. Hotfix `c6a880d` fixed
-     that cattle path. PR1 (`0b424cb`) fixed the analogous sheep record-page
-     Flock dropdown by routing through the audited transfer RPC. PR2A
-     (`efe9483`) shipped the safe non-transactional best-effort Activity layer
-     covering live cattle, pig, weigh-in/webform, equipment, and
-     processing-attach surfaces. PR2B (`d169757`) shipped the remaining summary
-     emits and migration `154` for the dedicated `equipment.fuel_bill` Activity
-     entity. Mutation semantics inventory counts remain stable except for
-     approved `recordActivityEvent` emits.
-   - Class: `DEFECT`/`SECURITY`/`DB-GATE`/`TEST`.
-   - Shipped PR2A scope:
-     - Cattle: cattle calving create, new-cow create, and processing schedule
-       create now emit best-effort Activity.
-     - Pig: breeder delete, feeder batch create, and sub-batch archive/unarchive
-       now emit best-effort Activity.
-     - Weigh-in/webform: animal identity changes, webform new-cow/retag/
-       reconcile, and webform session completion now emit best-effort Activity.
-     - Equipment: equipment create, maintenance-event create, and service
-       interval edits now emit best-effort Activity.
-     - Processing attach parity: cattle/sheep webform attach helper paths emit
-       on the processing batch Activity stream.
-   - Shipped PR2B scope:
-     - Pig batch parent autosave (`PigBatchesView`) emits one summary
-       `pig.batch` `field.updated` on feeder-form close via a stable baseline;
-       it does not log every autosave/debounce tick.
-     - Equipment fueling autosave (`EquipmentDetail`) emits one best-effort
-       `equipment.item` `field.updated` after the field edit is durably saved,
-       with payload record `equipment.fueling`; failed flushes keep the baseline
-       for retry and do not emit/clear early.
-     - Farrowing create/edit/delete (`FarrowingView`) emit best-effort Activity
-       on the matched `pig.breeder` by sow tag; no breeder match means no invalid
-       Activity write.
-     - Fuel bill create/delete now use dedicated entity `equipment.fuel_bill`
-       through migration `154`, admin-only and existence-free so deleted-bill
-       tombstones remain readable. `delete_fuel_bill` is no longer scoped to
-       `equipment.item`.
-   - Intentionally not changed by PR2A/PR2B:
-     - Daily-create policy remains the app-wide baseline: create attribution is
-       via owner/submitted fields; edits/deletes stay audited through ownership
-       RPCs. Do not add pig-only daily `record.created`.
-     - Detach flows remain deferred to a gated atomic PR3 lane. The intended
-       path is to widen the migration-081 detach RPC role checks as needed for
-       the live `/weighins` webform/farm-team surface, then reroute
-       `WeighInSessionPage` and `WeighInsWebform` detach paths through the RPCs.
-       This requires TEST/PROD migration approval and focused RPC/browser proof.
-     - UsersModal admin writes remain direct `profiles` updates for role,
-       inactive/deactivate, and program access. They are live admin-only and
-       should become a separate gated user-management audit lane.
-     - Historical Activity/data backfill is not approved.
-   - Gates: Any PROD data repair, migration/RPC rewrite, new SECDEF surface,
-     detach role widening/reroute, UsersModal audit hardening, or historical
-     backfill requires its own Ronnie approval gate.
+2. Processing remaining artifact volume and final Asana cutover
+   - Status: CORE IMPORT COMPLETE; THREE EXPLICIT DATA DECISIONS REMAIN. Planner
+     reconcile, manual crosswalk resolution, 1,104 subtasks, 129 comments, and 8
+     conversation-media files are live. Canonical local v2 templates are active;
+     Asana template import is no longer part of the product UI or required.
+   - Class: `DECISION`/`DATA-IMPORT`/`STORAGE`/`CUTOVER`.
+   - Decisions:
+     - Ordinary attachment backfill: the last broad dry run enumerated 67 Asana
+       task attachments before the 8 conversation-media imports. Re-run the dry
+       plan to establish new/already-stored counts; expect the three known
+       deleted-card 404 skips. Apply only with explicit volume/storage approval,
+       then prove idempotence and representative signed URLs.
+     - Historical Activity: the dry run found about 16,855 Asana system stories.
+       Default recommendation is to keep the Planner history lean and leave
+       these unimported unless Ronnie explicitly wants field-churn history.
+     - Final cutover: after the two decisions above, optionally set
+       `asana_sync_enabled=false` through its separate gate. Do not infer this
+       from removal of the historical-import UI.
+   - Success criteria: each decision is recorded; any approved import has zero
+     duplicate writes on rerun and representative Broiler/Cattle/Pig/Sheep
+     checks; final cutover occurs only after explicit approval.
 
-3. Processing Calendar planner-first reconciliation and Asana mirror
-   - Status: PLANNER-FIRST PROCESSING LIVE / CORE RECONCILIATION DONE /
-     ARTIFACT-TEMPLATE GATES REMAIN. Migrations `156`-`163` are merged and
-     PROD-applied. The app is live from `5250222`. `processing-asana-sync` live
-     deploy is PROD version 6 from the comments-only lane; the template-import
-     and attachment-dry-run Edge actions committed in `5250222` are not deployed
-     yet.
-   - Class: `ENH`/`DB-GATE`/`SECURITY`/`STORAGE`/`DATA-IMPORT`.
-   - Source/design: workstation-local `design_handoff_processing_calendar/`
-     contains the prototype handoff, CSV, README, and support file. The CSV is
-     not sufficient for import because comments, attachments, Asana gids,
-     recursive subtasks, and reliable metadata require the live Asana API.
-   - Verified live API checkpoint on 2026-06-26: project
-     `1201484014160203` (`SF Processing Calendar ` with trailing space), 117
-     top-level records, 5 top-level milestones, section counts Broiler 48 /
-     Cattle 27 / Pig 29 / Lamb 13, 1,132 CSV subtask rows, 122 real comments
-     on 52 top-level records, 71 attachments, and 0 live dependencies. Future
-     cutover runs must self-audit current live counts; do not hardcode these
-     counts as permanent truth.
-   - PROD work already run:
-     - Planner-only reconcile ran once and inserted 52 active `planner_batch`
-       rows (broiler 27 / cattle 16 / pig 8 / sheep 1), with no duplicate active
-       planner rows and no Asana writes.
-     - Asana dry-run connectivity was proven from `/processing`; the live
-       project fetch returned the expected 117 top-level tasks.
-     - The review queue was populated using `sync_review_queue` (records + links
-       only, no artifacts/Storage), and Ronnie completed the reconciliation pass
-       in the workbench.
-     - Comments-only import ran once via `sync_comments`: 121 comments inserted
-       across 51 records; re-run was idempotent (0 new / 121 present). Three
-       deleted WCF-L-26-01 Asana cards returned 404 while scanning dismissed
-       placeholders and were accepted as harmless. Verification found zero
-       subtasks, attachments, or Storage writes from the comments lane.
-   - Locked source model:
-     - Planner is the authoritative writer for live batch facts now. If Planner
-       has the batch/trip record, Planner owns date, count, status, and live
-       identity regardless of year.
-     - Asana remains a one-way mirror/source during the transition for older
-       history, comments, subtasks, attachments, notes/snapshots, drift
-       comparison, and review exceptions. Asana must not overwrite Planner-owned
-       live facts after a Planner match exists.
-     - Asana-only records before 2024 can import as `asana_historical`. Asana
-       records from 2024 forward with no Planner match become `import_exception`
-       / review items until Ronnie resolves or a Planner batch later appears.
-     - A later Planner match auto-promotes an `import_exception` link to a
-       planner-backed Processing row through the reconciler; do not strand the
-       Asana record.
-   - Record types and ownership:
-     - `planner_batch`: real Processing row backed by Broiler, Cattle, Pig, or
-       Sheep Planner data.
-     - `asana_historical`: Asana-only historical row with no Planner match. It
-       is viewable/searchable but does not create a batch in program workflows.
-     - `milestone`: manual planning placeholder, not an animal batch. Milestones
-       are user-created Processing planning records and can be deleted through
-       the existing milestone delete RPC.
-     - `import_exception`: Asana row requiring human review/reconciliation.
-     - Processor and Customer are Processing-owned fields. Asana may seed them
-       only on first attach if blank; it must never overwrite a native edit.
-       Customer and Processor selector choices now live in
-       `processing_asana_sync_settings` and are editable by admins via
-       `set_processing_option_list`. Existing off-list stored values remain valid
-       and visible.
-     - Date, count, and status are Planner-owned for planner-backed rows.
-       Asana differences are drift/report data only.
-     - Asana comments import one-way into Processing comments with original
-       author display name/timestamp. Asana subtasks import one-way, but local
-       check-offs are preserved and Activity logs the WCF user who clicked them.
-       Attachments must be copied into WCF/Supabase Storage; do not depend on
-       Asana links as the durable file.
-   - Planner enumeration rules:
-     - Broiler rows appear when the Planner batch has a planned/target
-       processing date, not gated on processor.
-     - Cattle uses processing date `COALESCE(actual, planned)` and keeps the
-       existing status mapping into `Planned` / `In Process` / `Complete`.
-     - Sheep currently uses `Planned` and `Complete`; there is no explicit sheep
-       `In Process` source state.
-     - Pig Processing rows are actual-trip based only. Persisted pig source ids
-       are `group.id:trip.id`; planned trip ids are page-load projections and
-       must not become persisted source ids. Multiple Asana pig sub-batch tasks
-       may link to one actual pig trip.
-     - Reconcile runs under an advisory lock, stamps rows with a per-run
-       `sync_run_id`, archives stale `planner_batch` rows not re-seen in the
-       run, and unarchives them if the source returns.
-     - Broiler Time-on-Farm is server-derived by `160` from `ppp-v4`
-       `processingDate - hatchDate` for broiler planner rows, returned by both
-       `list_processing_records` and `get_processing_record`, and formatted by
-       the shared weeks/days helper.
-   - Asana matching/reconciliation rules:
-     - Match by program section plus normalized WCF batch code in task name
-       (`WCF-<B|C|P|L>-YY-NN...`), with `Batch Name (Farms)` fallback and
-       processing date/count as tie-break signals. Never match across programs.
-     - Year is derived from actual/planned/due/created dates, not the Asana
-       Year field. No-year/no-code rows go to review.
-     - Asana milestones are identified by `resource_subtype`, kept in the
-       milestone bucket, and excluded from batch matching.
-     - Collisions, name-vs-batch-name disagreement, ambiguous pig matches, and
-       multiple Asana rows with the same program/code go to review; do not
-       auto-pick a winner.
-     - Manual crosswalks are sticky. Automated sync must not clear or orphan an
-       existing non-null match because a later pass is ambiguous.
-   - Asana task-template import model:
-     - The Asana task-template API exposes project task templates and a template
-       recipe; template subtasks are compact (name/subtype only), so imported
-       Processing checklist items intentionally have `assignee: null`.
-     - Program is inferred from the task template name by a single-program
-       keyword match. No-program and multi-program conflicts are review items,
-       not auto-imports.
-     - `import_templates_dry_run` is read-only. `import_templates` writes only
-       ready items through the existing admin-gated `upsert_processing_template`
-       RPC using the caller's admin JWT; unchanged/conflict/no-program items are
-       skipped.
-     - Template import code is on `main` at `5250222`, but the Edge Function
-       carrying those actions is not deployed yet.
-   - UI/current controls:
-     - `/processing` is the native Processing Calendar surface; `/production`
-       remains the processed-output reporting surface.
-     - Main table Subtasks column is intentionally removed. Subtasks remain a
-       drawer/artifact concern and must stay out of the main calendar table.
-     - Batch/title is sticky in the horizontal table. One-time admin controls are
-       collapsed under `Admin · maintenance`; normal workflow controls such as
-       `+ Add milestone` stay visible.
-     - Admin sync controls are guarded. `dry_run` reads Asana and returns a
-       report without writing. `sync_planner_to_processing` is planner-only.
-       `sync_review_queue` is records+links only. `comments_dry_run` and
-       `sync_comments` are comments-only. `sync_once`, `sync_since`,
-       `attachment_backfill`, template import, and final Asana cutover remain
-       deliberate gates.
-     - Customer/Processor choices are edited in the admin options modal. Drawer
-       and Add Milestone read settings-backed choices, while preserving legacy
-       off-list values and free-text processor entry.
-     - The normal record drawer shows operational details, comments, subtasks,
-       attachments, and Activity. Reconciliation/provenance details belong in
-       admin/debug surfaces, not the everyday drawer.
-   - Remaining gates:
-     - Deploy `processing-asana-sync` from `5250222` before trying
-       `import_templates_dry_run`, `import_templates`, or `attachment_dry_run`;
-       use the deploy as the Deno/typecheck point. `ASANA_ACCESS_TOKEN` is
-       currently live on PROD (the comments/dry-run lanes proved it), so no
-       re-set is expected — probe `asanaConfigured` right after deploy to confirm
-       before calling Asana-backed actions.
-     - Run `import_templates_dry_run`, review ready/unchanged/conflict/no-program
-       results, then run `import_templates` only with explicit approval.
-     - Run `attachment_dry_run` before any attachment byte-copy. The private
-       bucket is in place via `163` (idempotent; the bucket row already existed
-       on PROD, where `163` mainly added the operational SELECT policy), but no
-       attachment bytes have been copied yet.
-     - Only after explicit Ronnie approval, run `attachment_backfill` and/or any
-       broader Asana artifact sync. Final transition to Asana
-       history-only/read-only is controlled separately by
-       `asana_sync_enabled=false`.
-   - Validation target: the 156/157 TEST proof scripts plus static guards are
-     the floor, extended by the 158-162 proof scripts and the Processing
-     finish-out guards (`scripts/apply_test_mig_156.cjs`,
-     `scripts/apply_test_mig_157.cjs`, `scripts/apply_test_mig_158.cjs`,
-     `scripts/apply_test_mig_159.cjs`, `scripts/apply_test_mig_160.cjs`,
-     `scripts/apply_test_mig_161.cjs`, `scripts/apply_test_mig_162.cjs`,
-     `scripts/proof_reconciler_blockers.cjs`,
-     `scripts/proof_reconciler_enumeration.cjs`, and the Processing static/unit
-     suites). Migration `163` has no committed TEST proof script; it is covered
-     by the `processing_attachments_storage_static` guard, and its TEST/PROD
-     applies confirmed the bucket exists and is private with only the operational
-     SELECT policy. Final PROD artifact/template movement requires live dry-run
-     reports, idempotent re-run proof, no duplicate planner-vs-Asana rows, and
-     spot checks for comments, subtasks, attachments, drift, and local subtask
-     ownership.
-   - Gates: PROD schema migrations `156`-`163`, planner reconcile, review queue,
-     reconciliation pass, and comments-only import are done. The Edge redeploy
-     for `5250222`, template import, attachment dry run/backfill, broader
-     Asana sync/import, final cutover, Vault secret changes, and any new
-     migration/RPC/security boundary remain separate Ronnie gates. `exec_sql` in
-     PROD remains forbidden.
+3. User-management residual verification and audit-scope decisions
+   - Status: CORE HARDENING SHIPPED. Migration `171`, audited UsersModal RPCs,
+     immutable `user_management_audit`, and the `rapid-processor` v29 delete
+     handler are live. Retained farm-record foreign keys intentionally refuse
+     hard delete; deactivate those accounts instead.
+   - Class: `SECURITY`/`TEST`/`DECISION`/`DEFECT`.
+   - Remaining work:
+     - Invoke the real TEST Edge handler (not a browser mock) for successful
+       delete, retained-FK refusal, and terminal reconciliation.
+     - Decide whether user creation and password-reset actions belong in the
+       audit ledger; current `171` scope covers profile edits, activation,
+       program access, and hard-delete lifecycle.
+     - Replace UsersModal's single global `userActionId` with deterministic
+       multi-row/global mutation locking so concurrent row actions cannot
+       re-enable controls early or overwrite notices.
+     - Decide whether service-role/support misuse of a pending delete request
+       must be guarded beyond the current browser/RPC threat model.
+   - Gate: any SQL/RPC/Edge change needs focused TEST proof and a separate PROD
+     migration/function-deploy approval.
+
+4. Processing lifecycle lock-order hardening
+   - Status: KNOWN CONCURRENCY FOLLOW-UP. Migration `170` aligns cattle/sheep
+     attach/detach on batch -> matching weigh-ins -> animal with membership
+     revalidation. Migration `100`'s sheep batch delete still locks animal rows
+     before the batch and was explicitly excluded from that lane.
+   - Class: `DEFECT`/`CONCURRENCY`/`DB-GATE`.
+   - Scope: inventory every processing lifecycle RPC, choose one compatible lock
+     order, reissue only conflicting functions, and prove concurrent attach,
+     detach, and delete cannot deadlock or restore stale detail lists.
+   - Gate: TEST concurrency/RPC proof first; PROD SQL only after explicit
+     approval. Do not change role gates or lifecycle semantics incidentally.
+
+5. CI whole-app Playwright runtime
+   - Status: DEFECT. The `029899c` main workflow passed change detection,
+     install, formatting, lint, all Vitest tests, and production build, then the
+     serialized whole-app Playwright step exceeded the 30-minute job budget and
+     was cancelled. Several preceding main runs show the same timeout pattern.
+   - Class: `DEFECT`/`CI`/`TEST-INFRA`.
+   - Scope: profile spec/runtime cost, split or path-gate independent suites
+     without racing the shared TEST database, preserve workers=1 for reset-heavy
+     specs, and retain failure artifacts.
+   - Success criteria: at least two consecutive representative main runs finish
+     with a real success/failure conclusion inside the configured budget; no
+     suite is silently dropped.
 
 ---
 
@@ -666,8 +494,9 @@ No operational record workspace should reintroduce legacy `ActivityPanel` or
 
 ### Supabase Migrations
 
-Current PROD architecture includes all applied migrations through `116`, plus
-`125` through `163`. Recent load-bearing migrations:
+Current PROD architecture includes all repository migrations through `166` and
+`170` through `174`; `167`-`169` are intentionally unused. Recent load-bearing
+migrations:
 
 - `100` processing batch lifecycle RPCs.
 - `101`-`104` audited delete RPCs and hardening.
@@ -917,9 +746,10 @@ Current PROD architecture includes all applied migrations through `116`, plus
     subtasks, comments, attachments, templates/settings/import support, storage
     plumbing, `processing.record` Activity scope, and the initial
     `processing-asana-sync` Edge Function contract.
-  - PROD-applied before the reconciler lane. Later Processing lanes ran the
-    planner reconcile, review-queue reconciliation, and comments-only import;
-    full Asana artifact sync/cutover remains gated.
+  - PROD-applied before the reconciler lane. Planner reconciliation, review
+    resolution, comments, subtasks, and conversation-media imports have run;
+    ordinary attachment/history volume and final cutover remain Build Queue
+    item 2 decisions.
 - `157` Processing Planner reconciler + Asana link table:
   - Adds `processing_asana_links`, imported comment provenance, subtask local
     ownership, drift/ack fields, reconciliation reports, planner enumeration,
@@ -927,9 +757,9 @@ Current PROD architecture includes all applied migrations through `116`, plus
     RPC contract.
   - `upsert_processing_from_asana` cannot mint `planner_batch`; Asana can only
     link/seed allowed provenance and artifacts. Manual crosswalks are sticky.
-  - PROD-applied and catalog-verified. The later planner reconcile and
-    workbench/comments lanes have now run; see Build Queue item 3 for current
-    live state and remaining gates.
+  - PROD-applied and catalog-verified. Planner reconcile, the retired workbench,
+    comments, subtasks, and conversation-media lanes have run; see Current State
+    and Build Queue item 2 for live counts and remaining decisions.
 - `158` Pasture Map positive-area overlap impacts:
   - Reissues the pasture overlap predicate and affected move/read functions so a
     shared boundary/edge touch no longer counts as grazing overlap. Overlap
@@ -953,8 +783,9 @@ Current PROD architecture includes all applied migrations through `116`, plus
   - Reissues `list_processing_records` and `get_processing_record` to include
     `time_on_farm_days` for broiler `planner_batch` rows, derived read-only from
     `app_store` `ppp-v4` as `processingDate - hatchDate`.
-  - PROD-applied and verified against live broiler planner rows; client table
-    and drawer format the value as weeks/days.
+  - PROD-applied and verified against live broiler planner rows. Migration `174`
+    retired Time-on-Farm from the visible default suite/drawer; the read-only
+    server value remains backward-compatible data, not an active UI field.
 - `161` Processing soft archive RPC:
   - Adds `archive_processing_record(p_id text, p_archived boolean default true)`
     for Asana-owned/historical Processing rows. It preserves the record and any
@@ -967,21 +798,73 @@ Current PROD architecture includes all applied migrations through `116`, plus
   - Adds admin-only `set_processing_option_list(kind, options)`, which trims,
     de-dupes, drops blanks, and never rewrites stored Processing record values.
     Legacy/off-list customer/processor values remain valid and visible.
-  - PROD-applied and verified; the admin Customer/Processor choices editor is
-    live in `/processing`.
+  - PROD-applied and verified; Customer/Processor choice management is live
+    inside the admin-only Templates modal.
 - `163` Processing attachments Storage bucket:
   - Creates the private `processing-attachments` bucket. SELECT on
     `storage.objects` is limited to authenticated operational roles
     (`farm_team`, `management`, `admin`) through `public.profile_role()`;
     `light`, `equipment_tech`, inactive users, and anon have no read. There is
-    no authenticated INSERT policy; attachment byte-copy writes are service-role
-    importer work only.
-  - PROD-applied and verified as the sole policy on that bucket. No attachment
-    bytes have been copied yet; attachment dry-run/backfill remain gated.
+    no authenticated INSERT policy at this migration checkpoint; Asana byte-copy
+    writes are service-role importer work only.
+  - PROD-applied and verified. Migration `166` later adds a narrow native-upload
+    INSERT policy without opening the Asana namespace. Eight imported
+    conversation-media objects are currently stored; ordinary attachment
+    backfill remains a Build Queue item 2 decision.
+- `164` Processing engine:
+  - Adds typed template field storage, profile-backed checklist assignees,
+    automatic planner freshness, template checklist seeding for new Planner
+    records, reordering, and best-effort Activity emits for Processing-owned
+    mutations. Reserved Planner/RPC-owned field ids remain server-refused.
+  - PROD-applied and TEST-proven. The parent-record assignee RPC remains deployed
+    for compatibility, but the simplified UI no longer exposes parent Assignee.
+- `165` Processing import history and ownership:
+  - Adds deterministic immutable Asana system-story Activity import, display-only
+    mention mapping for imported comments, and profile mapping for imported
+    record/checklist assignees while preserving local completion/assignment.
+  - PROD-applied. Subtask/mention support is live; the roughly 16,855-row system-
+    story Activity import has not run and is a Build Queue item 2 decision.
+- `166` Processing native attachment upload:
+  - Adds append-only operational uploads only under
+    `native/<record_id>/<uuid>-<filename>`, metadata registration, and Activity.
+    Authenticated users cannot write the Asana-import namespace and have no
+    UPDATE/DELETE policy.
+  - PROD-applied and browser/static proven.
+- `170` Processing detach farm-team cutover:
+  - Reissues cattle/sheep detach RPCs with authenticated caller attribution,
+    program-authorized `farm_team` access, batch-first lock order, and membership
+    revalidation; client and login-gated webform detach paths use the RPCs.
+  - PROD-applied and verified. Migration `100`'s conflicting sheep batch-delete
+    lock order remains Build Queue item 4.
+- `171` Audited user management:
+  - Adds deny-all immutable `user_management_audit`, admin-only profile mutation
+    RPCs, guarded delete prepare/finalize/reconciliation, and the two-system Auth
+    deletion contract used by `rapid-processor` v29.
+  - PROD-applied and TEST migration-proven. Retained operational profile FKs
+    intentionally refuse hard delete and direct admins to deactivate. Residual
+    Edge proof/scope/UI-concurrency work is Build Queue item 3.
+- `172` Processing template suite v1:
+  - Seeds one canonical Broiler/Cattle/Pig/Sheep template only when a program has
+    no template rows and adds checkbox/URL validation to the field engine.
+  - PROD-applied. These v1 rows are retained but inactive after `174`.
+- `173` Processing conversation media:
+  - Atomically links imported Asana media to immutable imported comments and the
+    Processing attachment index with original author/time and idempotent storage
+    provenance.
+  - PROD-applied; 8 files are live in `processing-attachments`, including the two
+    B-26-04 Brian Naide JPG posts. Idempotent rerun wrote no duplicates.
+- `174` Processing template suite v2 / UI simplification:
+  - Fail-closed upgrade from untouched v1 fields, preserving checklists verbatim;
+    retires six visible fields and makes Broiler Customer a settings-backed
+    single select like Processor. Broiler has 11 fields; other programs have 10.
+  - PROD-applied. Active v2 checklist sizes are 8/16/11/16, v1 rows remain
+    inactive, and no `processing_records` row was changed.
 
 Special migration notes:
 
 - `082` is intentionally unused.
+- `167`-`169` are intentionally unused; the sequence jumps from Processing
+  migration `166` to detach/user-management migrations `170`/`171`.
 - `083` public webform submitter identity is shelved.
 - `085` was applied before `084` in PROD so duplicate active daily identities
   were cleaned up before unique indexes.
@@ -1014,12 +897,14 @@ Newsletter buckets are current PROD infrastructure as of 2026-06-26:
 before approval; `newsletter-public` is public-read/admin-write and receives
 only approved newsletter photo bytes.
 
-Processing attachments Storage is current PROD infrastructure as of 2026-07-09:
+Processing attachments Storage is current PROD infrastructure as of 2026-07-11:
 `processing-attachments` is private; reads require authenticated operational
-roles (`farm_team`, `management`, `admin`) through the bucket SELECT policy; no
-authenticated INSERT policy exists. The bucket is ready for Asana attachment
-byte-copy, but no bytes have been copied yet and attachment backfill remains a
-separate gate.
+roles (`farm_team`, `management`, `admin`). Migration `166` permits authenticated
+operational INSERT only under the append-only `native/` namespace; the Asana
+namespace remains service-role only. Eight Asana conversation-media objects
+(about 20.4 MB) are stored and indexed. The ordinary Asana attachment backfill
+has not run; its last pre-media dry run enumerated 67 task attachments, so a new
+dry plan is required under Build Queue item 2.
 
 Append-only upload expectations:
 
@@ -1046,23 +931,28 @@ Append-only upload expectations:
   importer for `production_legacy_events`.
 - `src/processing/ProcessingCalendarView.jsx`,
   `src/processing/ProcessingDrawer.jsx`,
-  `src/processing/ProcessingReconciliationModal.jsx`,
   `src/processing/ProcessingTemplatesModal.jsx`,
   `src/processing/ProcessingOptionsModal.jsx`,
   `src/processing/AddMilestoneModal.jsx`, `src/lib/processingApi.js`,
   `src/lib/processingSourceLink.js`,
   `supabase/functions/processing-asana-sync/index.ts`, and
   `supabase/functions/_shared/processingAsanaShape.js`: Processing Calendar
-  schedule/workbench/drawer/templates/options UI, RPC wrappers, source-link
-  display helpers, Edge Asana integration, dry-run/report logic, comments import,
-  template mapping, and attachment-preview/import ownership.
+  schedule/drawer/templates/options UI, RPC wrappers, source-link display
+  helpers, Edge Asana integration, gated operational import actions, and
+  attachment/comment-media ownership. The old reconciliation modal was deleted
+  by the UI-simplification lane.
 - `supabase-migrations/156_processing_calendar.sql` through
-  `163_processing_attachments_storage.sql`, plus
-  `scripts/apply_test_mig_156.cjs` through `scripts/apply_test_mig_162.cjs`,
+  `166_processing_attachments_upload.sql` and `170_processing_detach_farm_team.sql`
+  through `174_processing_template_suite_v2.sql`, plus their committed
+  `scripts/apply_test_mig_*.cjs` proofs,
   `scripts/proof_reconciler_blockers.cjs`, and
   `scripts/proof_reconciler_enumeration.cjs`: Processing Calendar schema/RPC,
-  reconciler, workbench, broiler TOF, archive, option-list, and Storage proof
-  lanes.
+  reconciler/import, template, conversation-media, option-list, and Storage
+  proof lanes.
+- `src/auth/UsersModal.jsx`, `src/lib/userManagementApi.js`,
+  `supabase-migrations/171_audited_user_management.sql`, and
+  `supabase-functions/rapid-processor.ts`: audited admin profile changes and the
+  guarded two-system Auth hard-delete flow.
 - `src/pasture/PastureMapView.jsx`, `src/pasture/PastureMapCanvas.jsx`,
   `src/pasture/pastureMap.css`, `src/lib/pastureKml.js`,
   `src/lib/pastureGeometry.js`, `src/lib/pastureMapApi.js`, and
@@ -1384,28 +1274,33 @@ Workflow/worktable entities:
   unarchived if the source returns.
 - The main Processing table must stay batch-focused. Subtasks are not a table
   column; they belong in the record drawer/artifact model. The Batch/title
-  column is sticky in the horizontal table. One-time/admin sync controls belong
-  behind the collapsed `Admin · maintenance` area, not in the primary workflow.
-- Broiler Time-on-Farm is server-derived for broiler planner rows from `ppp-v4`
-  `processingDate - hatchDate`; clients format `time_on_farm_days` through the
-  shared weeks/days helper and may fall back to historical snapshots for
-  imported/historical rows.
+  column is sticky in the horizontal table. Historical import, reconciliation,
+  and maintenance controls are intentionally absent from the day-to-day UI.
+  Admins get a direct Templates button; normal workflow controls such as Add
+  milestone and Show archived stay in the primary surface.
+- Parent-record Assignee and visible Time-on-Farm are retired from the Processing
+  UI. Checklist/subtask assignees remain supported. The server may still return
+  backward-compatible `time_on_farm_days`, but it is not a default template or
+  drawer field.
 - Customer and Processor selector options are server-backed Processing settings.
-  Admins edit them through `set_processing_option_list`; stored off-list legacy
-  values remain valid/rendered and are not rewritten by option-list edits.
-- Asana sync controls are admin-only and gated. `dry_run` is read-only;
-  `sync_planner_to_processing` is planner-only; `sync_review_queue` is
-  records+links only; `sync_comments` is comments-only; `sync_once`,
-  `sync_since`, template import, attachment backfill, and final Asana cutover
-  require explicit Ronnie approval.
-- Asana task templates import only after dry-run review. The Asana API exposes
-  compact template subtasks, so imported checklist item assignees are null.
-  Program inference is by template name and conflicts/no-program rows do not
-  auto-import.
+  Both are true single selects; Customer stores zero-or-one value in its legacy
+  array-backed record column. Admins edit choices inside Templates through
+  `set_processing_option_list`; stored off-list values remain visible and old
+  multi-customer rows show one explicit legacy state until deliberately replaced.
+- Templates are local-only in the product UI. The active canonical v2 suite is
+  Broiler 11 fields and Cattle/Pig/Sheep 10 fields, with checklists 8/16/11/16.
+  The six retired field ids stay server-reserved so generic writes cannot revive
+  them. Template saves version active rows; reset uses the same guarded defaults
+  as migration `174`.
+- Asana operations are out-of-UI gated operations. Planner freshness still runs
+  automatically. Read-only audits/dry runs, artifact import, attachment backfill,
+  historical Activity import, and `asana_sync_enabled` cutover require explicit
+  operational approval; removal of the UI controls is not permission to run them.
 - Processing attachment files live in private `processing-attachments` Storage.
-  Reads require operational authenticated roles through the bucket policy; writes
-  are service-role importer only. No attachment byte-copy has run until an
-  explicit attachment dry-run/backfill gate says so.
+  Reads require operational authenticated roles. Native uploads are append-only
+  under `native/`; Asana imports are service-role only. Eight conversation-media
+  files are live and indexed; ordinary backfill has not run and needs a fresh dry
+  plan because its 67-attachment inventory predates the media import.
 - Processing Calendar status vocabulary is exactly `Planned`, `In Process`,
   and `Complete`. Use `src/lib/processingStatusDisplay.js` for display mapping:
   `planned`/`scheduled` -> `Planned`, `active` -> `In Process`, and
@@ -1429,7 +1324,7 @@ Workflow/worktable entities:
   `144`/`145` (data/storage/public boundary), `146` (automation/run logging/cron
   RPC support), `151` (Autopilot settings/source coverage/photo plan/past-issue
   context), `153` (archive-link gating), and the `newsletter-harvest` Edge
-  Function (PROD v5 / TEST v1). Autopilot gathers planner facts first, lets Ronnie
+  Function (PROD v6 / TEST v1). Autopilot gathers planner facts first, lets Ronnie
   steer facts/Q&A/tone/length, writes or revises with AI/template composer,
   generates a photo plan, supports private upload + approval + place planned
   photos, previews, and publishes. The real AI path is enabled in PROD through the
@@ -1928,7 +1823,8 @@ Focused starting points:
 | Record pages | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js` |
 | Home / dashboard alerts | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/static/home_animal_history_static.test.js`, `src/lib/animalHistory.test.js`, `tests/static/light_user_portal_static.test.js` |
 | Production | `src/lib/production.test.js`, `tests/static/production_page_static.test.js` |
-| Processing Calendar | `tests/static/processing_calendar_migration_static.test.js`, `tests/static/processing_wiring_static.test.js`, `tests/static/processing_asana_security_static.test.js`, `tests/static/processing_reconciler_migration_static.test.js`, `tests/static/processing_reconciler_wiring_static.test.js`, `tests/static/processing_reconciliation_workbench_static.test.js`, `tests/static/processing_comments_import_static.test.js`, `tests/static/processing_cleanup_static.test.js`, `tests/static/processing_options_static.test.js`, `tests/static/processing_templates_import_static.test.js`, `tests/static/processing_attachments_storage_static.test.js`, `tests/processing_calendar.spec.js`, `tests/processing_asana_shape.test.js`, `tests/processing_asana_matcher.test.js`, `tests/processing_asana_templates.test.js`, `scripts/apply_test_mig_156.cjs`, `scripts/apply_test_mig_157.cjs`, `scripts/apply_test_mig_158.cjs`, `scripts/apply_test_mig_159.cjs`, `scripts/apply_test_mig_160.cjs`, `scripts/apply_test_mig_161.cjs`, `scripts/apply_test_mig_162.cjs`, `scripts/proof_reconciler_blockers.cjs`, `scripts/proof_reconciler_enumeration.cjs` |
+| Processing Calendar | `tests/static/processing_calendar_migration_static.test.js`, `tests/static/processing_wiring_static.test.js`, `tests/static/processing_asana_security_static.test.js`, `tests/static/processing_reconciler_migration_static.test.js`, `tests/static/processing_reconciler_wiring_static.test.js`, `tests/static/processing_reconciliation_workbench_static.test.js`, `tests/static/processing_comments_import_static.test.js`, `tests/static/processing_conversation_fidelity_static.test.js`, `tests/static/processing_engine_static.test.js`, `tests/static/processing_cleanup_static.test.js`, `tests/static/processing_options_static.test.js`, `tests/static/processing_template_suite_static.test.js`, `tests/static/processing_templates_import_static.test.js`, `tests/static/processing_attachments_storage_static.test.js`, `tests/processing_calendar.spec.js`, `tests/processing_asana_importer.test.js`, `tests/processing_conversation_fidelity.test.js`, `tests/processing_asana_shape.test.js`, `tests/processing_asana_matcher.test.js`, `tests/processing_asana_templates.test.js`, `scripts/apply_test_mig_156.cjs` through `scripts/apply_test_mig_162.cjs`, `scripts/apply_test_mig_164.cjs` through `scripts/apply_test_mig_166.cjs`, `scripts/apply_test_mig_170.cjs` through `scripts/apply_test_mig_174.cjs`, `scripts/proof_reconciler_blockers.cjs`, `scripts/proof_reconciler_enumeration.cjs` |
+| User management | `src/lib/userManagementApi.test.js`, `tests/static/user_management_audit_static.test.js`, `tests/static/users_modal_self_name_edit.test.js`, `tests/static/rapid_processor_handlers.test.js`, `tests/user_management_audit.spec.js`, `scripts/apply_test_mig_171.cjs` |
 | Newsletter | `tests/static/newsletter_boundary_static.test.js`, `tests/static/newsletter_shared_parity.test.js`, `src/lib/newsletterApi.test.js`, `src/lib/newsletterFacts.test.js`, `src/lib/newsletterProductionYoy.test.js`, `src/newsletter/NewsletterBlocks.test.js`, `tests/newsletter_public.spec.js`, `scripts/apply_test_mig_144_145.cjs`, `scripts/apply_test_mig_153.cjs` |
 | Pasture Map | `src/lib/pastureKml.test.js`, `src/lib/pastureGeometry.test.js`, `src/lib/pasturePlannerGroups.test.js`, `tests/static/pasture_map_static.test.js`, `tests/pasture_map_p2_map.spec.js`, `tests/pasture_map_placement.spec.js`, `tests/pasture_map_reports_records.spec.js`, `tests/pasture_map_reset_history.spec.js`, `tests/pasture_map_light_access.spec.js`, `tests/pasture_map_setup.spec.js`, `tests/pasture_map_tweaks2.spec.js`, `tests/pasture_map_import.spec.js`, `tests/pasture_map_cp2.spec.js`, `tests/pasture_map_cp3.spec.js`, `tests/pasture_map_cp4.spec.js`, `tests/pasture_map_cp5.spec.js`, `tests/pasture_map_cp6.spec.js`, `tests/pasture_map_cp7.spec.js`, `tests/pasture_map_tile_hover.spec.js`, `tests/pasture_map_open_line_edit.spec.js`, `playwright.pasture.config.js`, `scripts/apply_test_mig_147.cjs`, `scripts/apply_test_mig_148.cjs`, `scripts/apply_test_mig_150.cjs` |
 | Breeding pigs | `tests/static/breeding_pigs_parity_static.test.js` |
