@@ -253,7 +253,7 @@ describe('§4 Report/form surfaces are login-required and auth-decoupled', () =>
     const src = read('src/webforms/FuelingHub.jsx');
     expect(src).toContain('data-public-hub-main-link="equipment"');
     expect(src).toMatch(/href=["']\/["']/);
-    expect(src).toContain('<span>WCF Planner</span>');
+    expect(src).toContain('WCF Planner');
   });
 });
 

@@ -63,20 +63,15 @@ export default function FuelingHub({sb, sessionSubmitter}) {
         data-public-hub-main-link="equipment"
         href="/"
         style={{
-          fontSize: 18,
+          fontSize: 28,
           fontWeight: 800,
           color: 'var(--ink)',
           letterSpacing: -0.3,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
           textDecoration: 'none',
         }}
       >
-        <PlannerIcon iconKey="fueling" size={22} />
-        <span>WCF Planner</span>
+        WCF Planner
       </a>
-      <div style={{fontSize: 12, color: 'var(--ink-muted)', marginTop: 2}}>Fueling Log</div>
     </div>
   );
 
