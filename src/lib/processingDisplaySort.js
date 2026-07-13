@@ -2,18 +2,20 @@
 // src/lib/processingDisplaySort.js — default Processing section ordering
 // ----------------------------------------------------------------------------
 // Pure display sort for the rows inside one Processing program section
-// (planner-integration lane). Three buckets by the server-derived
-// `effective_status` ('planned' | 'in_process' | 'complete'):
+// (planner-integration lane). Rows use the server-derived `effective_status`
+// ('planned' | 'in_process' | 'complete'), but completed rows are NOT pushed
+// into a history bucket:
 //   1. In Process — oldest processing_date first (longest-running work on top)
-//   2. Planned    — nearest processing_date first (what's coming next)
-//   3. Complete   — newest completed_at first (most recent history on top)
-// Undated rows (and Complete rows missing completed_at) sink to the end of
-// their bucket. An unknown/missing effective_status is treated as 'planned',
-// mirroring the server's conservative default. Input is never mutated; ties
-// keep their incoming relative order (Array.prototype.sort is stable).
+//   2. Planned + Complete — processing_date first, so completed batches stay
+//      in their natural schedule position instead of being relocated below all
+//      future planned rows.
+// Undated rows sink to the end of their bucket. An unknown/missing
+// effective_status is treated as 'planned', mirroring the server's conservative
+// default. Input is never mutated; ties keep their incoming relative order
+// (Array.prototype.sort is stable).
 // ============================================================================
 
-const BUCKET_RANK = {in_process: 0, planned: 1, complete: 2};
+const BUCKET_RANK = {in_process: 0, planned: 1, complete: 1};
 
 function bucketRank(record) {
   const rank = BUCKET_RANK[record && record.effective_status];
@@ -40,16 +42,9 @@ export function sortProcessingRecordsForDisplay(records) {
     const ra = bucketRank(a);
     const rb = bucketRank(b);
     if (ra !== rb) return ra - rb;
-    if (ra === BUCKET_RANK.complete) {
-      // Newest completed_at first; rows without one go last.
-      const ca = isoPrefix(a && a.completed_at);
-      const cb = isoPrefix(b && b.completed_at);
-      if (ca === cb) return 0;
-      if (ca === null) return 1;
-      if (cb === null) return -1;
-      return ca < cb ? 1 : -1;
-    }
-    // In Process + Planned: processing_date ascending, undated last.
+    // In Process, Planned, and Complete all sort by processing_date inside
+    // their display bucket. Complete intentionally ignores completed_at so a
+    // row stays where the processing schedule put it.
     return compareAscNullsLast(isoPrefix(a && a.processing_date), isoPrefix(b && b.processing_date));
   });
 }

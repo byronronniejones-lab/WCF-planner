@@ -6,13 +6,14 @@ function ids(rows) {
 }
 
 describe('sortProcessingRecordsForDisplay', () => {
-  it('orders the three buckets In Process -> Planned -> Complete', () => {
+  it('orders In Process first, then Planned and Complete together by processing_date', () => {
     const rows = [
-      {id: 'c', effective_status: 'complete', completed_at: '2026-05-01T10:00:00Z'},
+      {id: 'p-later', effective_status: 'planned', processing_date: '2026-08-01'},
+      {id: 'c', effective_status: 'complete', completed_at: '2026-05-01T10:00:00Z', processing_date: '2026-07-15'},
       {id: 'p', effective_status: 'planned', processing_date: '2026-08-01'},
       {id: 'i', effective_status: 'in_process', processing_date: '2026-07-01'},
     ];
-    expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['i', 'p', 'c']);
+    expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['i', 'c', 'p-later', 'p']);
   });
 
   it('sorts In Process oldest processing_date first', () => {
@@ -33,13 +34,18 @@ describe('sortProcessingRecordsForDisplay', () => {
     expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['near', 'later', 'far']);
   });
 
-  it('sorts Complete newest completed_at first (descending)', () => {
+  it('sorts Complete by processing_date with Planned instead of completed_at', () => {
     const rows = [
-      {id: 'old', effective_status: 'complete', completed_at: '2026-01-05T08:00:00Z', processing_date: '2026-01-04'},
-      {id: 'new', effective_status: 'complete', completed_at: '2026-06-20T08:00:00Z', processing_date: '2026-06-19'},
-      {id: 'mid', effective_status: 'complete', completed_at: '2026-03-10T08:00:00Z', processing_date: '2026-03-09'},
+      {id: 'planned-dec', effective_status: 'planned', processing_date: '2026-12-22'},
+      {
+        id: 'complete-jan',
+        effective_status: 'complete',
+        completed_at: '2026-01-20T08:00:00Z',
+        processing_date: '2027-01-08',
+      },
+      {id: 'planned-nov', effective_status: 'planned', processing_date: '2026-11-24'},
     ];
-    expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['new', 'mid', 'old']);
+    expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['planned-nov', 'planned-dec', 'complete-jan']);
   });
 
   it('sinks undated rows to the end of the In Process and Planned buckets', () => {
@@ -52,12 +58,12 @@ describe('sortProcessingRecordsForDisplay', () => {
     expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['i-dated', 'i-undated', 'p-dated', 'p-undated']);
   });
 
-  it('sinks Complete rows missing completed_at to the end of the Complete bucket', () => {
+  it('sinks undated Complete rows to the end of the Planned/Complete bucket', () => {
     const rows = [
-      {id: 'no-stamp', effective_status: 'complete', completed_at: null},
-      {id: 'stamped', effective_status: 'complete', completed_at: '2026-02-01T00:00:00Z'},
+      {id: 'no-date', effective_status: 'complete', completed_at: '2026-02-01T00:00:00Z', processing_date: null},
+      {id: 'dated', effective_status: 'planned', processing_date: '2026-02-01'},
     ];
-    expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['stamped', 'no-stamp']);
+    expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['dated', 'no-date']);
   });
 
   it('treats unknown or missing effective_status as Planned', () => {
@@ -65,7 +71,7 @@ describe('sortProcessingRecordsForDisplay', () => {
       {id: 'weird', effective_status: 'not-a-status', processing_date: '2026-07-01'},
       {id: 'missing', processing_date: '2026-06-01'},
       {id: 'i', effective_status: 'in_process', processing_date: '2026-09-01'},
-      {id: 'c', effective_status: 'complete', completed_at: '2026-01-01T00:00:00Z'},
+      {id: 'c', effective_status: 'complete', completed_at: '2026-01-01T00:00:00Z', processing_date: '2026-08-01'},
     ];
     expect(ids(sortProcessingRecordsForDisplay(rows))).toEqual(['i', 'missing', 'weird', 'c']);
   });
