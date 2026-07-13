@@ -23,9 +23,8 @@
 //   • Processor renders as an outlined neutral pill, Customer (broiler-only)
 //     as a soft gray-filled pill — neither is a Badge, neither takes program
 //     accent color.
-//   • Default order inside each section: In Process first, then Planned and Complete
-//     together by processing_date so completed rows stay in their schedule slot —
-//     sortProcessingRecordsForDisplay.
+//   • Default order inside each section: processing_date ascending regardless
+//     of status, so completed rows stay in their schedule slot — sortProcessingRecordsForDisplay.
 //   • Search filters on the server-provided record.search_text (batch / trip /
 //     tags / processor / customer), falling back to the title.
 //   • Deep links (contract shared with src/lib/processingNav.js):
@@ -664,8 +663,8 @@ export default function ProcessingCalendarView({Header, authState}) {
 
   const commonRows = useMemo(() => yearRows.filter(passesCommon), [yearRows, passesCommon]);
 
-  // Per-program section buckets in the locked display order: In Process first,
-  // then Planned and Complete together by processing_date.
+  // Per-program section rows in the locked display order: processing_date
+  // ascending regardless of status.
   const sections = useMemo(() => {
     return PROGRAMS.map((p) => {
       const rows = sortProcessingRecordsForDisplay(commonRows.filter((r) => (r.program || r.source_kind) === p.key));
