@@ -1374,16 +1374,15 @@ const WebformHub = ({
         data-public-hub-main-link="dailys"
         href="/"
         style={{
-          fontSize: 18,
+          fontSize: 28,
           fontWeight: 800,
           color: '#085041',
           letterSpacing: -0.3,
           textDecoration: 'none',
         }}
       >
-        🌾 WCF Planner
+        WCF Planner
       </a>
-      <div style={{fontSize: 12, color: '#000000', marginTop: 2}}>Daily Report</div>
     </div>
   );
 
@@ -1526,9 +1525,6 @@ const WebformHub = ({
             >
               📲 App Setup
             </button>
-          </div>
-          <div style={{fontSize: 13, color: '#6b7280', textAlign: 'center', marginBottom: 20}}>
-            Select a report type to fill out
           </div>
           {/* F047: hub picker cards are white with a gray border. The feature
               category is shown by the icon + black title; no colored card

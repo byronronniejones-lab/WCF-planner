@@ -246,7 +246,7 @@ describe('§4 Report/form surfaces are login-required and auth-decoupled', () =>
     const src = read('src/webforms/WebformHub.jsx');
     expect(src).toContain('data-public-hub-main-link="dailys"');
     expect(src).toMatch(/href=["']\/["']/);
-    expect(src).toContain('🌾 WCF Planner');
+    expect(src).toContain('WCF Planner');
   });
 
   it('public /equipment hub exposes a direct Planner Home link', () => {
