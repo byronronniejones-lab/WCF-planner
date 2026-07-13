@@ -495,49 +495,53 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
             padding: '4px 20px 8px',
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            flexWrap: 'wrap',
             flex: 'none',
           }}
         >
-          <button
-            type="button"
-            onClick={() => setActiveSurface('tasks')}
-            data-processing-template-surface="tasks"
-            aria-pressed={activeSurface === 'tasks'}
+          <div
+            role="group"
+            aria-label="Template surface"
+            data-processing-template-surface-toggle="1"
             style={{
-              background: activeSurface === 'tasks' ? T.green : '#fff',
-              border: `1px solid ${activeSurface === 'tasks' ? T.green : '#D2D6DB'}`,
-              color: activeSurface === 'tasks' ? '#fff' : T.muted,
+              display: 'flex',
               borderRadius: 10,
-              padding: '7px 14px',
-              fontSize: 12.5,
-              fontWeight: 800,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
+              overflow: 'hidden',
+              border: '1px solid var(--border-strong)',
+              width: 220,
+              maxWidth: '100%',
             }}
           >
-            Tasks
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveSurface('fields')}
-            data-processing-template-surface="fields"
-            aria-pressed={activeSurface === 'fields'}
-            style={{
-              background: activeSurface === 'fields' ? T.green : '#fff',
-              border: `1px solid ${activeSurface === 'fields' ? T.green : '#D2D6DB'}`,
-              color: activeSurface === 'fields' ? '#fff' : T.muted,
-              borderRadius: 10,
-              padding: '7px 14px',
-              fontSize: 12.5,
-              fontWeight: 800,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            Fields
-          </button>
+            {[
+              {key: 'tasks', label: 'Tasks'},
+              {key: 'fields', label: 'Fields'},
+            ].map((opt, i) => {
+              const selected = activeSurface === opt.key;
+              return (
+                <React.Fragment key={opt.key}>
+                  {i > 0 && <div style={{width: 1, background: 'var(--border-strong)', flexShrink: 0}} />}
+                  <button
+                    type="button"
+                    onClick={() => setActiveSurface(opt.key)}
+                    data-processing-template-surface={opt.key}
+                    aria-pressed={selected}
+                    style={{
+                      flex: 1,
+                      padding: '10px 0',
+                      border: 'none',
+                      fontFamily: 'inherit',
+                      fontSize: 13,
+                      fontWeight: selected ? 700 : 500,
+                      cursor: 'pointer',
+                      background: selected ? T.green : '#fff',
+                      color: selected ? '#fff' : '#000',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </div>
         </div>
 
         {/* Body — single surface: the checklist editor */}
@@ -670,7 +674,7 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
                   boxShadow: '0 1px 2px rgba(20,30,40,.12)',
                 }}
               >
-                {saving ? 'Saving?' : 'Save template'}
+                {saving ? 'Saving…' : 'Save template'}
               </button>
             )}
           </div>

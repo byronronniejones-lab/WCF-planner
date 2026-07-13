@@ -61,6 +61,7 @@ describe('templates modal is LOCAL-ONLY (UI-simplification lane)', () => {
     expect(templatesModal).not.toContain('data-processing-template-import-apply');
     expect(templatesModal).not.toMatch(/Import from Asana/i);
     // Customer & Processor choice management opens from INSIDE Templates.
-    expect(templatesModal).toContain('data-processing-template-surface="fields"');
+    expect(templatesModal).toContain("{key: 'fields', label: 'Fields'}");
+    expect(templatesModal).toContain('data-processing-template-surface={opt.key}');
   });
 });

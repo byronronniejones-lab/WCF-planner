@@ -206,8 +206,14 @@ describe('Templates manager — simplified header, preview, publish validation',
     expect(templatesModal).toContain('data-processing-template-preview="1"');
     expect(templatesModal).not.toMatch(/Active v\$\{activeVersion\}/);
     expect(templatesModal).not.toMatch(/Draft \(unsaved\)/);
-    expect(templatesModal).toContain('data-processing-template-surface="tasks"');
-    expect(templatesModal).toContain('data-processing-template-surface="fields"');
+    expect(templatesModal).toContain('data-processing-template-surface-toggle="1"');
+    expect(templatesModal).toContain('role="group"');
+    expect(templatesModal).toContain('aria-label="Template surface"');
+    expect(templatesModal).toContain("overflow: 'hidden'");
+    expect(templatesModal).toContain("border: '1px solid var(--border-strong)'");
+    expect(templatesModal).toContain("{key: 'tasks', label: 'Tasks'}");
+    expect(templatesModal).toContain("{key: 'fields', label: 'Fields'}");
+    expect(templatesModal).toContain('data-processing-template-surface={opt.key}');
   });
   it('publish validation blocks invalid drafts before the RPC call (checklist-only path)', () => {
     // The modal edits ONLY the checklist now; it validates through the
