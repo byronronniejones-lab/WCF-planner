@@ -87,7 +87,7 @@ function normalizeList(list) {
 }
 
 // eslint-disable-next-line no-unused-vars -- JSX-only use
-function OptionListEditor({kind, title, hint, initial, busy, onSave}) {
+function OptionListEditor({kind, title, initial, busy, onSave}) {
   const {useState} = React;
   const [items, setItems] = useState(() => normalizeList(initial));
   const [draft, setDraft] = useState('');
@@ -134,7 +134,6 @@ function OptionListEditor({kind, title, hint, initial, busy, onSave}) {
   return (
     <div style={{marginBottom: 22}}>
       <label style={labelStyle}>{title}</label>
-      <div style={{fontSize: 11.5, color: T.faint, fontWeight: 600, marginBottom: 10, lineHeight: 1.4}}>{hint}</div>
 
       {activeEntries.length === 0 && (
         <div style={{fontSize: 12.5, color: T.faint, fontWeight: 600, marginBottom: 10}}>
@@ -369,11 +368,6 @@ export default function ProcessingOptionsModal({processorOptions = [], customerO
             <div style={{fontSize: 16, fontWeight: 800, letterSpacing: '-.01em', color: T.ink}}>
               Customer &amp; processor choices
             </div>
-            <div style={{fontSize: 12, color: T.faint, fontWeight: 600, marginTop: 2}}>
-              Rename or deactivate — choices are never deleted, and editing never changes values already on records.
-              Deactivated choices disappear from new pickers, but their historical stored labels keep rendering as
-              legacy values.
-            </div>
           </div>
           <button
             type="button"
@@ -399,7 +393,6 @@ export default function ProcessingOptionsModal({processorOptions = [], customerO
           <OptionListEditor
             kind="customer"
             title="Customer choices (broiler)"
-            hint="The choices in the Customer select on broiler records + milestones. Renaming updates the choice offered everywhere; stored record values are never rewritten."
             initial={customerOptions}
             busy={busy}
             onSave={save}
@@ -407,7 +400,6 @@ export default function ProcessingOptionsModal({processorOptions = [], customerO
           <OptionListEditor
             kind="processor"
             title="Processor choices"
-            hint="The choices in the Processor select for all programs. Renaming updates the choice offered everywhere; stored record values are never rewritten."
             initial={processorOptions}
             busy={busy}
             onSave={save}

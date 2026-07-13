@@ -347,7 +347,7 @@ describe('client — engine wiring', () => {
     expect(milestoneModal).toContain('data-processing-milestone-status');
   });
 
-  it('templates manager is CHECKLIST-ONLY: stable step ids, id-less new steps, fields:null save, checklist reset', () => {
+  it('templates manager is CHECKLIST-ONLY: stable step ids, id-less new steps, fields:null save', () => {
     // The configurable Fields editor is retired with the Details section: no
     // field-id minting, no color palette, no fields reset.
     expect(templatesModal).not.toContain("newProcessingId('fld')");
@@ -365,9 +365,8 @@ describe('client — engine wiring', () => {
     expect(templatesModal).toMatch(
       /upsertProcessingTemplate\(sb, \{program, fields: null, checklist: cleanChecklist\}\)/,
     );
-    // Reset restores the canonical default CHECKLIST only (id-less steps).
-    expect(templatesModal).toContain('data-processing-template-reset');
-    expect(templatesModal).toMatch(/defaultProcessingChecklist\(program\)\.map\(\(c\) => \(\{id: null, \.\.\.c\}\)\)/);
+    // Hotfix: reset remains unavailable from the visible modal footer.
+    expect(templatesModal).not.toContain('data-processing-template-reset');
   });
 
   it('attachments: DB field names (filename/size_bytes), signed open, native upload through the single owner', () => {

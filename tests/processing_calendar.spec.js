@@ -779,12 +779,14 @@ test.describe('Processing Calendar', () => {
       // the reset is checklist-scoped, and there is NO Fields editor (type
       // pickers / color palette / field rows) and NO Asana import workflow.
       await expect(modal.getByText('checklist template')).toBeVisible();
-      await expect(modal.locator('[data-processing-template-state]')).toBeVisible();
+      await expect(modal.locator('[data-processing-template-state]')).toHaveCount(0);
+      await expect(modal.locator('[data-processing-template-surface="tasks"]')).toBeVisible();
+      await expect(modal.locator('[data-processing-template-surface="fields"]')).toBeVisible();
       // React controls set the value PROPERTY (not the attribute) — assert via
       // toHaveValue on the first step row's label input.
       await expect(modal.locator('[data-processing-template-step="0"] input').first()).toHaveValue('TEST modal step');
       await expect(modal.locator('[data-processing-template-add-step]')).toBeVisible();
-      await expect(modal.getByText('Reset checklist')).toBeVisible();
+      await expect(modal.getByText('Reset checklist')).toHaveCount(0);
       await expect(modal.locator('[data-processing-color-palette]')).toHaveCount(0);
       await expect(modal.locator('[data-processing-template-import-btn]')).toHaveCount(0);
       await expect(modal.getByText('Add field')).toHaveCount(0);
@@ -797,8 +799,7 @@ test.describe('Processing Calendar', () => {
 
       // Customer & processor choices editor (mig 175 semantics): a persisted
       // option row renders a rename input + Deactivate; no delete exists.
-      await expect(modal.locator('[data-processing-options-btn]')).toBeVisible();
-      await modal.locator('[data-processing-options-btn]').click();
+      await modal.locator('[data-processing-template-surface="fields"]').click();
       const options = page.locator('[data-processing-options-modal]');
       await expect(options).toBeVisible();
       await expect(options.locator('[data-processing-option-row="opt-ptest-mp1"]')).toBeVisible();

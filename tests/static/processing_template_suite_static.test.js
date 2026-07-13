@@ -199,13 +199,15 @@ describe('field engine — control types survive as pure data (no drawer rendere
   });
 });
 
-describe('Templates manager — Active/Draft state, preview, publish validation', () => {
-  it('shows Active/Draft state per program and a draft preview', () => {
-    expect(templatesModal).toContain('data-processing-template-state');
+describe('Templates manager — simplified header, preview, publish validation', () => {
+  it('hides Active/Draft state copy and keeps the draft preview', () => {
+    expect(templatesModal).not.toContain('data-processing-template-state');
     expect(templatesModal).toContain('data-processing-template-preview-toggle');
     expect(templatesModal).toContain('data-processing-template-preview="1"');
-    expect(templatesModal).toMatch(/Active v\$\{activeVersion\}/);
-    expect(templatesModal).toMatch(/Draft \(unsaved\)/);
+    expect(templatesModal).not.toMatch(/Active v\$\{activeVersion\}/);
+    expect(templatesModal).not.toMatch(/Draft \(unsaved\)/);
+    expect(templatesModal).toContain('data-processing-template-surface="tasks"');
+    expect(templatesModal).toContain('data-processing-template-surface="fields"');
   });
   it('publish validation blocks invalid drafts before the RPC call (checklist-only path)', () => {
     // The modal edits ONLY the checklist now; it validates through the
@@ -218,8 +220,9 @@ describe('Templates manager — Active/Draft state, preview, publish validation'
     expect(templatesModal).toContain('Cannot activate this template');
     expect(fieldsLib).toMatch(/problems\.push\(\.\.\.validateChecklistDraft\(checklist\)\.problems\);/);
   });
-  it('Reset restores the canonical default CHECKLIST only (fields are server-preserved)', () => {
-    expect(templatesModal).toContain('defaultProcessingChecklist(program)');
+  it('Reset checklist is not available from the visible template footer', () => {
+    expect(templatesModal).not.toContain('defaultProcessingChecklist(program)');
+    expect(templatesModal).not.toContain('data-processing-template-reset');
     expect(templatesModal).not.toContain('defaultProcessingFields');
   });
   it('saves preserve the fields (incl. the settings-source markers) verbatim: fields:null + server keep', () => {

@@ -3,19 +3,17 @@
 // ----------------------------------------------------------------------------
 // ADMIN ONLY (Management + Farm Team have full operational access but NOT
 // template editing — CP0). Edits the active template for a program. The
-// configurable FIELDS surface is retired (planner-integration lane): record
-// fields are fixed/planner-owned, so this modal is a single surface — the
-// default CHECKLIST: drag to reorder, rename, per-step profile-backed assignee
-// (clearable), add/remove.
+// configurable record FIELDS surface is retired (planner-integration lane):
+// record fields are fixed/planner-owned. The visible surfaces are Tasks
+// (default checklist: drag to reorder, rename, per-step profile-backed
+// assignee, add/remove) and Fields (customer/processor option choices).
 //   • Checklist steps carry STABLE server-minted ids (mig 177). Existing step
 //     ids are preserved verbatim through every edit/reorder — never regenerated
 //     client-side; NEW steps are sent WITHOUT an id and the server mints one
 //     ('stp-<uuid>'). Stable ids are what let apply_current_template merge
 //     renames/assignments into records without duplicating steps.
-//   • Reset restores the canonical default checklist for the program
-//     (defaultProcessingChecklist). Fields are untouched by save/reset — the
-//     upsert sends fields=null and the server preserves the active version's
-//     fields verbatim.
+//   • Saves send fields=null; the server preserves the active version's fields
+//     verbatim.
 // Saving calls upsert_processing_template (a new active VERSION supersedes the
 // prior one); the checklist seeds NEW planner records automatically (mig 164)
 // and existing records via the drawer's additive "Apply template".
@@ -26,7 +24,7 @@
 import React from 'react';
 import {sb} from '../lib/supabase.js';
 import {listProcessingTemplates, upsertProcessingTemplate, friendlyProcessingError} from '../lib/processingApi.js';
-import {defaultProcessingChecklist, validateChecklistDraft} from '../lib/processingFields.js';
+import {validateChecklistDraft} from '../lib/processingFields.js';
 import {loadEligibleProfilesById} from '../lib/tasksCenterApi.js';
 import {programDotStyle, getProgramColor} from '../lib/programColors.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
@@ -174,9 +172,8 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
   // its checklist snapshot; any local divergence is an unsaved DRAFT until Save
   // activates a new version. Fields are NOT part of the draft — they ride along
   // server-preserved (fields=null on save).
-  const [activeVersion, setActiveVersion] = useState(null);
-  const [baseline, setBaseline] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const [activeSurface, setActiveSurface] = useState('tasks');
   // HTML5 drag state: the dragged step index, or null.
   const [drag, setDrag] = useState(null);
   // Customer & Processor choice management (mig 162/175) lives INSIDE Templates.
@@ -198,8 +195,6 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
         assignee_profile_id: c?.assignee_profile_id || null,
       }));
       setChecklist(loadedChecklist);
-      setActiveVersion(active ? active.version : null);
-      setBaseline(JSON.stringify(loadedChecklist));
     } catch (e) {
       setChecklist([]);
       setLoadError({message: `Could not load the template. Please retry. (${(e && e.message) || e})`});
@@ -231,9 +226,6 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
       ),
     [profilesById],
   );
-
-  // Unsaved-draft detection against the loaded ACTIVE checklist snapshot.
-  const isDirty = useMemo(() => JSON.stringify(checklist) !== baseline, [checklist, baseline]);
 
   // ── checklist editing (step ids are stable — patches never touch c.id) ─────
   function reorder(list, from, to) {
@@ -283,13 +275,6 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
     // New steps have NO id — the server mints the stable 'stp-<uuid>' on save.
     setChecklist((cur) => [...cur, {id: null, label: '', assignee: null, assignee_profile_id: null}]);
   }
-  function resetChecklist() {
-    // Reset restores the canonical default CHECKLIST only — fields are
-    // server-preserved (save sends fields=null; the active fields ride along).
-    // Default steps carry no ids, so on save the server mints fresh stable ids.
-    setChecklist(defaultProcessingChecklist(program).map((c) => ({id: null, ...c})));
-  }
-
   async function save() {
     setSaving(true);
     setNotice(null);
@@ -437,29 +422,6 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
               }}
             >
               {PROGRAMS.find((p) => p.key === program)?.label} checklist template
-              <span
-                data-processing-template-state={isDirty ? 'draft' : activeVersion == null ? 'none' : 'active'}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  borderRadius: 999,
-                  padding: '3px 9px',
-                  background: isDirty ? '#F7EFD6' : activeVersion == null ? '#F1F3F4' : '#E6F4EC',
-                  color: isDirty ? '#8A6A1E' : activeVersion == null ? T.muted : '#1F7A4D',
-                }}
-              >
-                {activeVersion == null
-                  ? isDirty
-                    ? 'Draft — no template active yet'
-                    : 'No template yet'
-                  : isDirty
-                    ? `Draft (unsaved) · editing Active v${activeVersion}`
-                    : `Active v${activeVersion}`}
-              </span>
-            </div>
-            <div style={{fontSize: 12, color: T.faint, fontWeight: 600, marginTop: 2}}>
-              The default checklist for every {PROGRAMS.find((p) => p.key === program)?.label} batch — Save activates a
-              new version
             </div>
           </div>
           <button
@@ -529,38 +491,58 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
           </div>
         </div>
 
-        {/* Customer & Processor choice management (mig 162/175) — inside Templates */}
+        {/* Tasks / Fields surface selector */}
         <div
           style={{
             padding: '4px 20px 8px',
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
+            gap: 8,
             flexWrap: 'wrap',
             flex: 'none',
           }}
         >
           <button
             type="button"
-            onClick={() => setShowOptions(true)}
-            data-processing-options-btn="1"
+            onClick={() => setActiveSurface('tasks')}
+            data-processing-template-surface="tasks"
+            aria-pressed={activeSurface === 'tasks'}
             style={{
-              background: '#fff',
-              border: `1px solid #D2D6DB`,
-              color: T.muted,
+              background: activeSurface === 'tasks' ? T.green : '#fff',
+              border: `1px solid ${activeSurface === 'tasks' ? T.green : '#D2D6DB'}`,
+              color: activeSurface === 'tasks' ? '#fff' : T.muted,
               borderRadius: 10,
-              padding: '7px 12px',
+              padding: '7px 14px',
               fontSize: 12.5,
-              fontWeight: 700,
+              fontWeight: 800,
               cursor: 'pointer',
               fontFamily: 'inherit',
             }}
           >
-            Customer &amp; processor choices
+            Tasks
           </button>
-          <span style={{fontSize: 12, color: T.faint, fontWeight: 600}}>
-            The choices behind the Customer + Processor selects in the drawer and Add milestone.
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSurface('fields');
+              setShowOptions(true);
+            }}
+            data-processing-template-surface="fields"
+            aria-pressed={activeSurface === 'fields'}
+            style={{
+              background: activeSurface === 'fields' ? T.green : '#fff',
+              border: `1px solid ${activeSurface === 'fields' ? T.green : '#D2D6DB'}`,
+              color: activeSurface === 'fields' ? '#fff' : T.muted,
+              borderRadius: 10,
+              padding: '7px 14px',
+              fontSize: 12.5,
+              fontWeight: 800,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            Fields
+          </button>
         </div>
 
         {/* Body — single surface: the checklist editor */}
@@ -584,16 +566,6 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
 
           {!loading && !loadError && (
             <div>
-              <p style={{fontSize: 12.5, color: T.faint, fontWeight: 600, marginBottom: 14}}>
-                The default checklist for every {PROGRAMS.find((p) => p.key === program)?.label} batch. Drag to reorder;
-                each step can carry an assignee. New planner batches receive these steps automatically; existing records
-                pick up changes via “Apply template”.
-              </p>
-              {checklist.length === 0 && (
-                <div style={{fontSize: 12.5, color: T.faint, fontWeight: 600, marginBottom: 10}}>
-                  No steps yet — add one below or Reset to the defaults.
-                </div>
-              )}
               {checklist.map((c, i) => (
                 <div
                   key={c.id || `new-${i}`}
@@ -608,7 +580,7 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
                     background: '#fff',
                   }}
                 >
-                  <span aria-hidden="true" title="Drag to reorder" style={dragHandle}>
+                  <span aria-hidden="true" style={dragHandle}>
                     ⠿⠿
                   </span>
                   <input
@@ -654,45 +626,7 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
             flex: 'none',
           }}
         >
-          <div style={{display: 'flex', gap: 8}}>
-            <button
-              type="button"
-              onClick={load}
-              disabled={loading || saving}
-              style={{
-                background: '#fff',
-                border: `1px solid #D2D6DB`,
-                color: T.muted,
-                borderRadius: 10,
-                padding: '10px 14px',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: loading || saving ? 'default' : 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Revert
-            </button>
-            <button
-              type="button"
-              onClick={resetChecklist}
-              disabled={loading || saving}
-              data-processing-template-reset
-              style={{
-                background: '#fff',
-                border: `1px solid #D2D6DB`,
-                color: T.muted,
-                borderRadius: 10,
-                padding: '10px 14px',
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: loading || saving ? 'default' : 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Reset checklist
-            </button>
-          </div>
+          <div />
           <div style={{display: 'flex', gap: 10}}>
             <button
               type="button"
@@ -738,7 +672,10 @@ function TemplatesEditor({onClose, customerOptions = [], processorOptions = [], 
         <ProcessingOptionsModal
           processorOptions={processorOptions}
           customerOptions={customerOptions}
-          onClose={() => setShowOptions(false)}
+          onClose={() => {
+            setShowOptions(false);
+            setActiveSurface('tasks');
+          }}
           onSaved={onOptionsSaved}
         />
       )}
