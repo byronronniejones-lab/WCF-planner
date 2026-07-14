@@ -43,15 +43,17 @@ const rootRunUtilityIgnores = hasExplicitSpecArg
 // (tests/setup/assertTestDatabase.js) which refuses to run unless
 // WCF_TEST_DATABASE=1 AND URL doesn't match the prod project ref.
 //
-// CI deferred (was Phase A9). Local-only for now.
+// CI: .github/workflows/ci.yml (verify quality gate + sharded root e2e jobs +
+// the path-gated pasture lane).
 // ============================================================================
 
 export default defineConfig({
   testDir: './tests',
   testMatch: ['**/*.spec.js'],
   // Pasture Map browser specs run in their OWN focused lane via
-  // playwright.pasture.config.js (CI: pasture-e2e.yml, path-gated). Exclude them
-  // from the root verify e2e so it stays fast and never double-runs them.
+  // playwright.pasture.config.js (CI: the path-gated pasture-e2e job in
+  // .github/workflows/ci.yml). Exclude them from the root e2e (CI jobs
+  // e2e-shard-1 / e2e-shard-2) so it stays fast and never double-runs them.
   //
   // Screenshot packets and route-wide audit sweeps are local capture utilities,
   // not the regression floor. They are ignored only for broad root runs; passing
