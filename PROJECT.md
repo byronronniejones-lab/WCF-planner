@@ -7,12 +7,12 @@ This file is the durable project map: current state, architecture, roadmap, and
 load-bearing contracts. Workflow, roles, gates, and relay format live in
 [HO.md](HO.md). Do not turn this file into a session transcript.
 
-Last updated: 2026-07-11.
-Product checkpoint covered by this wrap: `029899c` (Processing engine/import completion,
-audited user management, farm-team-safe processing detach, template suite,
-conversation fidelity, and the simplified Processing UI). Last code/product
-checkpoint: `029899c`. This documentation-only wrap follows that product commit
-and records the next Processing integration build in Build Queue item 3.
+Last updated: 2026-07-14.
+Product checkpoint covered by this wrap: `5354a79` (Processing planner integration
+through migrations `175`-`177`, final-stage workflow, production correction,
+public hub header polish, and the simplified Processing schedule UI). Last
+code/product checkpoint: `5354a79`. This documentation-only wrap follows that
+product commit and records the remaining build queue.
 Shipped history lives in `git log` and `archive/SESSION_LOG.md`; durable behavior
 lives in the Load-Bearing Contracts below; migration/live state lives in Current
 State and Backend And Data State. Do not re-enumerate the changelog in this header.
@@ -69,12 +69,12 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`. The latest product
-  code is `029899c`; this documentation-only wrap follows it without changing
-  runtime code. The public `/processing` route and its `029899c` production
+  code is `5354a79`; this documentation-only wrap follows it without changing
+  runtime code. The public `/processing` route and its `5354a79` production
   bundle were verified after deploy. There are no open GitHub pull requests at
   this wrap.
 - Supabase live high-water: all repository migrations through `166` and
-  `170`-`174` are PROD-applied; numbers `167`-`169` are intentionally unused.
+  `170`-`177` are PROD-applied; numbers `167`-`169` are intentionally unused.
   Current PROD Edge versions are `rapid-processor` v29,
   `processing-asana-sync` v10, `tasks-cron` v6, `tasks-summary` v8, and
   `newsletter-harvest` v6. TEST has `rapid-processor` v3 and
@@ -106,12 +106,25 @@ Design/function invariants that govern cross-surface behavior live in
 - Production legacy import: `Processing Events - ALL.xlsx` upserted 69 rows into
   `production_legacy_events` on PROD by stable `source_key` (frozen historical
   count).
-- Processing Calendar schema is PROD-applied through `174`; the live Edge is
+- Processing Calendar schema is PROD-applied through `177`; the live Edge is
   `processing-asana-sync` v10, `ASANA_ACCESS_TOKEN` remains set, and
   `asana_sync_enabled` is still true. Current PROD inventory is 119 Processing
-  records: 52 active `planner_batch`, 50 active
-  `asana_historical`, 16 archived `import_exception`, and 1 active milestone.
-  There are 117 Asana links, 110 attached to Processing records.
+  records with statuses normalized to 67 `complete`, 1 `in_process`, and 51
+  `planned`: 52 active `planner_batch`, 50 active `asana_historical`, 16
+  archived `import_exception`, and 1 active milestone. There are 117 Asana links,
+  110 attached to Processing records.
+- Processing planner integration is shipped end-to-end. Migrations `175`-`177`
+  rekeyed planner rows to immutable batch/trip identity, made planned Pig trips
+  first-class Processing records, backfilled phase/ordinal/status/template step
+  identity, normalized option lists, removed Processing subtask dates, widened
+  notification checks, and added completion/workflow integration. PROD
+  post-apply verification found 27/27 Broiler planner rows rekeyed, all 8 Pig
+  rows source-phased, every active template step carrying a stable id, and the
+  first reconcile under the new engine restamped 27 Broiler / 16 Cattle / 1 Sheep
+  / 8 Pig rows with 0 removed and 0 retired. Brett Post name-only Processing
+  assignments were silently corrected to Accounting and Isabel Hermann
+  assignments to Isabel; post-check found 0 name-only remnants and 0
+  notifications emitted.
 - Processing artifacts already imported: 1,104 recursive Asana subtasks
   (798 complete / 306 open; 557 assigned; 537 with due dates; 380 with start
   dates), preserving imported completion state and local ownership rules.
@@ -129,16 +142,17 @@ Design/function invariants that govern cross-surface behavior live in
   Build Queue item 2. Three deleted Asana cards linked to dismissed placeholders
   consistently 404 and are skipped without aborting a run.
 - Processing UI is simplified and live. The former Admin/maintenance,
-  reconciliation, and historical-import controls are removed. Admins get a
-  direct **Templates** button; templates are local-only and contain Fields and
-  Checklist editing plus Customer/Processor choice management. Customer and
-  Processor are settings-backed single selects. Parent-record Assignee and the
-  six retired fields (Farm, Planned Processing Date, Actual/Planned Time on Farm,
-  Product Pickup Date, and Time Remaining) are absent from defaults and drawer.
-  Checklist-step assignees remain supported. The four active template v2 rows
-  have 11/10/10/10 fields and preserve their 8/16/11/16-item checklists; v1 rows
-  remain inactive for history. All 119 Processing records were unchanged by the
-  v2 migration.
+  reconciliation, historical-import controls, status/processor filters, Show
+  archived checkbox, stale sort label, and per-section Add milestone rows are
+  removed. Admins get a direct **Templates** button; the global **+ Add
+  milestone** button remains at the top. Templates are local-only and contain
+  inline Tasks/Fields editing plus Customer/Processor choice management. Customer
+  and Processor are settings-backed single selects. Parent-record Assignee and
+  the six retired fields (Farm, Planned Processing Date, Actual/Planned Time on
+  Farm, Product Pickup Date, and Time Remaining) are absent from defaults and
+  drawer. Checklist-step assignees remain supported. The four active template v2
+  rows have 11/10/10/10 fields and preserve their 8/16/11/16-item checklists; v1
+  rows remain inactive for history.
 - Processing status labels are normalized to `Planned` / `In Process` / `Complete`
   via `src/lib/processingStatusDisplay.js` (display-only; stored values are
   unchanged). See the Processing Calendar contract for the mapping and the
@@ -146,9 +160,9 @@ Design/function invariants that govern cross-surface behavior live in
 - CP5 public webform island styling (`ceb7dcf`) is shipped in the static HTML
   shells (`index.html`, `dailys.html`, `equipment.html`, `pasture-map.html`).
   It updates the public `#webform-container` fallback/island form tokens and
-  radii; authenticated React routes such as `/dailys` render through
-  `<div id="root">` and are intentionally not visually changed by this island
-  CSS pass.
+  radii. The public `/dailys` and `/equipment` hubs now use a simplified header:
+  no wheat icon or helper copy, a larger `WCF Planner` title, and that title
+  links back to the main planner page.
 - Cattle Herds and nutrition current state: `/cattle/herds` defaults to grouped,
   collapsible herd tiles when no filters/search/non-default sort are active. Any
   active filter/search/non-default sort switches to one flat matched-results
@@ -174,8 +188,8 @@ Design/function invariants that govern cross-surface behavior live in
   RPCs and gives `rapid-processor` v29 the guarded Auth hard-delete handler.
   Accounts retained by farm-record foreign keys still cannot be hard-deleted and
   must be deactivated. Historical Activity backfill remains unapproved.
-  User-management residual verification/scope decisions are Build Queue item 3;
-  the remaining processing lock-order hardening is item 4.
+  User-management residual verification/scope decisions are Build Queue item 4;
+  the remaining processing lock-order hardening is item 5.
 - `tasks-cron` Edge Function is active in PROD: recurring + system-task generation
   with batch/group entity labels, plus To Do approval/originator notifications.
 - Broiler derived-data drift lane is closed and verified in PROD.
@@ -184,20 +198,27 @@ Design/function invariants that govern cross-surface behavior live in
   `npm audit` is 0 on the hardened lockfile.
 - Validation baseline at the shipped checkpoint: Prettier passes (the former
   three-file drift was fixed by `c38a07c`), lint has 0 errors, 291 Vitest files /
-  7,070 tests pass, production build passes, the focused Processing Playwright
-  suite passes 9/9, and migration `174` passed its six guarded TEST proofs. The
-  GitHub whole-app Playwright step exceeded the workflow's 30-minute budget and
-  was cancelled after all earlier CI stages passed; CI segmentation/runtime is
-  an explicit defect in Build Queue item 5 rather than a product-test success.
-- Worktree inventory at audit start: `C:/Users/Ronni/WCF-planner-main-release`
-  was the clean `main`/`origin/main` release worktree at `029899c`; this wrap
-  changes only `PROJECT.md`. The primary worktree is clean on merged feature branch
-  `feature/processing-ui-simplify` at `83649ef`. Registered detach,
-  user-management, validation, template, customer-fields, and materials-order
-  worktrees are inactive; their commits are already merged or superseded.
+  7,070 tests pass, production build passes, migration `175`-`177` TEST apply
+  proofs passed 32/32 checks, and the migrated-TEST Processing Playwright suite
+  passed `processing_calendar` 11/11, `processing_planner_lifecycle` 3/3, and
+  `processing_my_tasks` 4/4. The GitHub whole-app Playwright step previously
+  exceeded the workflow's 30-minute budget; CI segmentation/runtime remains an
+  explicit defect in Build Queue item 6 rather than a product-test success.
+- Worktree inventory at wrap start: `C:/Users/Ronni/WCF-planner-main-release`
+  was the clean `main`/`origin/main` release worktree at `5354a79`; this wrap
+  changes only `PROJECT.md`. Seven clean merged/superseded satellite worktrees
+  were pruned during wrap: detach, materials-needed-order, public-hub-link,
+  user-management-audit, customer-fields, planner-integration, and template
+  suite. Remaining registered worktrees are the primary
+  `C:/Users/Ronni/WCF-planner` on merged `feature/processing-ui-simplify`, CC2's
+  unmerged CI branch `C:/Users/Ronni/WCF-planner-cc2-ci`, dirty draft
+  `C:/Users/Ronni/WCF-planner-codex-user-management-residuals`, dirty draft
+  `C:/Users/Ronni/WCF-planner-codex-validation`, and this clean main-release
+  worktree. The now-unregistered
+  `C:/Users/Ronni/WCF-planner-codex-user-management` folder is empty but locked
+  by Windows; delete it manually after the owning process/window releases it.
   Stashes dated 2026-07-10 for template-suite and customer-field drafts are
-  obsolete/superseded and must not be applied over current `main`. The ignored
-  `design_handoff_processing_calendar/` remains reference material only.
+  obsolete/superseded and must not be applied over current `main`.
 
 ### Recent Shipped Checkpoints
 
@@ -206,12 +227,10 @@ Per-PR shipped history is not maintained here. For what shipped and when, read
 Durable behavior lives in the Load-Bearing Contracts below; current migration and
 live state lives in Current State and Backend And Data State.
 
-Most recent session: audited processing detach (`cda13ea`), audited user
-management (`0b7e309`), formatting baseline cleanup (`c38a07c`), Processing
-engine/import/upload completion (`d036fb6`), template suite (`cba6b35`),
-conversation fidelity (`4978cf1`/`01bf915`), and Processing UI simplification
-(`83649ef`), merged through `029899c`. Earlier durable checkpoints remain in
-`git log`.
+Most recent session: Processing planner integration (`522e448`), public hub
+header/link polish (`037693d`/`2f87380`/`58973d8`), Processing template/schedule
+UI hotfixes (`312fce8` through `5354a79`), and the `175`-`177` PROD migration +
+Edge deploy/correction bundle. Earlier durable checkpoints remain in `git log`.
 
 ---
 
@@ -259,127 +278,20 @@ This is the canonical home for outstanding build/design work.
      duplicate writes on rerun and representative Broiler/Cattle/Pig/Sheep
      checks; final cutover occurs only after explicit approval.
 
-3. Processing planner integration and final-stage workflow
-   - Status: PRODUCT DECISIONS LOCKED; READY FOR A FRESH CC BUILD LANE. This
-     intentionally replaces the current actual-trip-only Pig enumeration and
-     configurable Processing field-template model. No implementation, TEST
-     apply, deploy, or PROD operation was performed in this wrap.
-   - Class: `ENH`/`DEFECT`/`DB-GATE`/`DATA-MIGRATION`/`TEST`.
-   - Ownership and identity:
-     - Broiler, Cattle, Sheep, and Pig planners remain authoritative for source
-       dates, counts, animals, ages, weights, and trip details. Processing owns
-       its workflow status, processor, optional Broiler customer, subtasks,
-       comments, attachments, and Activity.
-     - Extend the existing source mapping; do not create a parallel mapping
-       system. Every record has direct two-way navigation between Processing and
-       its native batch/trip.
-     - Source fields are read-only in Processing and stay mirrored after edits,
-       fulfillment, split/reallocation, archive, restore, and completion.
-   - Program tables:
-     - Broiler: Batch / Status / Hatch Date / Processing Date / Processor /
-       Count / Customer.
-     - Cattle and Sheep: Batch / Status / Processing Date / Processor / Count /
-       Age. Farm Arrival is removed.
-     - Pig: Trip / Batch / Status / Processing Date / Processor / Count / Age.
-     - Rename Number to Count throughout Processing. Broiler Hatch Date comes
-       from authoritative `ppp-v4.hatchDate`, replacing the incorrect Farm
-       Arrival display. All counts come from the native source; the final
-       surviving/processed Broiler count is entered on the Broiler batch after
-       the processor reports it.
-     - Status, Processor, and Customer render as three distinct, consistent
-       design-system tag treatments. Customer is Broiler-only and optional.
-   - Program detail model:
-     - Broiler uses a batch summary: Batch, Hatch Date, Processing Date, Age,
-       Count, Processor, and Customer; it has no individual-animal table.
-     - Cattle and Sheep show read-only individual tag, age on Processing Date,
-       latest live weight, and hanging weight when available. Missing values say
-       `Not recorded`; never estimate them.
-     - Pig shows the source batch/trip plus read-only live weights and calculated
-       ages. Existing weigh-ins are tagless, so label them Pig 1, Pig 2, etc.;
-       never invent tags. Display real source tags automatically if added later.
-     - All programs retain their subtasks, comments, attachments, and Activity.
-       Processing search covers batch, Pig trip, animal tag, processor, and
-       customer, including values nested inside record details.
-   - Pig planned-trip lifecycle:
-     - Every persisted `plannedProcessingTrips` row immediately creates or
-       updates one Planned Processing record, including automatically generated,
-       unlocked trips. Use stable planned-trip identity.
-     - Show `Auto-planned` until the native trip is generically locked/scheduled
-       with a processor, then show `Processor scheduled` on the same record.
-       These are secondary signals, not lifecycle statuses. Do not add processor
-       names or processor-name templates to Pig Planner; the real processor is
-       selected only in Processing.
-     - Native date/count edits update the same Processing record. Actual
-       fulfillment promotes that record without losing processor, subtasks,
-       completion state, comments, attachments, or history.
-     - Under-send preserves the original as the actual lower-count trip and
-       moves the remainder into the next/new planned record. Over-send reduces
-       affected later plans correspondingly. Both planner and Processing must
-       remain matched, with traceable lineage and no duplicate records.
-     - Deleting an untouched planned trip removes its empty Processing record;
-       deleting one with work/history archives it. Restoring the source
-       reactivates that same record.
-     - Calendar labels use `Pig Trip · <exact batch name> · Trip <n>` and show
-       the Auto-planned/Processor scheduled signal as secondary text while event
-       color remains status-based. Calendar clicks open Processing detail.
-   - Processing status and completion:
-     - Processing status is independent of native program lifecycle status and
-       never mutates the source status. Vocabulary remains Planned / In Process /
-       Complete.
-     - A record exists only when its source has a Processing Date. It stays
-       Planned until that date begins in the farm timezone, then automatically
-       becomes In Process. Moving an uncompleted event back into the future
-       returns it to Planned unless an actual Pig trip already exists.
-     - Complete requires an explicit Mark complete action after the Processing
-       Date. Block completion until Processor is selected, source Count is
-       greater than zero, and every open template or manually added subtask is
-       completed or removed. Customer and missing live/hanging weights do not
-       block completion.
-     - Source-date removal follows the same empty-remove versus worked-archive
-       rule as Pig trip deletion. Archived/cancelled records are hidden by
-       default, available through Show archived, and retain source/history links.
-     - Default order: In Process oldest date first; Planned nearest date first;
-       Complete newest completion first.
-   - Templates, options, and assignments:
-     - Remove the configurable Field template surface; Processing fields are
-       fixed. Processor and Customer choices are two global lists, not
-       program-specific templates. Allow add, rename, and deactivate; never
-       erase historical tag values.
-     - Checklist/subtask templates remain separate for Broiler, Cattle, Sheep,
-       and Pig. New records receive only the current template for their program.
-     - Add optional `Apply latest template` on an existing record with a preview
-       and stable internal step ids. Merge additions, renames, and current
-       assignments without duplicating or reopening completed work; preserve
-       comments, attachments, completion/history, removed-template steps, and
-       manual steps. Repeated application must be idempotent.
-     - Processing subtasks and templates have no due-date UI or scheduling
-       rules. Clear existing imported Processing subtask due dates from storage
-       while preserving completion and Activity history.
-     - Resolve every imported name-only `Brett Post` Processing assignment to
-       the actual Accounting profile and every name-only `Isabel Hermann`
-       assignment to the actual Isabel profile, including active templates.
-       Resolve through stable identity/email rather than hardcoded UUIDs; keep
-       inactive historical template versions immutable.
-     - Assigned Processing subtasks appear in the assignee's normal To Do/task
-       view and link to the Processing record. New/reassigned work notifies the
-       assignee; the bulk Brett/Isabel correction is silent.
-   - Validation and gates:
-     - Reconcile and RPC changes must be idempotent, preserve planner-vs-
-       Processing ownership, and follow current RLS/security/audit boundaries.
-     - Focused proof must cover program headers/details, Broiler hatch/count
-       mapping, Cattle/Sheep animal detail, tagless Pig detail, planned-trip
-       creation and promotion, under/over-send lineage, reschedule, delete/
-       archive/restore, two-way links, status timing, completion blockers,
-       template merging, due-date removal, assignment correction, To Do, and
-       notification suppression/idempotence.
-     - Start from current `origin/main` in a fresh worktree. Ronnie approval is
-       required before any commit/push, TEST apply, Edge deploy, or PROD action;
-       PROD `exec_sql` remains forbidden.
-   - Success criteria: all four programs read as one seamless final planner
-     stage; source facts never diverge; every planned/actual Pig trip retains one
-     traceable Processing identity; fixed program-specific tables/details and
-     global options are clear; completion and assignments behave exactly as
-     above; full focused validation and production build pass.
+3. Processing post-integration polish and stale Pig test debt
+   - Status: SMALL FOLLOW-UP AFTER SHIPPED PLANNER INTEGRATION. The main
+     Processing planner integration is live through migration `177`; this item is
+     only for residual copy/test cleanup.
+   - Class: `DEFECT`/`UX`/`TEST`.
+   - Scope:
+     - Update `PigSendToTripModal` preview copy for under-send remainder handling:
+       the server now moves the remainder to a new/next planned trip; copy must
+       not say it stays on the original planned trip.
+     - Repair or retire stale `tests/pig_send_to_planned_trip.spec.js`, which
+       still references dead UI strings such as `Select all unsent`. Keep any
+       replacement aligned with the current per-row checkbox and Send-to-Trip bar.
+   - Validation: focused Pig send-to-trip unit/static coverage plus the repaired
+     Playwright spec if retained.
 
 4. User-management residual verification and audit-scope decisions
    - Status: CORE HARDENING SHIPPED. Migration `171`, audited UsersModal RPCs,
@@ -418,6 +330,10 @@ This is the canonical home for outstanding build/design work.
      install, formatting, lint, all Vitest tests, and production build, then the
      serialized whole-app Playwright step exceeded the 30-minute job budget and
      was cancelled. Several preceding main runs show the same timeout pattern.
+     CC2 has an unmerged draft branch/worktree at
+     `feature/ci-playwright-runtime-cc2` / `C:/Users/Ronni/WCF-planner-cc2-ci`
+     (`e277a3b`) that splits serialized Playwright runtime across shards; verify
+     and merge only after review.
    - Class: `DEFECT`/`CI`/`TEST-INFRA`.
    - Scope: profile spec/runtime cost, split or path-gate independent suites
      without racing the shared TEST database, preserve workers=1 for reset-heavy
@@ -618,7 +534,7 @@ No operational record workspace should reintroduce legacy `ActivityPanel` or
 ### Supabase Migrations
 
 Current PROD architecture includes all repository migrations through `166` and
-`170` through `174`; `167`-`169` are intentionally unused. Recent load-bearing
+`170` through `177`; `167`-`169` are intentionally unused. Recent load-bearing
 migrations:
 
 - `100` processing batch lifecycle RPCs.
@@ -958,14 +874,14 @@ migrations:
     program-authorized `farm_team` access, batch-first lock order, and membership
     revalidation; client and login-gated webform detach paths use the RPCs.
   - PROD-applied and verified. Migration `100`'s conflicting sheep batch-delete
-    lock order remains Build Queue item 4.
+    lock order remains Build Queue item 5.
 - `171` Audited user management:
   - Adds deny-all immutable `user_management_audit`, admin-only profile mutation
     RPCs, guarded delete prepare/finalize/reconciliation, and the two-system Auth
     deletion contract used by `rapid-processor` v29.
   - PROD-applied and TEST migration-proven. Retained operational profile FKs
     intentionally refuse hard delete and direct admins to deactivate. Residual
-    Edge proof/scope/UI-concurrency work is Build Queue item 3.
+    Edge proof/scope/UI-concurrency work is Build Queue item 4.
 - `172` Processing template suite v1:
   - Seeds one canonical Broiler/Cattle/Pig/Sheep template only when a program has
     no template rows and adds checkbox/URL validation to the field engine.
@@ -982,12 +898,30 @@ migrations:
     single select like Processor. Broiler has 11 fields; other programs have 10.
   - PROD-applied. Active v2 checklist sizes are 8/16/11/16, v1 rows remain
     inactive, and no `processing_records` row was changed.
+- `175` Processing planner foundation:
+  - Rekeys planner-backed Processing rows to immutable source identity, hardens
+    planner-source matching, backfills source phase/ordinal values, and preserves
+    source facts as Planner-owned.
+  - TEST proof and PROD apply passed before the runtime push.
+- `176` Processing lifecycle reconcile:
+  - Adds lifecycle reconcile behavior for planned/actual Pig trip promotion,
+    source-date removal, worked archive versus empty removal, restore, Chicago
+    boundary timing, and fail-closed correction paths.
+  - TEST proof used stamped fixture ids after Codex review found and CC fixed a
+    collision risk; PROD apply passed with migration file unchanged.
+- `177` Processing workflow integration:
+  - Adds completion/notification/template-step workflow integration, removes
+    Processing subtask dates, normalizes option-list objects, and widens the
+    notification check for the new Processing work types.
+  - PROD-applied before the runtime push; `processing-asana-sync` was redeployed
+    afterward with planned-Pig exclusion live.
 
 Special migration notes:
 
 - `082` is intentionally unused.
 - `167`-`169` are intentionally unused; the sequence jumps from Processing
-  migration `166` to detach/user-management migrations `170`/`171`.
+  migration `166` to detach/user-management migrations `170`/`171`, then resumes
+  Processing migration work at `172`-`177`.
 - `083` public webform submitter identity is shelved.
 - `085` was applied before `084` in PROD so duplicate active daily identities
   were cleaned up before unique indexes.
@@ -1066,7 +1000,7 @@ Append-only upload expectations:
   by the UI-simplification lane.
 - `supabase-migrations/156_processing_calendar.sql` through
   `166_processing_attachments_upload.sql` and `170_processing_detach_farm_team.sql`
-  through `174_processing_template_suite_v2.sql`, plus their committed
+  through `177_processing_workflow_integration.sql`, plus their committed
   `scripts/apply_test_mig_*.cjs` proofs,
   `scripts/proof_reconciler_blockers.cjs`, and
   `scripts/proof_reconciler_enumeration.cjs`: Processing Calendar schema/RPC,
@@ -1392,15 +1326,18 @@ Workflow/worktable entities:
   first attach if blank, imports artifacts/history/drift one-way, and must never
   overwrite Planner-owned live facts after a match.
 - Planner-to-Processing reconciliation is first-class. Broiler rows require a
-  Planner processing date; pig persisted rows are actual trips only with
-  `group.id:trip.id` source ids; stale planner rows are archived by reconcile and
-  unarchived if the source returns.
+  Planner processing date; Pig persisted planned trips immediately create/update
+  Processing records by stable planned-trip identity, then promote to actual trip
+  identity without losing processor, subtasks, completion state, comments,
+  attachments, or history. Stale empty planner rows are removed; worked rows are
+  archived by reconcile and unarchived if the source returns.
 - The main Processing table must stay batch-focused. Subtasks are not a table
   column; they belong in the record drawer/artifact model. The Batch/title
   column is sticky in the horizontal table. Historical import, reconciliation,
   and maintenance controls are intentionally absent from the day-to-day UI.
-  Admins get a direct Templates button; normal workflow controls such as Add
-  milestone and Show archived stay in the primary surface.
+  Admins get a direct Templates button and a single global Add milestone button;
+  archived/cancelled rows are not exposed through a day-to-day Show archived
+  checkbox.
 - Parent-record Assignee and visible Time-on-Farm are retired from the Processing
   UI. Checklist/subtask assignees remain supported. The server may still return
   backward-compatible `time_on_farm_days`, but it is not a default template or
@@ -1412,9 +1349,10 @@ Workflow/worktable entities:
   multi-customer rows show one explicit legacy state until deliberately replaced.
 - Templates are local-only in the product UI. The active canonical v2 suite is
   Broiler 11 fields and Cattle/Pig/Sheep 10 fields, with checklists 8/16/11/16.
-  The six retired field ids stay server-reserved so generic writes cannot revive
-  them. Template saves version active rows; reset uses the same guarded defaults
-  as migration `174`.
+  The template modal uses a Tasks/Fields toggle; Fields edit inline rather than
+  opening a second modal. The six retired field ids stay server-reserved so
+  generic writes cannot revive them. Template saves version active rows; reset
+  uses the same guarded defaults as migration `174`.
 - Asana operations are out-of-UI gated operations. Planner freshness still runs
   automatically. Read-only audits/dry runs, artifact import, attachment backfill,
   historical Activity import, and `asana_sync_enabled` cutover require explicit
@@ -1431,6 +1369,9 @@ Workflow/worktable entities:
   just to change labels. Pig batch displays must use the pig-specific helper
   because raw `active` can mean either a future zero-head placeholder
   (`Planned`) or pigs already in the feeder workflow (`In Process`).
+- Processing schedule rows sort by `processing_date` inside each program section
+  regardless of status. Do not reintroduce an In Process / Planned / Complete
+  display bucket; completed rows must stay in their natural schedule slot.
 - The Asana token is a live secret and must not be committed, pasted into docs,
   or stored in source. The deployed Edge Function reads it from Supabase secrets.
   It is currently SET on the PROD Edge secret (the dry-run + comments lanes
@@ -1946,7 +1887,7 @@ Focused starting points:
 | Record pages | `tests/static/record_page_*.test.js`, per-entity static tests, `tests/*_sequence_nav.spec.js` |
 | Home / dashboard alerts | `tests/static/home_missed_daily_reports_static.test.js`, `tests/static/home_next_30_icons.test.js`, `tests/static/home_daily_tile_routing_static.test.js`, `tests/static/home_animal_history_static.test.js`, `src/lib/animalHistory.test.js`, `tests/static/light_user_portal_static.test.js` |
 | Production | `src/lib/production.test.js`, `tests/static/production_page_static.test.js` |
-| Processing Calendar | `tests/static/processing_calendar_migration_static.test.js`, `tests/static/processing_wiring_static.test.js`, `tests/static/processing_asana_security_static.test.js`, `tests/static/processing_reconciler_migration_static.test.js`, `tests/static/processing_reconciler_wiring_static.test.js`, `tests/static/processing_reconciliation_workbench_static.test.js`, `tests/static/processing_comments_import_static.test.js`, `tests/static/processing_conversation_fidelity_static.test.js`, `tests/static/processing_engine_static.test.js`, `tests/static/processing_cleanup_static.test.js`, `tests/static/processing_options_static.test.js`, `tests/static/processing_template_suite_static.test.js`, `tests/static/processing_templates_import_static.test.js`, `tests/static/processing_attachments_storage_static.test.js`, `tests/processing_calendar.spec.js`, `tests/processing_asana_importer.test.js`, `tests/processing_conversation_fidelity.test.js`, `tests/processing_asana_shape.test.js`, `tests/processing_asana_matcher.test.js`, `tests/processing_asana_templates.test.js`, `scripts/apply_test_mig_156.cjs` through `scripts/apply_test_mig_162.cjs`, `scripts/apply_test_mig_164.cjs` through `scripts/apply_test_mig_166.cjs`, `scripts/apply_test_mig_170.cjs` through `scripts/apply_test_mig_174.cjs`, `scripts/proof_reconciler_blockers.cjs`, `scripts/proof_reconciler_enumeration.cjs` |
+| Processing Calendar | `tests/static/processing_calendar_migration_static.test.js`, `tests/static/processing_wiring_static.test.js`, `tests/static/processing_asana_security_static.test.js`, `tests/static/processing_reconciler_migration_static.test.js`, `tests/static/processing_reconciler_wiring_static.test.js`, `tests/static/processing_reconciliation_workbench_static.test.js`, `tests/static/processing_comments_import_static.test.js`, `tests/static/processing_conversation_fidelity_static.test.js`, `tests/static/processing_engine_static.test.js`, `tests/static/processing_cleanup_static.test.js`, `tests/static/processing_options_static.test.js`, `tests/static/processing_template_suite_static.test.js`, `tests/static/processing_templates_import_static.test.js`, `tests/static/processing_attachments_storage_static.test.js`, `tests/processing_calendar.spec.js`, `tests/processing_asana_importer.test.js`, `tests/processing_conversation_fidelity.test.js`, `tests/processing_asana_shape.test.js`, `tests/processing_asana_matcher.test.js`, `tests/processing_asana_templates.test.js`, `scripts/apply_test_mig_156.cjs` through `scripts/apply_test_mig_162.cjs`, `scripts/apply_test_mig_164.cjs` through `scripts/apply_test_mig_166.cjs`, `scripts/apply_test_mig_170.cjs` through `scripts/apply_test_mig_177.cjs`, `scripts/proof_reconciler_blockers.cjs`, `scripts/proof_reconciler_enumeration.cjs` |
 | User management | `src/lib/userManagementApi.test.js`, `tests/static/user_management_audit_static.test.js`, `tests/static/users_modal_self_name_edit.test.js`, `tests/static/rapid_processor_handlers.test.js`, `tests/user_management_audit.spec.js`, `scripts/apply_test_mig_171.cjs` |
 | Newsletter | `tests/static/newsletter_boundary_static.test.js`, `tests/static/newsletter_shared_parity.test.js`, `src/lib/newsletterApi.test.js`, `src/lib/newsletterFacts.test.js`, `src/lib/newsletterProductionYoy.test.js`, `src/newsletter/NewsletterBlocks.test.js`, `tests/newsletter_public.spec.js`, `scripts/apply_test_mig_144_145.cjs`, `scripts/apply_test_mig_153.cjs` |
 | Pasture Map | `src/lib/pastureKml.test.js`, `src/lib/pastureGeometry.test.js`, `src/lib/pasturePlannerGroups.test.js`, `tests/static/pasture_map_static.test.js`, `tests/pasture_map_p2_map.spec.js`, `tests/pasture_map_placement.spec.js`, `tests/pasture_map_reports_records.spec.js`, `tests/pasture_map_reset_history.spec.js`, `tests/pasture_map_light_access.spec.js`, `tests/pasture_map_setup.spec.js`, `tests/pasture_map_tweaks2.spec.js`, `tests/pasture_map_import.spec.js`, `tests/pasture_map_cp2.spec.js`, `tests/pasture_map_cp3.spec.js`, `tests/pasture_map_cp4.spec.js`, `tests/pasture_map_cp5.spec.js`, `tests/pasture_map_cp6.spec.js`, `tests/pasture_map_cp7.spec.js`, `tests/pasture_map_tile_hover.spec.js`, `tests/pasture_map_open_line_edit.spec.js`, `playwright.pasture.config.js`, `scripts/apply_test_mig_147.cjs`, `scripts/apply_test_mig_148.cjs`, `scripts/apply_test_mig_150.cjs` |
