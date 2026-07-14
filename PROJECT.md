@@ -76,7 +76,7 @@ Design/function invariants that govern cross-surface behavior live in
 - Supabase live high-water: all repository migrations through `166` and
   `170`-`177` are PROD-applied; numbers `167`-`169` are intentionally unused.
   Current PROD Edge versions are `rapid-processor` v29,
-  `processing-asana-sync` v10, `tasks-cron` v6, `tasks-summary` v8, and
+  `processing-asana-sync` v11, `tasks-cron` v6, `tasks-summary` v8, and
   `newsletter-harvest` v6. TEST has `rapid-processor` v3 and
   `newsletter-harvest` v1; no TEST `processing-asana-sync` deploy exists.
 - Newsletter live state: Autopilot + direction-first redesign + fact fixes +
@@ -107,8 +107,8 @@ Design/function invariants that govern cross-surface behavior live in
   `production_legacy_events` on PROD by stable `source_key` (frozen historical
   count).
 - Processing Calendar schema is PROD-applied through `177`; the live Edge is
-  `processing-asana-sync` v10, `ASANA_ACCESS_TOKEN` remains set, and
-  `asana_sync_enabled` is still true. Current PROD inventory is 119 Processing
+  `processing-asana-sync` v11 (deployed with the planned-Pig matcher exclusion),
+  `ASANA_ACCESS_TOKEN` remains set, and `asana_sync_enabled` is still true. Current PROD inventory is 119 Processing
   records with statuses normalized to 67 `complete`, 1 `in_process`, and 51
   `planned`: 52 active `planner_batch`, 50 active `asana_historical`, 16
   archived `import_exception`, and 1 active milestone. There are 117 Asana links,
@@ -197,8 +197,9 @@ Design/function invariants that govern cross-surface behavior live in
   SheetJS pinned to the patched 0.20.3 tarball, Node pinned to 22 for Netlify, and
   `npm audit` is 0 on the hardened lockfile.
 - Validation baseline at the shipped checkpoint: Prettier passes (the former
-  three-file drift was fixed by `c38a07c`), lint has 0 errors, 291 Vitest files /
-  7,070 tests pass, production build passes, migration `175`-`177` TEST apply
+  three-file drift was fixed by `c38a07c`), lint has 0 errors, 296 Vitest files /
+  7,156 tests pass (re-verified on `5354a79` at this wrap), production build
+  passes, migration `175`-`177` TEST apply
   proofs passed 32/32 checks, and the migrated-TEST Processing Playwright suite
   passed `processing_calendar` 11/11, `processing_planner_lifecycle` 3/3, and
   `processing_my_tasks` 4/4. The GitHub whole-app Playwright step previously
@@ -218,7 +219,11 @@ Design/function invariants that govern cross-surface behavior live in
   `C:/Users/Ronni/WCF-planner-codex-user-management` folder is empty but locked
   by Windows; delete it manually after the owning process/window releases it.
   Stashes dated 2026-07-10 for template-suite and customer-field drafts are
-  obsolete/superseded and must not be applied over current `main`.
+  obsolete/superseded and must not be applied over current `main`. Two more
+  stashes exist on `main`: a superseded parallel `PROJECT.md` wrap draft
+  (obsolete — the real wrap landed as this commit) and June-era untracked
+  daily-hub screenshot leftovers (harmless, recoverable). All four stashes are
+  prune candidates pending Ronnie's approval.
 
 ### Recent Shipped Checkpoints
 
@@ -1363,12 +1368,19 @@ Workflow/worktable entities:
   files are live and indexed; ordinary backfill has not run and needs a fresh dry
   plan because its 67-attachment inventory predates the media import.
 - Processing Calendar status vocabulary is exactly `Planned`, `In Process`,
-  and `Complete`. Use `src/lib/processingStatusDisplay.js` for display mapping:
-  `planned`/`scheduled` -> `Planned`, `active` -> `In Process`, and
-  `processed`/`complete` -> `Complete`. Do not migrate stored program values
-  just to change labels. Pig batch displays must use the pig-specific helper
-  because raw `active` can mean either a future zero-head placeholder
-  (`Planned`) or pigs already in the feeder workflow (`In Process`).
+  and `Complete`, rendered from the server-derived `effective_status`
+  (migration `176`): a record stays Planned until its processing date begins in
+  America/Chicago, reads In Process automatically from that date (or whenever
+  an actual Pig trip exists, regardless of date), and becomes Complete only
+  through the explicit Mark complete action once the server-side blockers pass
+  (date begun, Processor selected, live source Count > 0, every subtask
+  completed or removed). Stored statuses are normalized to the same three
+  values and the planner reconcile never copies raw native program statuses
+  into Processing. `src/lib/processingStatusDisplay.js` still maps raw/legacy
+  values for display, and Pig BATCH pages (not `/processing`) keep the
+  pig-specific helper because raw `active` can mean either a future zero-head
+  placeholder (`Planned`) or pigs already in the feeder workflow
+  (`In Process`).
 - Processing schedule rows sort by `processing_date` inside each program section
   regardless of status. Do not reintroduce an In Process / Planned / Complete
   display bucket; completed rows must stay in their natural schedule slot.
