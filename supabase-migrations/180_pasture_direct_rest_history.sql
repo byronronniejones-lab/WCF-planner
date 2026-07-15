@@ -222,4 +222,3 @@ $fn$;
 REVOKE ALL ON FUNCTION public._land_area_summary(text) FROM PUBLIC, anon, authenticated;
 
 NOTIFY pgrst, 'reload schema';
-
