@@ -74,6 +74,38 @@ async function openMap(page, {hideOverlays = true} = {}) {
 
 test.beforeAll(seed);
 
+test('a line has a wide invisible click target that opens its edit/delete record', async ({page}) => {
+  await openMap(page);
+
+  const hitTarget = page.locator(`path.pm-line-hit-${TRACK_ID}`).first();
+  await hitTarget.waitFor({state: 'attached', timeout: 25_000});
+  await expect(hitTarget).toHaveAttribute('stroke-width', '24');
+  await expect(hitTarget).toHaveAttribute('stroke-opacity', '0');
+
+  // Click eight screen pixels perpendicular to the visible centerline. That is
+  // deliberately outside the normal narrow stroke but inside the 24px hit stroke.
+  const point = await hitTarget.evaluate((path) => {
+    const length = path.getTotalLength();
+    const matrix = path.getScreenCTM();
+    const toScreen = (at) => {
+      const p = path.getPointAtLength(at);
+      return new DOMPoint(p.x, p.y).matrixTransform(matrix);
+    };
+    const before = toScreen(Math.max(0, length / 2 - 2));
+    const after = toScreen(Math.min(length, length / 2 + 2));
+    const middle = toScreen(length / 2);
+    const dx = after.x - before.x;
+    const dy = after.y - before.y;
+    const magnitude = Math.hypot(dx, dy) || 1;
+    return {x: middle.x - (dy / magnitude) * 8, y: middle.y + (dx / magnitude) * 8};
+  });
+  await page.mouse.click(point.x, point.y);
+
+  await expect(page.locator(`[data-pasture-area-modal="${TRACK_ID}"]`)).toBeVisible({timeout: 15_000});
+  await expect(page.locator(`[data-pasture-edit-line="${TRACK_ID}"]`)).toBeVisible();
+  await expect(page.locator(`[data-pasture-modal-section="danger"]`)).toBeVisible();
+});
+
 test('a saved Track / Line shows Edit line and enters line-aware edit mode', async ({page}) => {
   await openMap(page);
 
