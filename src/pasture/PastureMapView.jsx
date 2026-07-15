@@ -274,15 +274,15 @@ function restCopy(area) {
 
 function densityCopy(area) {
   const acres = Number(area && area.effective_acres);
-  if (
-    !area ||
-    !Array.isArray(area.current_occupants) ||
-    !area.current_occupants.length ||
-    !Number.isFinite(acres) ||
-    acres <= 0
-  )
-    return '';
-  const total = area.current_occupants.reduce((sum, o) => {
+  // current_occupants retains overlap rows as advisory map information. Only
+  // direct destination occupants physically live in this area and contribute
+  // to its head/ac density; counting an overlap made a resting neighbour read
+  // as if the full herd occupied it.
+  const directOccupants = Array.isArray(area && area.current_occupants)
+    ? area.current_occupants.filter((o) => o && o.impact_kind !== 'overlap')
+    : [];
+  if (!area || !directOccupants.length || !Number.isFinite(acres) || acres <= 0) return '';
+  const total = directOccupants.reduce((sum, o) => {
     const n = Number(o.animal_count);
     return Number.isFinite(n) && n > 0 ? sum + n : sum;
   }, 0);
@@ -1130,12 +1130,12 @@ export default function PastureMapView({Header, authState}) {
     for (const g of groups) m.set(`${g.animalType}::${g.groupKey}`, g);
     return m;
   }, [groups]);
-  // Reconciled occupancy for the Map canvas, the Occupied explanation, and the
-  // Area inspector. Source of truth = land_areas.current_occupants (the SAME
-  // move-ledger occupancy Farm status counts, including geometric overlap
-  // impacts), reconciled to the derived roster so identity/counts match the
-  // roster and a stale ledger group_key with no roster match renders in a neutral
-  // "needs roster reconciliation" state instead of as a fake group.
+  // Reconciled direct + advisory-overlap occupants for the Map canvas and Area
+  // inspector. Farm status itself comes from the summary's DIRECT destination
+  // count; overlap rows stay in this list only to explain boundary intersections.
+  // Reconcile both kinds to the roster so identity/counts match, while a stale
+  // ledger group_key with no roster match renders neutrally instead of as a fake
+  // group.
   const occupantsByArea = React.useMemo(() => {
     const out = {};
     for (const a of areas) {
@@ -2647,9 +2647,9 @@ export default function PastureMapView({Header, authState}) {
     );
   }
 
-  // Map "Occupied" explanation: enumerates every area Farm status counts as
-  // occupied (including overlap), with the reconciled occupant(s). Replaces the
-  // removed Land areas list and keeps Occupied=N understandable without it.
+  // Map "Occupied" explanation: enumerates every DIRECTLY occupied area with
+  // its reconciled occupants. Overlap-only neighbours stay out because they do
+  // not contribute to Farm status or interrupt their own rest clocks.
   function renderOccupiedExplain() {
     if (!occupiedExplain.length) return null;
     return (
@@ -3897,11 +3897,16 @@ export default function PastureMapView({Header, authState}) {
     if (!area) return null;
     const occ = (occupantsByArea[area.id] || []).find((o) => !o.overlap) || null;
     const openStay = recordStays.find((s) => s.stillHere) || null;
+    const latestStay = recordStays[0] || null;
+    // The direct stay timeline owns this copy. For a completed stay, "Last
+    // grazed" means the time the herd LEFT, not the time it entered and not a
+    // later overlap-derived departure from some other paddock.
+    const lastGrazedAt = latestStay ? latestStay.outAt || latestStay.inAt : area.last_touched_at;
     const statusLine =
       occ && openStay
         ? `In use by ${occ.name} since ${formatMoveTime(openStay.inAt)}`
-        : area.last_touched_at
-          ? `Last grazed ${formatMoveTime(area.last_touched_at)}`
+        : lastGrazedAt
+          ? `Last grazed ${formatMoveTime(lastGrazedAt)}`
           : 'No grazing history yet';
     // ONE card. The area's designation / acres / current state already live in the
     // Area-detail panel above, so the history card carries only what's unique to the
