@@ -68,7 +68,7 @@ Design/function invariants that govern cross-surface behavior live in
 ## Current State
 
 - Production deploy: Netlify auto-deploys from GitHub `main`. The CC#1-CC#8
-  regression/security/operations release is merged through `7fc73ba`; this
+  regression/security/operations release is merged through `189758c`; this
   documentation wrap follows it without changing runtime code. There are no
   open GitHub pull requests at this wrap.
 - Supabase live high-water: all repository migrations through `166` and
@@ -265,8 +265,9 @@ Most recent session: Processing live-read/quiet-save/layout and lock-order
 hardening, Pasture rest/history and map manage fixes, serialized user management,
 the immediate Home Weather shell, all measured Tasks/Pig/Weigh-in/Cattle/UI
 regression repairs, the shared TEST lease, filename-safe Processing attachments,
-password-reset takeover/enumeration hardening, and zero-cow cattle batch
-sequencing (`6d0c861` through `7fc73ba`). Migrations `178`-`182` are
+password-reset takeover/enumeration hardening, zero-cow cattle batch sequencing,
+and equipment meter-notice isolation across record navigation (`6d0c861` through
+`189758c`). Migrations `178`-`182` are
 PROD-applied; the live cattle schedule was reconciled so September is `C-26-05`
 and later populated months are sequential. The stale remote UI-cleanup branches
 were retired; their only unique WIP snapshot is preserved at tag
