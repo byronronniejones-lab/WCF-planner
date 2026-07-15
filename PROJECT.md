@@ -263,7 +263,10 @@ live state lives in Current State and Backend And Data State.
 Most recent session: Processing live-read/quiet-save/layout fixes and lifecycle
 lock hardening, Pasture rest/history and map click/manage fixes, serialized user
 management, and the immediate Home Weather shell (`6d0c861` through `6636d2b`).
-Migrations `178`-`181` are PROD-applied. The stale remote UI-cleanup branches
+Migrations `178`-`181` are PROD-applied. Migration `182` (zero-cow cattle
+forecast months do not consume batch sequence numbers; later populated months
+close the gap atomically) is TEST-applied and proven; PROD apply is pending the
+explicit migration-182 `psql` gate. The stale remote UI-cleanup branches
 were retired; their only unique WIP snapshot is preserved at tag
 `archive/ui-cleanup-wip-2026-06-17` (`f316ed8`).
 

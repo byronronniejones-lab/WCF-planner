@@ -5,6 +5,36 @@
 
 import {recordActivityEvent} from './activityApi.js';
 
+// Atomically remove zero-cow scheduled months and close later name gaps.
+// Migration 182 owns authorization, stale-plan validation, locking, audit,
+// collision-safe temporary renames, and the final deletes/renames.
+export async function reconcileCattleScheduledBatches(sb, {drop = [], rename = [], teamMember = null} = {}) {
+  const plan = [
+    ...drop.map((row) => ({
+      id: row.id,
+      expected_name: row.expectedName,
+      action: 'drop',
+      target_name: null,
+    })),
+    ...rename.map((row) => ({
+      id: row.id,
+      expected_name: row.expectedName,
+      action: 'rename',
+      target_name: row.targetName,
+    })),
+  ];
+  if (plan.length === 0) return {ok: true, dropped: 0, renamed: 0, unchanged: true};
+  const {data, error} = await sb.rpc('reconcile_cattle_scheduled_batches', {
+    p_plan: plan,
+    p_team_member: teamMember || null,
+  });
+  if (error) throw new Error('Could not reconcile planned cattle batches: ' + (error.message || String(error)));
+  if (!data || data.ok !== true) {
+    throw new Error('Could not reconcile planned cattle batches: ' + ((data && data.reason) || 'not_ok'));
+  }
+  return data;
+}
+
 export function recomputeBatchTotals(rows) {
   const live = rows.reduce((s, r) => s + (parseFloat(r.live_weight) || 0), 0);
   const hang = rows.reduce((s, r) => s + (parseFloat(r.hanging_weight) || 0), 0);

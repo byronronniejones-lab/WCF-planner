@@ -14,6 +14,7 @@ import {buildProcessingBatchExportColumns} from '../lib/operationalExportColumns
 import {processingStatusLabel} from '../lib/processingStatusDisplay.js';
 import {usePersistentViewState} from '../lib/usePersistentViewState.js';
 import {recordActivityEvent} from '../lib/activityApi.js';
+import {reconcileCattleScheduledBatches} from '../lib/cattleProcessingBatch.js';
 import {
   listSavedViews,
   createSavedView,
@@ -56,7 +57,7 @@ const CattleBatchesHub = ({
   loadUsers,
 }) => {
   const navigate = useNavigate();
-  const {useState, useEffect, useMemo} = React;
+  const {useState, useEffect, useMemo, useRef} = React;
   const role = authState && authState.role;
   const canEdit = role === 'admin' || role === 'management';
 
@@ -69,6 +70,8 @@ const CattleBatchesHub = ({
   const [hidden, setHidden] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [forecastInputsReliable, setForecastInputsReliable] = useState(false);
+  const reconcileAttemptRef = useRef('');
 
   const [showPlanned, setShowPlanned] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
@@ -93,6 +96,7 @@ const CattleBatchesHub = ({
   async function loadAll() {
     setLoading(true);
     setLoadError(null);
+    setForecastInputsReliable(false);
     try {
       const [bR, cR, wAll, calR] = await Promise.all([
         sb.from('cattle_processing_batches').select('*').order('actual_process_date', {ascending: false}),
@@ -128,6 +132,7 @@ const CattleBatchesHub = ({
       setForecastSettings(settings);
       setHeiferIncludes(inc);
       setHidden(hid);
+      setForecastInputsReliable(forecastSidecarErrors.length === 0);
       if (forecastSidecarErrors.length > 0) {
         setNotice(
           (prev) =>
@@ -149,6 +154,7 @@ const CattleBatchesHub = ({
         kind: 'error',
         message: 'Could not load cattle processing batches. Please refresh the page. (' + (e.message || e) + ')',
       });
+      setForecastInputsReliable(false);
     } finally {
       setLoading(false);
     }
@@ -193,6 +199,41 @@ const CattleBatchesHub = ({
       todayMs: Date.now(),
     });
   }, [cattle, weighIns, forecastSettings, heiferIncludes, hidden, batches]);
+
+  // Persist the forecast's non-empty-month sequence. This effect is deliberately
+  // fail-closed: it runs only for management/admin after every forecast input
+  // loaded successfully, and the SECDEF RPC revalidates the exact stored names
+  // under row locks before changing anything. Empty scheduled months are removed;
+  // later scheduled rows close the gap atomically (for example September becomes
+  // C-26-05 when August has zero cattle).
+  useEffect(() => {
+    const plan = forecast && forecast.scheduledReconciliation;
+    if (!canEdit || !forecastInputsReliable || !plan || plan.safe !== true) return;
+    if ((plan.drop || []).length === 0 && (plan.rename || []).length === 0) return;
+    const signature = JSON.stringify({drop: plan.drop, rename: plan.rename});
+    if (reconcileAttemptRef.current === signature) return;
+    reconcileAttemptRef.current = signature;
+    let cancelled = false;
+    (async () => {
+      try {
+        await reconcileCattleScheduledBatches(sb, {
+          drop: plan.drop,
+          rename: plan.rename,
+          teamMember: authState && authState.name ? authState.name : null,
+        });
+        if (!cancelled) await loadAll();
+      } catch (e) {
+        if (!cancelled) {
+          setNotice({kind: 'error', message: e.message || String(e)});
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // loadAll is intentionally excluded: its identity changes each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sb, canEdit, forecastInputsReliable, forecast, authState]);
 
   const virtualPlanned = useMemo(() => {
     if (!forecast) return [];

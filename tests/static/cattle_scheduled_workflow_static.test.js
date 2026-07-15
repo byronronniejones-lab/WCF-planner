@@ -55,10 +55,10 @@ describe('cattleForecast.buildForecast — scheduled split', () => {
     expect(forecastSrc).toMatch(/bucket\.scheduledBatches\.push\(sb\)/);
   });
 
-  it('virtual batches are suppressed for months that already have a scheduled row', () => {
-    expect(forecastSrc).toMatch(
-      /virtualMonths\s*=\s*monthBuckets\.filter\([\s\S]*?scheduledBatches \|\| \[\]\)\.length === 0/,
-    );
+  it('one sequential pipeline includes only non-empty months', () => {
+    expect(forecastSrc).toContain('buildSequentialPlannedBatches');
+    expect(forecastSrc).toMatch(/if \(!bucket \|\| \(bucket\.animalIds \|\| \[\]\)\.length === 0\) continue;/);
+    expect(forecastSrc).toContain('scheduledReconciliation: plannedPipeline.reconciliation');
   });
 
   it('buildVirtualBatchNames assigns chronologically — scheduled rows reserve slots but never push earlier virtuals', () => {
@@ -197,7 +197,7 @@ describe('CattleSendToProcessorModal — promote-or-create', () => {
     expect(sendModalSrc).toMatch(/promoteScheduledBatch/);
     expect(sendModalSrc).toMatch(/if \(next\.source === 'scheduled' && next\.scheduledId\)/);
     expect(sendModalSrc).toMatch(
-      /batch = await promoteScheduledBatch\(sb, scheduledRow, \{processingDate: sessionDate\}\)/,
+      /batch = await promoteScheduledBatch\(sb, \{\.\.\.scheduledRow, name: next\.name\}, \{processingDate: sessionDate\}\)/,
     );
   });
 
@@ -223,19 +223,10 @@ describe('CattleSendToProcessorModal — promote-or-create', () => {
     expect(sendModalSrc).not.toMatch(/data-send-modal-blocked/);
   });
 
-  it('empty_next_batch is a warning when the next batch is scheduled', () => {
-    // Codex 2026-05-12 round 2: a scheduled row with zero projected
-    // cattle still allows Send-to-Processor through. The actual sent
-    // cattle override projection.
-    expect(sendModalSrc).toMatch(/isScheduledNext\s*=\s*hasNextBatch && next\.source === 'scheduled'/);
-    expect(sendModalSrc).toMatch(
-      /isEmptyScheduled\s*=\s*isScheduledNext && !gate\.ok && gate\.reason === 'empty_next_batch'/,
-    );
-    // hardBlocked excludes the empty-scheduled case.
-    expect(sendModalSrc).toMatch(/gate\.reason !== 'tags_outside_next_batch'[\s\S]*?!isEmptyScheduled/);
-    // Warning copy references the scheduled-empty case.
-    expect(sendModalSrc).toMatch(/no projected cattle for this scheduled batch/);
-    expect(sendModalSrc).toMatch(/No cattle are currently projected for this scheduled batch/);
+  it('zero-cow scheduled months cannot be promoted and are reconciled before attach', () => {
+    expect(sendModalSrc).not.toMatch(/isEmptyScheduled/);
+    expect(sendModalSrc).toContain('reconcileCattleScheduledBatches');
+    expect(sendModalSrc).toMatch(/await reconcileCattleScheduledBatches\([\s\S]*?await attachCattleToProcessingBatch/);
   });
 });
 
