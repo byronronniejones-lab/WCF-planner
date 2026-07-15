@@ -619,7 +619,7 @@ describe('Merged Map: hover readout + click-to-open Area modal', () => {
     // The readout is still edge-aware: clamped inside the map container so it cannot
     // clip off-screen, and wider than the old narrow tooltip.
     expect(canvasSrc).toContain('function clampTooltipWithin');
-    expect(canvasSrc).toContain("lyr.on('tooltipopen', clampTip)");
+    expect(canvasSrc).toContain("interactionLayer.on('tooltipopen', clampTip)");
     expect(pastureCss).toMatch(/\.pm-area-hover-tip \{[\s\S]*?max-width: min\(300px/);
   });
 
@@ -2256,6 +2256,13 @@ describe('Pasture Map: per-entry grazing delete + parent-from-child coloring (mi
     expect(viewSrc).toContain('pasture: true, paddock: true, temp: true, line: true');
     expect(canvasSrc).toContain("{key: 'line', label: 'Lines'}");
     expect(canvasSrc).toContain('boundaryFilter.line !== false');
+    // The visible dashed stroke is too narrow/gappy to be a reliable click target.
+    // A transparent 24px interaction stroke owns selection and opens the same
+    // editable/deletable area record without changing the line's appearance.
+    expect(canvasSrc).toContain('pm-line-hit-target');
+    expect(canvasSrc).toContain('weight: 24');
+    expect(canvasSrc).toContain("interactionLayer.on('click'");
+    expect(canvasSrc).toContain('if (interactionLayer !== lyr) interactionLayer.addTo(group)');
     // Lines are findable + editable + deletable from the Reports Tracks / Lines list.
     expect(viewSrc).toContain('data-pasture-track-line-edit');
     expect(viewSrc).toContain('data-pasture-track-line-delete');

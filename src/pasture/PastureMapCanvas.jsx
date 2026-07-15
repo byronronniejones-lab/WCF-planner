@@ -653,6 +653,28 @@ export default function PastureMapCanvas({
         {type: 'Feature', geometry: g.geometry, properties: {}},
         {style: g.kind === 'line' ? {...style, fill: false} : style},
       );
+      // A dashed 1-5px SVG stroke is a poor mouse/touch target: only its painted
+      // pixels receive pointer events, so clicking beside a dash (or between two
+      // dashes) silently hits the map instead. Keep the visible line unchanged and
+      // place a transparent, finger-sized interactive stroke over it. This is the
+      // selection surface that opens the line record for edit/delete.
+      const interactionLayer =
+        g.kind === 'line'
+          ? L.geoJSON(
+              {type: 'Feature', geometry: g.geometry, properties: {}},
+              {
+                interactive: true,
+                bubblingMouseEvents: false,
+                style: {
+                  color: '#000000',
+                  opacity: 0,
+                  weight: 24,
+                  fill: false,
+                  className: `pm-line-hit-target pm-line-hit-${a.id}`,
+                },
+              },
+            )
+          : lyr;
       // Clean default: do NOT permanently label every area. Names show on hover;
       // occupied areas carry their own always-on group/count marker (below). The
       // currently SELECTED area shows its label permanently.
@@ -662,23 +684,23 @@ export default function PastureMapCanvas({
         // Read-only Map readout. Wider than the default tooltip (see CSS) and made
         // edge-aware: clampTooltipWithin pins it inside the map container on open and
         // on every sticky move, so it provably cannot render off-screen at the edges.
-        lyr.bindTooltip(areaHoverTip(a), {
+        interactionLayer.bindTooltip(areaHoverTip(a), {
           direction: 'top',
           className: 'pm-area-hover-tip',
           sticky: true,
           opacity: 1,
         });
-        const clampTip = () => clampTooltipWithin(lyr);
-        lyr.on('tooltipopen', clampTip);
-        lyr.on('mousemove', clampTip);
+        const clampTip = () => clampTooltipWithin(interactionLayer);
+        interactionLayer.on('tooltipopen', clampTip);
+        interactionLayer.on('mousemove', clampTip);
       } else {
-        lyr.bindTooltip(labelFor(a) + (g.kind === 'line' ? ' (outline)' : ''), {
+        interactionLayer.bindTooltip(labelFor(a) + (g.kind === 'line' ? ' (outline)' : ''), {
           direction: 'center',
           className: 'pm-map-label',
           permanent: a.id === selectedId,
         });
       }
-      lyr.on('click', () => {
+      interactionLayer.on('click', () => {
         // Merged Map: clicking/tapping an area selects it and opens the working
         // inspector. Desktop hover still shows the read-only readout; the click is the
         // way into the inspector. Suppressed only while a draw/edit/measure/track tool
@@ -689,6 +711,7 @@ export default function PastureMapCanvas({
           cbRef.current.onSelect(a.id);
       });
       lyr.addTo(group);
+      if (interactionLayer !== lyr) interactionLayer.addTo(group);
       let inner = lyr;
       lyr.eachLayer((sub) => {
         inner = sub;
