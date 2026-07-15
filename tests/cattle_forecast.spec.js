@@ -466,36 +466,43 @@ test('forecast → send: outside-projection tags warn but do not block; sent cow
 });
 
 // --------------------------------------------------------------------------
-// Test 4b — Scheduled row promotes to active instead of inserting a new row.
+// Test 4b — Zero-cow month drops; the next populated scheduled row closes
+// the sequence gap and promotes instead of inserting a new row.
 // --------------------------------------------------------------------------
-// Codex 2026-05-12 (round 3): the risky path is "scheduled row promotes
-// instead of inserting fresh." Pre-seed a scheduled row, send a subset
-// from weigh-ins, confirm the same DB id flips to status='active',
-// cows_detail picks up only the actually-sent entries, no second row
-// with the same name is inserted, and an unflagged projected cow stays
-// in her original herd.
+// Pre-seed a zero-cow May reservation as C-26-01 and the populated current
+// forecast month as C-26-02. The modal must derive C-26-01 for the populated
+// month, then the reconciliation RPC drops May, renames the populated row,
+// and promotes that SAME id. No zero-cow month may keep a name/number.
 test('send-to-processor: scheduled row promotes to active; same id; only sent cattle move', async ({
   page,
   cattleForecastSendFlowScenario,
   supabaseAdmin,
 }) => {
   await ensureCleanForecastSendFlowSeed(supabaseAdmin);
-  // Pre-seed: scheduled row named C-26-01 (first batch of 2026 since the
-  // seed has no real batches) with planned_process_date matching the
-  // session date so buildForecast surfaces it as the next-up batch via
-  // source='scheduled'. cows_detail starts empty — promotion attaches.
+  const zeroMonthId = 'cpb-test-zero-month-01';
   const scheduledId = 'cpb-test-scheduled-01';
   const scheduledName = 'C-26-01';
-  const plannedDate = '2026-05-04';
+  const storedScheduledName = 'C-26-02';
+  const plannedDate = '2026-07-15';
   await supabaseAdmin.from('cattle_processing_batches').upsert(
-    {
-      id: scheduledId,
-      name: scheduledName,
-      planned_process_date: plannedDate,
-      status: 'scheduled',
-      cows_detail: [],
-      documents: [],
-    },
+    [
+      {
+        id: zeroMonthId,
+        name: scheduledName,
+        planned_process_date: '2026-05-04',
+        status: 'scheduled',
+        cows_detail: [],
+        documents: [],
+      },
+      {
+        id: scheduledId,
+        name: storedScheduledName,
+        planned_process_date: plannedDate,
+        status: 'scheduled',
+        cows_detail: [],
+        documents: [],
+      },
+    ],
     {onConflict: 'id'},
   );
 
@@ -506,9 +513,7 @@ test('send-to-processor: scheduled row promotes to active; same id; only sent ca
   await openSeededCattleDraftSession(page);
   await page.getByRole('button', {name: /Complete Session/}).click();
 
-  // Modal renders with the scheduled batch name. The summary line on a
-  // promote path reads "promote scheduled batch" instead of "create
-  // active batch".
+  // The populated July row derives the number May must release.
   const modal = page.locator('[data-cattle-send-modal]');
   await expect(modal).toBeVisible({timeout: 5_000});
   await expect(modal).toContainText(scheduledName);
@@ -517,8 +522,11 @@ test('send-to-processor: scheduled row promotes to active; same id; only sent ca
   await page.locator('[data-send-modal-confirm]').click();
   await expect(modal).toBeHidden({timeout: 10_000});
 
-  // No duplicate row with the same name was inserted — the scheduled id
-  // is unique. Only one row exists, and it's now active.
+  // May's zero-cow row is gone. No duplicate was inserted: the populated
+  // scheduled id was renamed and promoted in place.
+  const zeroMonth = await supabaseAdmin.from('cattle_processing_batches').select('id').eq('id', zeroMonthId);
+  expect(zeroMonth.error).toBeNull();
+  expect(zeroMonth.data).toHaveLength(0);
   const r = await supabaseAdmin
     .from('cattle_processing_batches')
     .select('id, status, name, actual_process_date, planned_process_date, cows_detail')
@@ -528,7 +536,7 @@ test('send-to-processor: scheduled row promotes to active; same id; only sent ca
   const batch = r.data[0];
   expect(batch.id).toBe(scheduledId);
   expect(batch.status).toBe('active');
-  expect(batch.actual_process_date).toBe(plannedDate);
+  expect(batch.actual_process_date).toBe('2026-05-04');
   expect(batch.planned_process_date).toBe(plannedDate);
 
   // cows_detail contains the actually-sent cattle (F1 + F-HIDE — F-HIDE

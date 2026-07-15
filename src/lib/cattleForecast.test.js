@@ -21,6 +21,7 @@ import {
   highestStoredNumberForYear,
   nextRealBatchName,
   buildVirtualBatchNames,
+  buildSequentialPlannedBatches,
   validateRealBatchRename,
   checkProcessorGate,
   batchHasAllHangingWeights,
@@ -578,6 +579,57 @@ describe('buildVirtualBatchNames', () => {
       virtualMonths: buckets(['2026-06', '2026-07', '2026-09']),
     });
     expect(v.map((x) => x.name)).toEqual(['C-26-03', 'C-26-05', 'C-26-06']);
+  });
+});
+
+describe('buildSequentialPlannedBatches — zero-cow months do not consume numbers', () => {
+  const bucket = (monthKey, animalIds) => ({
+    monthKey,
+    label: monthKey,
+    year: Number(monthKey.slice(0, 4)),
+    count: animalIds.length,
+    animalIds,
+    projectedTotalLbs: animalIds.length * 1200,
+  });
+
+  it('drops empty August and makes September the next sequential batch', () => {
+    const result = buildSequentialPlannedBatches({
+      realBatches: [{name: 'C-26-04', status: 'complete'}],
+      scheduledBatches: [
+        {id: 'aug', name: 'C-26-05', status: 'scheduled', planned_process_date: '2026-08-07'},
+        {id: 'sep', name: 'C-26-06', status: 'scheduled', planned_process_date: '2026-09-11'},
+        {id: 'oct', name: 'C-26-07', status: 'scheduled', planned_process_date: '2026-10-09'},
+      ],
+      monthBuckets: [
+        bucket('2026-08', []),
+        bucket('2026-09', ['c1', 'c2']),
+        bucket('2026-10', ['c3']),
+        bucket('2026-11', ['c4', 'c5']),
+      ],
+    });
+
+    expect(result.scheduledBatches.map((b) => [b.id, b.name])).toEqual([
+      ['sep', 'C-26-05'],
+      ['oct', 'C-26-06'],
+    ]);
+    expect(result.virtualBatches.map((b) => [b.monthKey, b.name])).toEqual([['2026-11', 'C-26-07']]);
+    expect(result.reconciliation.drop).toEqual([{id: 'aug', expectedName: 'C-26-05', monthKey: '2026-08'}]);
+    expect(result.reconciliation.rename).toEqual([
+      {id: 'sep', expectedName: 'C-26-06', targetName: 'C-26-05', monthKey: '2026-09'},
+      {id: 'oct', expectedName: 'C-26-07', targetName: 'C-26-06', monthKey: '2026-10'},
+    ]);
+  });
+
+  it('fails closed instead of mutating duplicate scheduled rows in one month', () => {
+    const result = buildSequentialPlannedBatches({
+      scheduledBatches: [
+        {id: 'a', name: 'C-26-01', status: 'scheduled', planned_process_date: '2026-09-01'},
+        {id: 'b', name: 'C-26-02', status: 'scheduled', planned_process_date: '2026-09-20'},
+      ],
+      monthBuckets: [bucket('2026-09', ['c1'])],
+    });
+    expect(result.reconciliation.safe).toBe(false);
+    expect(result.reconciliation.reason).toBe('duplicate_scheduled_month');
   });
 });
 

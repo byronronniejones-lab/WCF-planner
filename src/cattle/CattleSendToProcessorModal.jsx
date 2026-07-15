@@ -19,7 +19,12 @@
 //     DB status). actual_process_date = weigh_in_sessions.date (NOT today).
 // ---------------------------------------------------------------------------
 import React from 'react';
-import {createProcessingBatch, attachEntriesToBatch, promoteScheduledBatch} from '../lib/cattleProcessingBatch.js';
+import {
+  createProcessingBatch,
+  attachEntriesToBatch,
+  promoteScheduledBatch,
+  reconcileCattleScheduledBatches,
+} from '../lib/cattleProcessingBatch.js';
 import {attachCattleToProcessingBatch} from '../lib/processingAttachApi.js';
 import {buildForecast, checkProcessorGate} from '../lib/cattleForecast.js';
 import {loadForecastSettings, loadHeiferIncludes, loadHidden} from '../lib/cattleForecastApi.js';
@@ -104,23 +109,12 @@ export default function CattleSendToProcessorModal({
   // intentionally send a cow not in the projection or skip a projected
   // cow; only the actually-sent entries move to processed via
   // attachEntriesToBatch. Hard-block is reserved for true no-batch cases.
-  //
-  // Codex 2026-05-12 (round 2): when next.source === 'scheduled', a
-  // forecast that has zero projected animals for the scheduled month
-  // is ALSO a warning, not a block. The scheduled row is a real
-  // processor booking — actual sent cattle still override projection.
-  // For a virtual next batch, empty_next_batch stays a hard block
-  // (there's no row to attach to).
+  // Zero-cow months are removed from the planned pipeline before this gate;
+  // only a non-empty scheduled or virtual cohort can be next.
   const hasNextBatch = !!next;
-  const isScheduledNext = hasNextBatch && next.source === 'scheduled';
-  const isEmptyScheduled = isScheduledNext && !gate.ok && gate.reason === 'empty_next_batch';
   const outsideTagsWarning =
-    hasNextBatch && !gate.ok && gate.reason === 'tags_outside_next_batch'
-      ? gate.blockedTags
-      : isEmptyScheduled
-        ? selectedTags.slice()
-        : [];
-  const hardBlocked = !hasNextBatch || (!gate.ok && gate.reason !== 'tags_outside_next_batch' && !isEmptyScheduled);
+    hasNextBatch && !gate.ok && gate.reason === 'tags_outside_next_batch' ? gate.blockedTags : [];
+  const hardBlocked = !hasNextBatch || (!gate.ok && gate.reason !== 'tags_outside_next_batch');
 
   // Surface the outside-projection tags in real-time (no Submit needed).
   React.useEffect(() => {
@@ -145,6 +139,16 @@ export default function CattleSendToProcessorModal({
     }
     setBusy(true);
     try {
+      const sequencePlan = forecast?.scheduledReconciliation;
+      if (!sequencePlan || sequencePlan.safe !== true) {
+        throw new Error('Planned batch sequence needs review before cattle can be sent.');
+      }
+      await reconcileCattleScheduledBatches(sb, {
+        drop: sequencePlan.drop,
+        rename: sequencePlan.rename,
+        teamMember,
+      });
+
       // Promote-or-create: when nextProcessorBatch is sourced from a
       // scheduled DB row, UPDATE that row to active and inherit its id
       // + name + planned_process_date. The authenticated record-page path
@@ -178,7 +182,7 @@ export default function CattleSendToProcessorModal({
         if (!scheduledRow) {
           throw new Error('Scheduled batch ' + next.scheduledId + ' missing from forecast.');
         }
-        batch = await promoteScheduledBatch(sb, scheduledRow, {processingDate: sessionDate});
+        batch = await promoteScheduledBatch(sb, {...scheduledRow, name: next.name}, {processingDate: sessionDate});
       } else {
         batch = await createProcessingBatch(sb, {
           name: next.name,
@@ -292,7 +296,7 @@ export default function CattleSendToProcessorModal({
         {!loading && gateBlocked.length > 0 && (
           <div
             data-send-modal-outside-tags
-            data-send-modal-outside-reason={isEmptyScheduled ? 'empty_scheduled' : 'outside_projection'}
+            data-send-modal-outside-reason="outside_projection"
             style={{
               padding: '10px 12px',
               borderRadius: 10,
@@ -303,11 +307,7 @@ export default function CattleSendToProcessorModal({
               marginBottom: 12,
             }}
           >
-            <div style={{fontWeight: 700, marginBottom: 4}}>
-              {isEmptyScheduled
-                ? 'Heads up: no projected cattle for this scheduled batch'
-                : 'Heads up: tags outside the projected cohort'}
-            </div>
+            <div style={{fontWeight: 700, marginBottom: 4}}>Heads up: tags outside the projected cohort</div>
             <div style={{display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6}}>
               {gateBlocked.map((t) => (
                 <span
@@ -327,9 +327,8 @@ export default function CattleSendToProcessorModal({
               ))}
             </div>
             <div style={{fontSize: 11, color: 'var(--warn-ink)'}}>
-              {isEmptyScheduled
-                ? 'No cattle are currently projected for this scheduled batch. The actual cattle you send override the projection — only the selected entries move to processed.'
-                : "These tags aren't in the next batch's projected cohort. The actual cattle you send override the projection — only the selected entries move to processed. Confirm if you intend to send them anyway."}
+              These tags aren&apos;t in the next batch&apos;s projected cohort. The actual cattle you send override the
+              projection — only the selected entries move to processed. Confirm if you intend to send them anyway.
             </div>
           </div>
         )}

@@ -770,49 +770,19 @@ export function buildForecast({
     watchlistCount: watchlist.length,
   };
 
-  // ── virtual batches (one per non-empty month WITHOUT a scheduled row) ───
-  // A scheduled batch already reserves the slot for its month, so virtual
-  // batch generation skips those buckets. Sequence numbering still counts
-  // scheduled names so the next virtual batch picks the right next-up
-  // number for the year.
-  const virtualMonths = monthBuckets.filter((b) => b.count > 0 && (b.scheduledBatches || []).length === 0);
-  const virtualBatches = buildVirtualBatchNames({
+  // ── planned pipeline: ONLY non-empty months consume a sequence ───
+  // A processor booking is still a forecast-backed month, not a permanent
+  // claim on a number. If its cohort later falls to zero, that month drops
+  // out and every later non-empty month closes the gap. Stored active/complete
+  // batches remain immutable history and anchor the per-year cursor floor.
+  const plannedPipeline = buildSequentialPlannedBatches({
     realBatches,
     scheduledBatches,
-    virtualMonths,
-    todayMs,
-    cattle,
+    monthBuckets,
     animalRowsById: new Map(animalRows.map((r) => [r.cow.id, r])),
   });
-
-  // Enrich scheduled batches with the matching month bucket's cohort so
-  // the Scheduled section can render a live count of forecast-eligible
-  // cattle for each scheduled row. animalIds are recomputed every build
-  // so cattle that herd-moved or got hidden naturally drop out.
-  const scheduledBatchesEnriched = (scheduledBatches || [])
-    .filter((sb) => sb && (sb.status === 'scheduled' || sb.status == null))
-    .map((sb) => {
-      const dt = sb.planned_process_date;
-      const mk = dt ? String(dt).slice(0, 7) : null;
-      const bucket = mk ? bucketByKey.get(mk) : null;
-      const animalIds = bucket ? bucket.animalIds.slice() : [];
-      let projectedTotalLbs = 0;
-      const rowsById = new Map(animalRows.map((r) => [r.cow.id, r]));
-      for (const cid of animalIds) {
-        const r = rowsById.get(cid);
-        if (r && r.projectedWeightAtReady != null) projectedTotalLbs += r.projectedWeightAtReady;
-      }
-      return {
-        id: sb.id,
-        name: sb.name,
-        planned_process_date: sb.planned_process_date,
-        status: sb.status || 'scheduled',
-        monthKey: mk,
-        label: mk ? monthLabel(mk) : null,
-        animalIds,
-        projectedTotalLbs,
-      };
-    });
+  const virtualBatches = plannedPipeline.virtualBatches;
+  const scheduledBatchesEnriched = plannedPipeline.scheduledBatches;
 
   // ── next processor batch (gate for Send-to-Processor) ─────────────────────
   // Scheduled rows count as next-up cohorts — if a scheduled batch is
@@ -867,7 +837,110 @@ export function buildForecast({
     watchlist,
     virtualBatches,
     scheduledBatches: scheduledBatchesEnriched,
+    scheduledReconciliation: plannedPipeline.reconciliation,
     nextProcessorBatch,
+  };
+}
+
+// Build one chronological planned pipeline from forecast months. A month with
+// zero cattle is not a batch and therefore never consumes a C-YY-NN number.
+// Scheduled rows keep their stable database id/date, but their name is derived
+// from the same non-empty sequence as virtual rows. `reconciliation` is a
+// fail-closed server plan for deleting empty bookings and renaming later ones.
+export function buildSequentialPlannedBatches({
+  realBatches = [],
+  scheduledBatches = [],
+  monthBuckets = [],
+  animalRowsById,
+}) {
+  const bucketByKey = new Map((monthBuckets || []).map((b) => [b.monthKey, b]));
+  const scheduledByMonth = new Map();
+  const drop = [];
+  const preservedOutsideHorizon = [];
+
+  for (const sb of scheduledBatches || []) {
+    if (!sb || (sb.status && sb.status !== 'scheduled')) continue;
+    const monthKey = sb.planned_process_date ? String(sb.planned_process_date).slice(0, 7) : null;
+    const bucket = monthKey ? bucketByKey.get(monthKey) : null;
+    if (!bucket) {
+      preservedOutsideHorizon.push(sb.id);
+      continue;
+    }
+    if ((bucket.animalIds || []).length === 0) {
+      drop.push({id: sb.id, expectedName: sb.name, monthKey});
+      continue;
+    }
+    if (!scheduledByMonth.has(monthKey)) scheduledByMonth.set(monthKey, []);
+    scheduledByMonth.get(monthKey).push(sb);
+  }
+
+  const duplicateMonths = [...scheduledByMonth.entries()]
+    .filter(([, rows]) => rows.length !== 1)
+    .map(([monthKey, rows]) => ({monthKey, ids: rows.map((r) => r.id)}));
+  if (duplicateMonths.length > 0) {
+    return {
+      virtualBatches: [],
+      scheduledBatches: [],
+      reconciliation: {safe: false, reason: 'duplicate_scheduled_month', duplicateMonths, drop: [], rename: []},
+    };
+  }
+
+  const cursorByYear = new Map();
+  const nextName = (year) => {
+    const yy = year % 100;
+    let seq = cursorByYear.get(yy);
+    if (seq == null) seq = highestStoredNumberForYear(realBatches, yy) + 1;
+    cursorByYear.set(yy, seq + 1);
+    return formatBatchName(yy, seq);
+  };
+
+  const virtualBatches = [];
+  const scheduledOut = [];
+  const rename = [];
+  for (const bucket of monthBuckets || []) {
+    if (!bucket || (bucket.animalIds || []).length === 0) continue;
+    const parsed = parseMonthKey(bucket.monthKey);
+    if (!parsed) continue;
+    const name = nextName(parsed.year);
+    let projectedTotalLbs = 0;
+    if (animalRowsById) {
+      for (const cid of bucket.animalIds) {
+        const row = animalRowsById.get(cid);
+        if (row && row.projectedWeightAtReady != null) projectedTotalLbs += row.projectedWeightAtReady;
+      }
+    } else {
+      projectedTotalLbs = bucket.projectedTotalLbs || 0;
+    }
+    const scheduled = (scheduledByMonth.get(bucket.monthKey) || [])[0] || null;
+    if (scheduled) {
+      scheduledOut.push({
+        ...scheduled,
+        storedName: scheduled.name,
+        name,
+        status: scheduled.status || 'scheduled',
+        monthKey: bucket.monthKey,
+        label: bucket.label || monthLabel(bucket.monthKey),
+        animalIds: bucket.animalIds.slice(),
+        projectedTotalLbs,
+      });
+      if (scheduled.name !== name) {
+        rename.push({id: scheduled.id, expectedName: scheduled.name, targetName: name, monthKey: bucket.monthKey});
+      }
+    } else {
+      virtualBatches.push({
+        name,
+        monthKey: bucket.monthKey,
+        label: bucket.label || monthLabel(bucket.monthKey),
+        animalIds: bucket.animalIds.slice(),
+        projectedTotalLbs,
+      });
+    }
+  }
+
+  return {
+    virtualBatches,
+    scheduledBatches: scheduledOut,
+    reconciliation: {safe: true, drop, rename, preservedOutsideHorizon},
   };
 }
 
