@@ -1,6 +1,6 @@
 // ============================================================================
-// REQUIRES supabase-migrations 175-177 applied to TEST — run only after the
-// gated apply; run this file ALONE.
+// REQUIRES supabase-migrations 175-177 (and 185 for the drag-and-drop/delete
+// test) applied to TEST — run only after the gated applies; run this file ALONE.
 // ============================================================================
 // Processing Calendar — browser TEST proof (planner-integration lane).
 //
@@ -36,6 +36,7 @@
 //      reactivate, held-save queueing, surface-switch + close flush, failed
 //      exit flush keeps the modal open, dropdowns update without reload);
 //   8. attachments upload + archive hides the row from the schedule;
+//      8b. drag-and-drop upload + ADMIN two-phase delete (REQUIRES mig 185);
 //   9. apply-template preview → confirm flow (additive, then up-to-date).
 //
 // Shared TEST DB: run this file ALONE (resetDb truncates shared tables), and
@@ -1295,6 +1296,84 @@ test.describe('Processing Calendar', () => {
       await supabaseAdmin.storage
         .from('processing-attachments')
         .remove(objs.map((o) => `native/ptest-hist-1/${o.name}`));
+    }
+  });
+
+  // REQUIRES supabase-migrations 185 applied to TEST (two-phase delete RPCs +
+  // admin DELETE policy). Drag-and-drop shares the picker's upload path; the
+  // admin per-tile delete tombstones the row, removes the object, and the
+  // tombstone leaves the drawer list.
+  test('attachment drag-and-drop upload + admin two-phase delete (mig 185)', async ({page, supabaseAdmin, resetDb}) => {
+    await resetDb();
+    const adminId = await adminProfileId(supabaseAdmin);
+    const REC = 'ptest-hist-del';
+    await seedHistoricalRecord(supabaseAdmin, adminId, {
+      id: REC,
+      program: 'broiler',
+      title: 'TEST Attachment Delete',
+      date: '2026-03-03',
+      extra: {status: 'complete', completed_at: '2026-03-03T12:00:00Z'},
+    });
+    await stampFreshnessNow(supabaseAdmin);
+    await gotoProcessingExpecting(page, `[data-processing-row="${REC}"]`);
+    await page.locator(`[data-processing-row="${REC}"]`).click();
+    const drawer = page.locator(`[data-processing-drawer="${REC}"]`);
+    await expect(drawer).toBeVisible();
+
+    try {
+      // Multi-file DRAG-AND-DROP onto the attachments drop zone — the same
+      // sequential native-upload path as the picker.
+      const dropzone = drawer.locator('[data-processing-attachment-dropzone]');
+      await expect(dropzone).toBeVisible();
+      const dataTransfer = await page.evaluateHandle(() => {
+        const dt = new DataTransfer();
+        dt.items.add(new File(['drop bytes one'], 'drop-one.txt', {type: 'text/plain'}));
+        dt.items.add(new File(['drop bytes two'], 'drop-two.txt', {type: 'text/plain'}));
+        return dt;
+      });
+      await dropzone.dispatchEvent('drop', {dataTransfer});
+      await expect(drawer.locator('[data-processing-attachment]')).toHaveCount(2);
+      await expect(drawer.getByText('drop-one.txt')).toBeVisible();
+      await expect(drawer.getByText('drop-two.txt')).toBeVisible();
+      const {data: preRows} = await supabaseAdmin
+        .from('processing_attachments')
+        .select('id, filename, storage_path, deleted_at')
+        .eq('record_id', REC);
+      expect(preRows).toHaveLength(2);
+      expect(preRows.every((r) => r.deleted_at === null)).toBe(true);
+
+      // ADMIN delete: separate per-tile control → filename-specific confirm →
+      // two-phase RPC + policy-gated storage removal. Only the tombstone
+      // leaves the list; the other attachment is untouched.
+      const target = preRows.find((r) => r.filename === 'drop-one.txt');
+      const tile = drawer.locator(`[data-processing-attachment="${target.id}"]`);
+      await tile.locator('[data-processing-attachment-delete]').click();
+      await expect(tile.getByText('Delete drop-one.txt?')).toBeVisible();
+      await tile.locator('[data-processing-attachment-delete-confirm]').click();
+      await expect(drawer.locator('[data-processing-attachment]')).toHaveCount(1);
+      await expect(drawer.getByText('drop-one.txt')).toHaveCount(0);
+      await expect(drawer.getByText('drop-two.txt')).toBeVisible();
+
+      // DB truth: tombstone kept (deleted_at stamped), object gone, survivor
+      // object intact.
+      const {data: postRows} = await supabaseAdmin
+        .from('processing_attachments')
+        .select('id, filename, deleted_at')
+        .eq('record_id', REC);
+      expect(postRows).toHaveLength(2);
+      expect(postRows.find((r) => r.filename === 'drop-one.txt').deleted_at).toBeTruthy();
+      expect(postRows.find((r) => r.filename === 'drop-two.txt').deleted_at).toBeNull();
+      const {data: postObjs} = await supabaseAdmin.storage.from('processing-attachments').list(`native/${REC}`);
+      const names = (postObjs || []).map((o) => o.name);
+      expect(names.some((n) => n.includes('drop-one.txt'))).toBe(false);
+      expect(names.some((n) => n.includes('drop-two.txt'))).toBe(true);
+    } finally {
+      const {data: leftovers} = await supabaseAdmin.storage.from('processing-attachments').list(`native/${REC}`);
+      if (leftovers && leftovers.length) {
+        await supabaseAdmin.storage
+          .from('processing-attachments')
+          .remove(leftovers.map((o) => `native/${REC}/${o.name}`));
+      }
     }
   });
 

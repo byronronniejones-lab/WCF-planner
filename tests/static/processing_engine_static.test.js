@@ -214,12 +214,29 @@ describe('edge — cutover, preflight, isolation, completeness', () => {
     // The cutover read sits AFTER the planner-only branch and BEFORE the token
     // check, so no Asana-touching action can run once the flag is false.
     const plannerIdx = edge.indexOf("if (action === 'sync_planner_to_processing')");
-    const cutoverIdx = edge.indexOf(".select('asana_sync_enabled')");
+    const cutoverIdx = edge.indexOf(".select('asana_sync_enabled, asana_comments_import_enabled')");
     const tokenIdx = edge.indexOf("error: 'ASANA_ACCESS_TOKEN not configured'");
     expect(plannerIdx).toBeGreaterThan(-1);
     expect(cutoverIdx).toBeGreaterThan(plannerIdx);
     expect(tokenIdx).toBeGreaterThan(cutoverIdx);
     expect(edge).toContain('asana_sync_enabled is false — Asana sync/import is locked (final cutover)');
+  });
+
+  it('cron mode pins COMMENTS-ONLY import; the comments flag unlocks ONLY sync_comments (mig 185)', () => {
+    // The recurring path can never run sync_once or any wider Asana action.
+    expect(edge).toContain("const action = mode === 'cron' ? 'sync_comments' :");
+    expect(edge).not.toContain("mode === 'cron' ? 'sync_once'");
+    // The independent comments flag widens exactly ONE action past the global
+    // cutover; everything else still requires asana_sync_enabled.
+    expect(edge).toContain(
+      "const allowed = action === 'sync_comments' ? globalEnabled || commentsEnabled : globalEnabled",
+    );
+    expect(edge).toContain(
+      'comments import is locked — asana_sync_enabled and asana_comments_import_enabled are both false',
+    );
+    // A missing settings row fails closed for both branches.
+    expect(edge).toMatch(/globalEnabled = !!settings && settings\.asana_sync_enabled === true/);
+    expect(edge).toMatch(/commentsEnabled = !!settings && settings\.asana_comments_import_enabled === true/);
   });
 
   it('runs the fail-closed destination preflight before every write action', () => {
@@ -381,7 +398,45 @@ describe('client — engine wiring', () => {
     expect(attachApi).toContain("PROCESSING_ATTACHMENT_BUCKET = 'processing-attachments'");
     expect(attachApi).toMatch(/native\/\$\{recordId\}/);
     expect(attachApi).toContain('upsert: false');
-    expect(attachApi).not.toContain('.remove(');
+    // Destructive removal exists ONLY inside the mig-185 two-phase delete flow:
+    // request RPC → policy-gated storage remove → truthful finalize RPC. The
+    // CODE remove call (`).remove([`) is single-sited and both RPC brackets are
+    // present (comments may mention remove; code may call it once).
+    expect(attachApi.match(/\)\.remove\(\[/g)).toHaveLength(1);
+    expect(attachApi).toContain("rpc('request_processing_attachment_delete'");
+    expect(attachApi).toContain("rpc('finalize_processing_attachment_delete'");
+    const reqIdx = attachApi.indexOf("rpc('request_processing_attachment_delete'");
+    const rmIdx = attachApi.indexOf(').remove([');
+    const finIdx = attachApi.indexOf("rpc('finalize_processing_attachment_delete'");
+    expect(reqIdx).toBeGreaterThan(-1);
+    expect(rmIdx).toBeGreaterThan(reqIdx);
+    expect(finIdx).toBeGreaterThan(rmIdx);
+    // A blocked/failed Storage removal is finalized ok=false and THROWS — the
+    // client can never report an unremoved object as deleted.
+    expect(attachApi).toContain('p_ok: removed');
+    expect(attachApi).toMatch(/if \(!removed\) throw new Error/);
+  });
+
+  it('attachment delete UI is ADMIN-only, per-tile, filename-confirmed; upload stays operational (picker + drop zone)', () => {
+    // Upload affordances (picker + drop zone) key off canOperate — unchanged
+    // operational gating (Ronnie 2026-07-16: upload is NOT admin-only).
+    expect(drawer).toContain("const isAdmin = role === 'admin'");
+    expect(drawer).toContain('data-processing-attachment-dropzone');
+    expect(drawer).toMatch(/\{\.\.\.\(canOperate\s*\?\s*\{\s*onDragEnter/);
+    // The browser must never open a dropped file; drop shares the picker's
+    // sequential upload path.
+    expect(drawer).toMatch(/function onZoneDrop\(e\) \{\s*e\.preventDefault\(\);/);
+    expect(drawer).toMatch(/function onZoneDragOver\(e\) \{\s*e\.preventDefault\(\);/);
+    expect(drawer).toContain('uploadFiles(Array.from(e.dataTransfer?.files || []))');
+    // Delete: separate control (not nested in the open button), admin-gated,
+    // filename-specific confirm, per-attachment busy.
+    expect(drawer).toContain('data-processing-attachment-open');
+    expect(drawer).toContain('data-processing-attachment-delete');
+    expect(drawer).toContain('data-processing-attachment-delete-confirm');
+    expect(drawer).toMatch(/\{isAdmin && !confirming && \(/);
+    expect(drawer).toContain('Delete {name}?');
+    expect(drawer).toContain('deletingAttachmentIds.has(at.id)');
+    expect(drawer).toContain('deleteProcessingAttachment(sb, {attachmentId: at.id})');
   });
 
   it('metrics count BATCH rows only (milestones excluded)', () => {

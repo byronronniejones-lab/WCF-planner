@@ -30,7 +30,14 @@
 //     blockers exist; checklist toggles reconcile them SILENTLY, every other
 //     mutation reloads them.
 //   • Attachments: list (filename / size_bytes), signed open/download, and an
-//     operational "Add files" upload into the native/ namespace.
+//     operational "Add files" upload into the native/ namespace — via the
+//     picker OR the drag-and-drop zone (multi-file; both share one sequential
+//     upload path, 50 MB cap, error handling, and refresh). ADMIN-ONLY delete
+//     (mig 185 two-phase contract): a separate per-tile Delete control with a
+//     filename-specific inline confirm; only the affected attachment disables
+//     while its delete runs, and a failed Storage removal surfaces a truthful
+//     retryable error (never claimed as deleted). Non-admins get no delete
+//     control; non-operational roles get no upload/drop affordance at all.
 //   • Comments + activity via the shared RecordCollaborationSection.
 // Every mutation reloads the drawer AND calls onChanged so the list refreshes —
 // EXCEPT checklist toggles: those patch the clicked subtask in place, silently
@@ -58,7 +65,11 @@ import {
   isProcessingValidationError,
   friendlyProcessingError,
 } from '../lib/processingApi.js';
-import {uploadProcessingAttachment, getProcessingAttachmentUrl} from '../lib/processingAttachmentsApi.js';
+import {
+  uploadProcessingAttachment,
+  getProcessingAttachmentUrl,
+  deleteProcessingAttachment,
+} from '../lib/processingAttachmentsApi.js';
 import {
   sourceRouteForRecord,
   sourceLinkLabel,
@@ -254,6 +265,8 @@ export default function ProcessingDrawer({
   const navigate = useNavigate();
   const role = authState?.role;
   const canOperate = OPERATIONAL_ROLES.includes(role);
+  // Attachment DELETION is admin-only (mig 185). Upload stays operational.
+  const isAdmin = role === 'admin';
 
   const [data, setData] = useState(null); // {record, subtasks, attachments, completion_blockers}
   const [loading, setLoading] = useState(true);
@@ -271,6 +284,14 @@ export default function ProcessingDrawer({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingArchive, setConfirmingArchive] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
+  // Drag-and-drop upload state: highlight while a drag hovers the drop zone.
+  // A depth counter (ref) keeps the highlight stable across child enter/leave.
+  const [dragActive, setDragActive] = useState(false);
+  const dragDepthRef = useRef(0);
+  // Admin attachment delete: filename-specific inline confirm + per-attachment
+  // busy so only the affected tile disables while its delete runs.
+  const [confirmingAttachmentDelete, setConfirmingAttachmentDelete] = useState(null); // attachment id | null
+  const [deletingAttachmentIds, setDeletingAttachmentIds] = useState(() => new Set());
   // Apply-template preview: null = closed; otherwise the server's read-only
   // diff from preview_latest_template.
   const [templatePreview, setTemplatePreview] = useState(null);
@@ -823,23 +844,77 @@ export default function ProcessingDrawer({
     }
     window.open(url, '_blank', 'noopener');
   }
-  async function onFilesPicked(e) {
+  // ONE upload path for both entry points (picker + drop zone): sequential on
+  // purpose for clear per-file failure attribution; same 50 MB cap (enforced in
+  // uploadProcessingAttachment), same error handling, same refresh.
+  const uploadFiles = useCallback(
+    async (files) => {
+      if (!canOperate || !files.length || !record) return;
+      setUploadBusy(true);
+      setNotice(null);
+      try {
+        for (const file of files) {
+          await uploadProcessingAttachment(sb, {recordId: record.id, file});
+        }
+        await load();
+        if (notifyRef.current) notifyRef.current();
+      } catch (err) {
+        setNotice({kind: 'error', message: friendlyProcessingError(err)});
+      } finally {
+        setUploadBusy(false);
+      }
+    },
+    [sb, record, canOperate, load],
+  );
+  function onFilesPicked(e) {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!files.length || !record) return;
-    setUploadBusy(true);
+    uploadFiles(files);
+  }
+
+  // Drop-zone handlers — attached ONLY for operational roles (non-uploaders
+  // get no drop affordance and dropping does nothing). preventDefault on both
+  // dragover and drop stops the browser from opening the dropped file.
+  function onZoneDragEnter(e) {
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setDragActive(true);
+  }
+  function onZoneDragOver(e) {
+    e.preventDefault();
+  }
+  function onZoneDragLeave(e) {
+    e.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragActive(false);
+  }
+  function onZoneDrop(e) {
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setDragActive(false);
+    if (busy || uploadBusy) return;
+    uploadFiles(Array.from(e.dataTransfer?.files || []));
+  }
+
+  // Admin two-phase delete for one attachment (native or imported). Only the
+  // affected tile disables; a failed Storage removal surfaces a truthful,
+  // retryable error (the server has already recorded the failed outcome).
+  async function doDeleteAttachment(at) {
+    setConfirmingAttachmentDelete(null);
     setNotice(null);
+    setDeletingAttachmentIds((prev) => new Set(prev).add(at.id));
     try {
-      for (const file of files) {
-        // Sequential on purpose: clear failure attribution per file.
-        await uploadProcessingAttachment(sb, {recordId: record.id, file});
-      }
+      await deleteProcessingAttachment(sb, {attachmentId: at.id});
       await load();
       if (notifyRef.current) notifyRef.current();
     } catch (err) {
       setNotice({kind: 'error', message: friendlyProcessingError(err)});
     } finally {
-      setUploadBusy(false);
+      setDeletingAttachmentIds((prev) => {
+        const next = new Set(prev);
+        next.delete(at.id);
+        return next;
+      });
     }
   }
 
@@ -1665,8 +1740,22 @@ export default function ProcessingDrawer({
                 </div>
               )}
 
-              {/* Attachments — signed open/download + operational native upload */}
-              <div style={{marginTop: 22}}>
+              {/* Attachments — signed open/download, operational upload via
+                  picker + drag-and-drop, admin-only two-phase delete */}
+              <div
+                style={{marginTop: 22}}
+                {...(canOperate
+                  ? {
+                      onDragEnter: onZoneDragEnter,
+                      onDragOver: onZoneDragOver,
+                      onDragLeave: onZoneDragLeave,
+                      onDrop: onZoneDrop,
+                      'data-processing-attachment-dropzone': true,
+                      role: 'group',
+                      'aria-label': 'Attachments — drop files here or use Add files to upload',
+                    }
+                  : {})}
+              >
                 <div style={{display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8}}>
                   <span style={{fontSize: 14, fontWeight: 800, color: T.ink}}>
                     Attachments{' '}
@@ -1694,6 +1783,27 @@ export default function ProcessingDrawer({
                     </>
                   )}
                 </div>
+                {canOperate && (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      border: `1.5px dashed ${dragActive ? T.green : T.border}`,
+                      background: dragActive ? '#E6F4EC' : T.tint,
+                      borderRadius: 12,
+                      padding: dragActive ? '18px 12px' : '8px 12px',
+                      marginBottom: 10,
+                      textAlign: 'center',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: dragActive ? '#1F7A4D' : T.faint,
+                      transition: 'border-color 120ms ease, background 120ms ease, padding 120ms ease',
+                    }}
+                  >
+                    {dragActive
+                      ? 'Drop files to upload'
+                      : 'Drag & drop files here, or use + Add files (max 50 MB each)'}
+                  </div>
+                )}
                 {attachments.length === 0 ? (
                   <div style={{fontSize: 12.5, color: T.faint, fontWeight: 600}}>No attachments.</div>
                 ) : (
@@ -1703,66 +1813,138 @@ export default function ProcessingDrawer({
                       const meta = [kbText(at.size_bytes), at.asana_attachment_gid ? 'Asana' : null]
                         .filter(Boolean)
                         .join(' · ');
+                      const deleting = deletingAttachmentIds.has(at.id);
+                      const confirming = confirmingAttachmentDelete === at.id;
                       return (
-                        <button
+                        <div
                           key={at.id || i}
-                          type="button"
-                          onClick={() => openAttachment(at)}
                           data-processing-attachment={at.id || i}
-                          title={`Open ${name}`}
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 11,
                             border: `1px solid ${T.border}`,
                             borderRadius: 12,
                             padding: 12,
                             width: 222,
                             maxWidth: '100%',
                             background: '#fff',
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                            textAlign: 'left',
+                            opacity: deleting ? 0.6 : 1,
                           }}
                         >
-                          <span
-                            aria-hidden="true"
-                            style={{
-                              width: 34,
-                              height: 34,
-                              borderRadius: 10,
-                              background: '#E6F4EC',
-                              color: '#1F7A4D',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flex: 'none',
-                              fontSize: 15,
-                            }}
-                          >
-                            ⎘
-                          </span>
-                          <span style={{minWidth: 0}}>
-                            <span
+                          <div style={{display: 'flex', alignItems: 'center', gap: 11}}>
+                            <button
+                              type="button"
+                              onClick={() => openAttachment(at)}
+                              disabled={deleting}
+                              data-processing-attachment-open={at.id || i}
+                              title={`Open ${name}`}
                               style={{
-                                display: 'block',
-                                fontSize: 13,
-                                fontWeight: 700,
-                                color: T.ink,
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 11,
+                                flex: 1,
+                                minWidth: 0,
+                                border: 'none',
+                                background: 'none',
+                                padding: 0,
+                                cursor: deleting ? 'default' : 'pointer',
+                                fontFamily: 'inherit',
+                                textAlign: 'left',
                               }}
                             >
-                              {name}
-                            </span>
-                            {meta && (
-                              <span style={{display: 'block', fontSize: 11.5, color: T.faint, fontWeight: 600}}>
-                                {meta}
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  width: 34,
+                                  height: 34,
+                                  borderRadius: 10,
+                                  background: '#E6F4EC',
+                                  color: '#1F7A4D',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flex: 'none',
+                                  fontSize: 15,
+                                }}
+                              >
+                                ⎘
                               </span>
+                              <span style={{minWidth: 0}}>
+                                <span
+                                  style={{
+                                    display: 'block',
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    color: T.ink,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                  }}
+                                >
+                                  {name}
+                                </span>
+                                {meta && (
+                                  <span style={{display: 'block', fontSize: 11.5, color: T.faint, fontWeight: 600}}>
+                                    {meta}
+                                  </span>
+                                )}
+                              </span>
+                            </button>
+                            {isAdmin && !confirming && (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmingAttachmentDelete(at.id)}
+                                disabled={deleting}
+                                aria-label={`Delete ${name}`}
+                                data-processing-attachment-delete={at.id || i}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#B4373A',
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  cursor: deleting ? 'default' : 'pointer',
+                                  fontFamily: 'inherit',
+                                  padding: 0,
+                                  flex: 'none',
+                                }}
+                              >
+                                {deleting ? 'Deleting…' : 'Delete'}
+                              </button>
                             )}
-                          </span>
-                        </button>
+                          </div>
+                          {isAdmin && confirming && (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                flexWrap: 'wrap',
+                                marginTop: 10,
+                                paddingTop: 10,
+                                borderTop: `1px solid ${T.rowBorder}`,
+                              }}
+                            >
+                              <span style={{fontSize: 12, color: T.muted, fontWeight: 600, minWidth: 0}}>
+                                Delete {name}?
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => doDeleteAttachment(at)}
+                                disabled={deleting}
+                                style={{...ghostBtn, borderColor: '#b91c1c', color: '#b91c1c'}}
+                                data-processing-attachment-delete-confirm={at.id || i}
+                              >
+                                Delete
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setConfirmingAttachmentDelete(null)}
+                                style={ghostBtn}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
