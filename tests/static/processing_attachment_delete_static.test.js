@@ -13,6 +13,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const mig = read('supabase-migrations/185_processing_attachments_admin_and_comment_cron.sql');
+const mig186 = read('supabase-migrations/186_processing_cron_pg_net_timeout.sql');
 
 describe('mig 185 — upload stays operational (no upload change rides this lane)', () => {
   it('does not touch the mig-166 upload policy or add_processing_attachment', () => {
@@ -117,5 +118,28 @@ describe('mig 185 — comments-only automation flag + cron contract (NOT schedul
   it('never BEGIN/COMMITs (exec_sql TEST apply / psql --single-transaction PROD apply)', () => {
     expect(mig).not.toMatch(/^\s*BEGIN;/m);
     expect(mig).not.toMatch(/^\s*COMMIT;/m);
+  });
+});
+
+describe('mig 186 — cron invoker pg_net timeout reissue (mig 045 precedent)', () => {
+  it('reissues invoke_processing_asana_cron with an explicit 120s delivery timeout, contract preserved', () => {
+    expect(mig186).toContain('CREATE OR REPLACE FUNCTION public.invoke_processing_asana_cron()');
+    expect(mig186).toContain('timeout_milliseconds := 120000');
+    for (const name of [
+      'PROCESSING_ASANA_CRON_FUNCTION_URL',
+      'PROCESSING_ASANA_CRON_SECRET',
+      'PROCESSING_ASANA_CRON_SERVICE_ROLE_KEY',
+    ]) {
+      expect(mig186).toContain(`FROM vault.decrypted_secrets WHERE name = '${name}'`);
+    }
+    expect(mig186).toContain("body                 := jsonb_build_object('mode','cron')");
+    expect(mig186).toContain(
+      'REVOKE ALL ON FUNCTION public.invoke_processing_asana_cron() FROM PUBLIC, anon, authenticated',
+    );
+    expect(mig186).toContain('GRANT EXECUTE ON FUNCTION public.invoke_processing_asana_cron() TO postgres');
+    expect(mig186).not.toMatch(/^\s*BEGIN;/m);
+    expect(mig186).not.toMatch(/^\s*COMMIT;/m);
+    // Still no schedule DDL rides a migration file.
+    expect(mig186).not.toContain('cron.schedule');
   });
 });
