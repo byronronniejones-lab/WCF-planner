@@ -78,6 +78,7 @@ import {
   ageRangeText,
   displayOrNotRecorded,
   pigPlanSignal,
+  pigTripSexLabel,
   NOT_RECORDED,
 } from '../lib/processingSourceLink.js';
 import {processingStatusLabel, processingStatusVariantFromLabel} from '../lib/processingStatusDisplay.js';
@@ -1051,6 +1052,7 @@ export default function ProcessingDrawer({
     const kind = record.source_kind;
     const programName = kind === 'sheep' ? 'sheep' : kind; // planner names; Lamb == sheep planner
     const pigSignal = pigPlanSignal(record);
+    const pigSexLabel = pigTripSexLabel(record);
     const isPigActual = kind === 'pig' && (source.phase || record.source_phase) === 'actual';
     const processingDateText = formatDate(source.processing_date);
     return (
@@ -1157,6 +1159,11 @@ export default function ProcessingDrawer({
             <FieldRow label="Trip">
               <SourceValue value={record.trip_ordinal != null ? `Trip ${record.trip_ordinal}` : null} />
             </FieldRow>
+            {/* Canonical single-sex trip identity (Gilt/Boar) from the exact
+                linked trip's attribution — read-only, never inferred. */}
+            <FieldRow label="Sex">
+              <SourceValue value={pigSexLabel} />
+            </FieldRow>
             {pigSignal && (
               <FieldRow label="Phase">
                 <StatusText tone="muted" style={{fontSize: 12.5}}>
@@ -1171,13 +1178,15 @@ export default function ProcessingDrawer({
               <SourceValue value={countText(record.live_count)} />
             </FieldRow>
             {/* Planned trips have no animal rows — only ACTUAL trips list the
-                linked weigh-in live weights, labelled Pig 1..N in order. */}
+                linked weigh-in live weights, labelled Pig 1..N in order. Every
+                row inherits the trip's canonical sex (single-sex trips). */}
             {isPigActual &&
               (animals.length > 0 ? (
                 <AnimalsTable
                   rows={animals}
                   columns={[
                     {key: 'pig', label: 'Pig', render: (_a, i) => `Pig ${i + 1}`},
+                    {key: 'sex', label: 'Sex', render: () => pigSexLabel},
                     {key: 'live', label: 'Live weight', align: 'right', render: (a) => weightText(a.live_weight)},
                   ]}
                 />

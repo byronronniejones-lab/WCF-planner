@@ -108,6 +108,30 @@ export function displayOrNotRecorded(value) {
   return text === '' ? NOT_RECORDED : text;
 }
 
+// ── Pig trip sex (canonical, read-only) ──────────────────────────────────────
+// Planned pig trips are single-sex by the (subBatchId, sex) trip-chain
+// contract, and the planner reconcile stamps each pig Processing record's
+// sub_batch_attribution from the EXACT linked trip (its immutable
+// groupId:tripId identity). This helper only normalizes that stored canonical
+// vocabulary ('Boars'/'Gilts', mirroring the server's boar%/gilt% matching)
+// to the singular display label. It never guesses: an empty, unknown, or
+// conflicting attribution resolves to null so the UI renders 'Not recorded'.
+export function pigTripSexLabel(record) {
+  if (!record || record.source_kind !== 'pig') return null;
+  const attribution = Array.isArray(record.sub_batch_attribution) ? record.sub_batch_attribution : [];
+  const labels = new Set();
+  for (const entry of attribution) {
+    const raw = String((entry && entry.sex) || '')
+      .trim()
+      .toLowerCase();
+    if (!raw) continue;
+    if (raw.startsWith('boar')) labels.add('Boar');
+    else if (raw.startsWith('gilt')) labels.add('Gilt');
+    else return null; // unknown vocabulary — never guess
+  }
+  return labels.size === 1 ? [...labels][0] : null;
+}
+
 // ── Soft signals (pig planned trips) ─────────────────────────────────────────
 // 'Auto-planned' until the native trip is locked/scheduled with the processor,
 // then 'Processor scheduled'. Secondary text, NOT lifecycle status.

@@ -8,6 +8,7 @@ import {
   displayOrNotRecorded,
   monthsWeeksText,
   pigPlanSignal,
+  pigTripSexLabel,
   recordAgeText,
   sourceLinkLabel,
   sourceRouteForRecord,
@@ -105,5 +106,56 @@ describe('pigPlanSignal', () => {
     expect(pigPlanSignal({source_kind: 'broiler', source: {phase: 'planned'}})).toBeNull();
     expect(pigPlanSignal({source_kind: 'pig', source_phase: 'planned', source: {}})).toBe('Auto-planned');
     expect(pigPlanSignal(null)).toBeNull();
+  });
+});
+
+describe('pigTripSexLabel', () => {
+  const pigRec = (attribution) => ({
+    source_kind: 'pig',
+    source_id: 'g1:pt-a',
+    sub_batch_attribution: attribution,
+  });
+
+  it('maps a boar trip to the singular Boar label for every consumer row', () => {
+    expect(pigTripSexLabel(pigRec([{subId: 's1', sex: 'Boars', count: 4}]))).toBe('Boar');
+    // Server-side singular/lowercase spellings normalize the same way the
+    // SQL boar% matcher does — normalization, not inference.
+    expect(pigTripSexLabel(pigRec([{sex: 'boar'}]))).toBe('Boar');
+  });
+
+  it('maps a gilt trip to the singular Gilt label', () => {
+    expect(pigTripSexLabel(pigRec([{subId: 's1', sex: 'Gilts', count: 3}]))).toBe('Gilt');
+    expect(pigTripSexLabel(pigRec([{sex: 'gilt'}]))).toBe('Gilt');
+  });
+
+  it('multiple same-sex attribution entries still resolve to the one trip sex', () => {
+    expect(
+      pigTripSexLabel(
+        pigRec([
+          {sex: 'Gilts', count: 2},
+          {sex: 'gilt', count: 1},
+        ]),
+      ),
+    ).toBe('Gilt');
+  });
+
+  it('never guesses: empty, unknown, or conflicting attributions are null (renders Not recorded)', () => {
+    expect(pigTripSexLabel(pigRec([]))).toBeNull();
+    expect(pigTripSexLabel(pigRec(null))).toBeNull();
+    expect(pigTripSexLabel(pigRec([{subId: 's1', count: 4}]))).toBeNull(); // sex absent
+    expect(pigTripSexLabel(pigRec([{sex: 'mixed'}]))).toBeNull(); // unknown vocabulary
+    expect(pigTripSexLabel(pigRec([{sex: 'Boars'}, {sex: 'Gilts'}]))).toBeNull(); // conflict
+  });
+
+  it('resolves per record, so different trips in one batch keep their own sex', () => {
+    const tripA = {source_kind: 'pig', source_id: 'g1:pt-a', sub_batch_attribution: [{sex: 'Boars'}]};
+    const tripB = {source_kind: 'pig', source_id: 'g1:pt-b', sub_batch_attribution: [{sex: 'Gilts'}]};
+    expect(pigTripSexLabel(tripA)).toBe('Boar');
+    expect(pigTripSexLabel(tripB)).toBe('Gilt');
+  });
+
+  it('is pig-only and null-safe', () => {
+    expect(pigTripSexLabel({source_kind: 'cattle', sub_batch_attribution: [{sex: 'Boars'}]})).toBeNull();
+    expect(pigTripSexLabel(null)).toBeNull();
   });
 });
