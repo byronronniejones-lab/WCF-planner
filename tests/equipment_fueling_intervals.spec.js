@@ -33,6 +33,10 @@ import {test, expect} from './fixtures.js';
 //        B-only history, and a delayed A-history response cannot corrupt B.
 //        (The unmounted quick-mode picker's reset is locked separately in
 //        tests/static/equipment_fueling_quick_switch_static.test.js.)
+//   13 — PROD ordering hotfix: rows render in global ascending cadence
+//        order for the Honda (due 200h between non-due 50h/500h) and 5065
+//        (nearest-milestone non-due conflict) shapes; the due row stays
+//        expanded + marked Due at its numerical position.
 //
 // Serial (workers=1 root config). Run this file on its own — never bundled
 // with other TEST-backed specs (shared resetDb).
@@ -766,6 +770,142 @@ test('live machine switch: no A checklist/photo state reaches B; B projects B-on
     rowFor(page, 'hours:500').locator('label', {hasText: 'Replace fuel filter'}).locator('input'),
   ).not.toBeChecked();
   await page.unroute('**/rest/v1/equipment_fuelings*');
+});
+
+// --------------------------------------------------------------------------
+// Test 13 — PROD ordering hotfix: global ascending cadence order in the DOM
+// --------------------------------------------------------------------------
+test('rows render in ascending cadence order; due rows stay expanded + marked Due at their position', async ({
+  page,
+  supabaseAdmin,
+  resetDb,
+}) => {
+  await resetDb();
+
+  // Honda #1 shape: 50h fully done at 190 (snaps to milestone 200 → next
+  // 250) so at reading 210 the 200h is DUE while 50h and 500h are not. The
+  // pre-hotfix order rendered 200, 50, 500.
+  const honda = await seedEq(supabaseAdmin, {
+    id: seedKey('eq-order-honda'),
+    name: 'Order Test Honda',
+    slug: seedKey('order-honda'),
+    service_intervals: [
+      {kind: 'hours', hours_or_km: 50, label: '50 Hour Service', tasks: [{id: 'h50', label: 'Grease fittings'}]},
+      {kind: 'hours', hours_or_km: 200, label: '200 Hour Service', tasks: [{id: 'h200', label: 'Change engine oil'}]},
+      {kind: 'hours', hours_or_km: 500, label: '500 Hour Service', tasks: [{id: 'h500', label: 'Replace coolant'}]},
+    ],
+  });
+  await supabaseAdmin.from('equipment_fuelings').upsert(
+    {
+      id: seedKey('fuel-order-honda'),
+      client_submission_id: seedKey('csid-order-honda'),
+      equipment_id: honda.id,
+      date: '2026-07-01',
+      team_member: 'History Seeder',
+      fuel_type: 'diesel',
+      gallons: 4,
+      hours_reading: 190,
+      km_reading: null,
+      every_fillup_check: [],
+      service_intervals_completed: [
+        {
+          interval: 50,
+          kind: 'hours',
+          label: '50 Hour Service',
+          completed_at: '2026-07-01',
+          items_completed: [],
+          total_tasks: 0,
+        },
+      ],
+      photos: [],
+      comments: null,
+      source: 'fuel_log_webform',
+    },
+    {onConflict: 'id'},
+  );
+
+  await openForm(page, honda);
+  await fillBasics(page, {reading: '210'});
+  await expect(rowFor(page, 'hours:200')).toBeVisible();
+  const hondaOrder = await page
+    .locator('[data-interval-row]')
+    .evaluateAll((els) => els.map((el) => [el.dataset.intervalRow, el.dataset.intervalState]));
+  expect(hondaOrder).toEqual([
+    ['hours:50', 'upcoming'],
+    ['hours:200', 'due'],
+    ['hours:500', 'upcoming'],
+  ]);
+  // The due row keeps its prominence AT position 2: Due badge + expanded
+  // checklist; the non-due neighbours stay collapsed.
+  const dueRow = rowFor(page, 'hours:200');
+  await expect(dueRow.getByText('Due', {exact: true})).toBeVisible();
+  await expect(dueRow.getByText('Change engine oil')).toBeVisible();
+  await expect(rowFor(page, 'hours:50').getByText('Grease fittings')).toHaveCount(0);
+  await expect(rowFor(page, 'hours:500').getByText('Replace coolant')).toHaveCount(0);
+  await expect(disclosureFor(page, 'hours:50')).toHaveAttribute('aria-expanded', 'false');
+
+  // 5065 shape: 600h done at 1,750 and 1,200h done at 1,150 → at reading
+  // 1,900 the non-due until_due order is 2000 (100) < 600/1200 (500). The
+  // pre-hotfix order rendered 50, 250, 500, 2000, 600, 1200.
+  const deere = await seedEq(supabaseAdmin, {
+    id: seedKey('eq-order-5065'),
+    name: 'Order Test 5065',
+    slug: seedKey('order-5065'),
+    current_hours: 1800,
+    service_intervals: [50, 250, 500, 600, 1200, 2000].map((v) => ({
+      kind: 'hours',
+      hours_or_km: v,
+      label: v + ' Hour Service',
+      tasks: [{id: 't' + v, label: 'Task for ' + v}],
+    })),
+  });
+  const seedFueling = (idKey, reading, completedIntervals) =>
+    supabaseAdmin.from('equipment_fuelings').upsert(
+      {
+        id: seedKey(idKey),
+        client_submission_id: seedKey('csid-' + idKey),
+        equipment_id: deere.id,
+        date: '2026-07-0' + (reading > 1500 ? '2' : '1'),
+        team_member: 'History Seeder',
+        fuel_type: 'diesel',
+        gallons: 6,
+        hours_reading: reading,
+        km_reading: null,
+        every_fillup_check: [],
+        service_intervals_completed: completedIntervals.map((v) => ({
+          interval: v,
+          kind: 'hours',
+          label: v + ' Hour Service',
+          completed_at: '2026-07-01',
+          items_completed: [],
+          total_tasks: 0,
+        })),
+        photos: [],
+        comments: null,
+        source: 'fuel_log_webform',
+      },
+      {onConflict: 'id'},
+    );
+  await seedFueling('fuel-order-5065-a', 1150, [1200]);
+  await seedFueling('fuel-order-5065-b', 1750, [600]);
+
+  await openForm(page, deere);
+  await fillBasics(page, {reading: '1900'});
+  await expect(rowFor(page, 'hours:2000')).toBeVisible();
+  const deereOrder = await page
+    .locator('[data-interval-row]')
+    .evaluateAll((els) => els.map((el) => [el.dataset.intervalRow, el.dataset.intervalState]));
+  expect(deereOrder).toEqual([
+    ['hours:50', 'due'],
+    ['hours:250', 'due'],
+    ['hours:500', 'due'],
+    ['hours:600', 'upcoming'],
+    ['hours:1200', 'upcoming'],
+    ['hours:2000', 'upcoming'],
+  ]);
+  // The nearest non-due milestone (2000, 100h out) renders LAST, proving
+  // next-milestone distance no longer controls order.
+  await expect(rowFor(page, 'hours:2000')).toContainText('Next at 2,000h · 100h remaining');
 });
 
 // --------------------------------------------------------------------------

@@ -75,15 +75,14 @@ describe('projectServiceIntervals — unified fueling-list projection', () => {
   // (next_due / until_due). Contains no math of its own — these tests lock
   // ordering, due flags, and the neutral context fields the webform renders.
 
-  it('orders the due subset first (ascending) then non-due by soonest next_due', () => {
+  it('orders the ENTIRE list by ascending checklist cadence regardless of due membership', () => {
     const intervals = [
       {kind: 'hours', hours_or_km: 500, label: '500 Hour Service', tasks: []},
       {kind: 'hours', hours_or_km: 100, label: '100 Hour Service', tasks: []},
       {kind: 'hours', hours_or_km: 300, label: '300 Hour Service', tasks: []},
     ];
     // Reading 250: 100h due (milestones 100+200 passed, never done); 300h and
-    // 500h not yet due. 300h next at 300 (50 remaining) sorts before 500h
-    // next at 500 (250 remaining).
+    // 500h not yet due. One global cadence order: 100, 300, 500.
     const projected = projectServiceIntervals(intervals, [], 250);
     expect(projected.map((p) => [p.hours_or_km, p.due])).toEqual([
       [100, true],
@@ -137,6 +136,124 @@ describe('projectServiceIntervals — unified fueling-list projection', () => {
   it('empty/absent intervals return []', () => {
     expect(projectServiceIntervals([], [], 100)).toEqual([]);
     expect(projectServiceIntervals(null, [], 100)).toEqual([]);
+  });
+});
+
+// ── PROD ordering hotfix (2026-07-17) ────────────────────────────────────────
+// Service-interval cards must render in ascending checklist cadence. The
+// prior projection ordered due-first then nearest-milestone-first, which
+// scrambled two live PROD configurations (5065 and honda-atv-1). Due status,
+// next_due, until_due, and missed counts are presentation facts and never
+// control row order.
+describe('projectServiceIntervals — global ascending cadence order (PROD hotfix locks)', () => {
+  const hoursIv = (v, label = v + ' Hour Service') => ({kind: 'hours', hours_or_km: v, label, tasks: []});
+  // Full legacy-shaped completion: total_tasks 0 → counts as a full
+  // completion at that reading regardless of the interval's current tasks.
+  const done = (kind, interval, at) => ({kind, interval, reading_at_completion: at, total_tasks: 0});
+
+  it('5065 reproduction: 50/250/500 due + nearest-milestone non-due order corrects to pure ascending', () => {
+    // John Deere 5065E shape. At reading 1,900 with a 600h full completion at
+    // 1,750 (→ next 2,400) and a 1,200h full completion at 1,150 (→ next
+    // 2,400): 50/250/500 are due; 2000 (until 100) is NEAREST, 600/1200 are
+    // 500 out — the prior order rendered 50, 250, 500, 2000, 600, 1200.
+    const intervals = [hoursIv(50), hoursIv(250), hoursIv(500), hoursIv(600), hoursIv(1200), hoursIv(2000)];
+    const completions = [done('hours', 600, 1750), done('hours', 1200, 1150)];
+    const projected = projectServiceIntervals(intervals, completions, 1900);
+
+    // Prove the repro conditions are real: 2000 is the nearest non-due
+    // milestone (until_due 100 vs 500) — under the OLD sort it led the
+    // non-due block.
+    const byV = new Map(projected.map((p) => [p.hours_or_km, p]));
+    expect(byV.get(2000).due).toBe(false);
+    expect(byV.get(2000).until_due).toBe(100);
+    expect(byV.get(600).until_due).toBe(500);
+    expect(byV.get(1200).until_due).toBe(500);
+
+    expect(projected.map((p) => p.hours_or_km)).toEqual([50, 250, 500, 600, 1200, 2000]);
+    expect(projected.map((p) => p.due)).toEqual([true, true, true, false, false, false]);
+  });
+
+  it('Honda #1 reproduction: a larger DUE interval never jumps ahead of a smaller non-due one', () => {
+    // honda-atv-1 shape. At reading 210 with a 50h full completion at 190
+    // (snaps to milestone 200 → next 250): 200h is due, 50h and 500h are
+    // not — the prior order rendered 200, 50, 500.
+    const intervals = [hoursIv(50), hoursIv(200), hoursIv(500)];
+    const completions = [done('hours', 50, 190)];
+    const projected = projectServiceIntervals(intervals, completions, 210);
+    expect(projected.map((p) => [p.hours_or_km, p.due])).toEqual([
+      [50, false],
+      [200, true],
+      [500, false],
+    ]);
+  });
+
+  it('Powerstar-style sequence stays 50, 100, 300, 600, 1200, 3600', () => {
+    const intervals = [hoursIv(50), hoursIv(100), hoursIv(300), hoursIv(600), hoursIv(1200), hoursIv(3600)];
+    const projected = projectServiceIntervals(intervals, [], 75);
+    expect(projected.map((p) => p.hours_or_km)).toEqual([50, 100, 300, 600, 1200, 3600]);
+    expect(projected[0].due).toBe(true); // 50h due at 75; the rest upcoming
+    expect(projected.slice(1).every((p) => !p.due)).toBe(true);
+  });
+
+  it('km intervals: non-due rows stay numerically ordered, never nearest-first', () => {
+    // Reading 4,900km: 1000km done at 4,900 (snap 5000 → next 6000, until
+    // 1100); 5000km never done (next 5000, until 100 — NEAREST); 10000km
+    // until 5100. Old sort: 5000, 1000, 10000. New: 1000, 5000, 10000.
+    const intervals = [
+      {kind: 'km', hours_or_km: 1000, label: '1,000 KM', tasks: []},
+      {kind: 'km', hours_or_km: 5000, label: '5,000 KM', tasks: []},
+      {kind: 'km', hours_or_km: 10000, label: '10,000 KM', tasks: []},
+    ];
+    const completions = [done('km', 1000, 4900)];
+    const projected = projectServiceIntervals(intervals, completions, 4900);
+    expect(projected.map((p) => p.hours_or_km)).toEqual([1000, 5000, 10000]);
+    expect(projected.map((p) => p.due)).toEqual([false, false, false]);
+    expect(projected[1].until_due).toBe(100); // nearest, yet not first
+  });
+
+  it('shuffled configuration input still renders ascending', () => {
+    const intervals = [hoursIv(600), hoursIv(50), hoursIv(1200), hoursIv(250)];
+    const projected = projectServiceIntervals(intervals, [], 700);
+    expect(projected.map((p) => p.hours_or_km)).toEqual([50, 250, 600, 1200]);
+  });
+
+  it('defensive equal-identity ties keep stable source order', () => {
+    const intervals = [
+      {kind: 'hours', hours_or_km: 50, label: 'A', tasks: []},
+      {kind: 'hours', hours_or_km: 50, label: 'B', tasks: []},
+    ];
+    const projected = projectServiceIntervals(intervals, [], 60);
+    expect(projected.map((p) => p.label)).toEqual(['A', 'B']);
+  });
+
+  it('defensive mixed kinds sort by deterministic kind order, ascending within each kind', () => {
+    const intervals = [
+      {kind: 'km', hours_or_km: 100, label: 'km-100', tasks: []},
+      {kind: 'hours', hours_or_km: 500, label: 'h-500', tasks: []},
+      {kind: 'hours', hours_or_km: 50, label: 'h-50', tasks: []},
+      {kind: 'km', hours_or_km: 50, label: 'km-50', tasks: []},
+    ];
+    const projected = projectServiceIntervals(intervals, [], 60);
+    expect(projected.map((p) => p.label)).toEqual(['h-50', 'h-500', 'km-50', 'km-100']);
+  });
+
+  it('sorting does not disturb due flags, metadata, or status fields', () => {
+    const intervals = [hoursIv(50), hoursIv(250), hoursIv(500), hoursIv(600), hoursIv(1200), hoursIv(2000)];
+    const completions = [done('hours', 600, 1750), done('hours', 1200, 1150)];
+    const projected = projectServiceIntervals(intervals, completions, 1900);
+    const fifty = projected.find((p) => p.hours_or_km === 50);
+    expect(fifty.due).toBe(true);
+    expect(fifty.missed_count).toBeGreaterThan(0);
+    // The 600h completion at 1,750 cascades to its 50h divisor (own snap at
+    // 1,750) → first missed milestone is 1,800, still due at reading 1,900.
+    expect(fifty.first_missed_at).toBe(1800);
+    const twoK = projected.find((p) => p.hours_or_km === 2000);
+    expect(twoK.due).toBe(false);
+    expect(twoK.next_due).toBe(2000);
+    expect(twoK.until_due).toBe(100);
+    const sixHundred = projected.find((p) => p.hours_or_km === 600);
+    expect(sixHundred.next_due).toBe(2400);
+    expect(sixHundred.last_satisfied_milestone).toBe(1800);
   });
 });
 

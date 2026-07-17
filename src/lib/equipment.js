@@ -173,13 +173,16 @@ export function computeDueIntervals(intervals, completions, currentReading) {
 // configured interval). Deliberately contains NO due/remaining/milestone
 // math of its own — both inputs come from the locked helpers above.
 //
-// Returns one entry per configured interval:
-//   - due subset first, in computeDueIntervals order (ascending hours_or_km),
-//     each spread from computeDueIntervals' output plus {due: true} and the
-//     matching next_due / until_due from computeIntervalStatus;
-//   - then non-due intervals ({due: false}) ordered soonest-next first
-//     (until_due ascending, tie-break ascending hours_or_km), each spread
-//     from computeIntervalStatus' output.
+// Returns one entry per configured interval — {due: true} entries spread
+// from computeDueIntervals' output (plus next_due / until_due from
+// computeIntervalStatus), {due: false} entries spread from
+// computeIntervalStatus' output — in ONE global order: ascending checklist
+// cadence. Due status, next_due, until_due, and missed counts are
+// presentation facts and must NEVER control row order (PROD hotfix
+// 2026-07-17: due-first + nearest-milestone-first ordering scrambled the
+// 5065 and honda-atv-1 lists). Sort: kind (deterministic alphabetical, only
+// relevant if mixed kinds ever appear defensively) → hours_or_km ascending →
+// original configuration index as the stable tie-break for equal identities.
 export function projectServiceIntervals(intervals, completions, currentReading) {
   if (!Array.isArray(intervals) || intervals.length === 0) return [];
   const due = computeDueIntervals(intervals, completions, currentReading);
@@ -190,15 +193,25 @@ export function projectServiceIntervals(intervals, completions, currentReading) 
     const s = statusByKey.get(d.kind + ':' + d.hours_or_km);
     return {...d, due: true, next_due: s ? s.next_due : null, until_due: s ? s.until_due : null};
   });
-  const upcoming = statuses
-    .filter((s) => !dueKeys.has(s.kind + ':' + s.hours_or_km))
-    .sort((a, b) => {
-      const ua = a.until_due != null ? a.until_due : Infinity;
-      const ub = b.until_due != null ? b.until_due : Infinity;
-      return ua - ub || a.hours_or_km - b.hours_or_km;
-    })
-    .map((s) => ({...s, due: false}));
-  return [...dueEntries, ...upcoming];
+  const upcoming = statuses.filter((s) => !dueKeys.has(s.kind + ':' + s.hours_or_km)).map((s) => ({...s, due: false}));
+  const cfgIndex = new Map();
+  intervals.forEach((iv, i) => {
+    if (!iv) return;
+    const k = iv.kind + ':' + iv.hours_or_km;
+    if (!cfgIndex.has(k)) cfgIndex.set(k, i);
+  });
+  const merged = [...dueEntries, ...upcoming];
+  // Array.prototype.sort is stable, so equal identities (defensive duplicate
+  // config rows) keep their pre-merge relative order.
+  merged.sort((a, b) => {
+    const kindCmp = String(a.kind).localeCompare(String(b.kind));
+    if (kindCmp !== 0) return kindCmp;
+    if (a.hours_or_km !== b.hours_or_km) return a.hours_or_km - b.hours_or_km;
+    const ia = cfgIndex.get(a.kind + ':' + a.hours_or_km);
+    const ib = cfgIndex.get(b.kind + ':' + b.hours_or_km);
+    return (ia != null ? ia : 0) - (ib != null ? ib : 0);
+  });
+  return merged;
 }
 
 // Internal helper used by both computeDueIntervals and computeIntervalStatus.

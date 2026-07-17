@@ -8,9 +8,10 @@
 // Writes one equipment_fuelings row. Fuel type is hardcoded per piece
 // (not a dropdown). DEF gallons is a separate field shown only when the
 // equipment has takes_def=true. Once a valid reading is entered, every
-// configured main service interval renders in one list: due/overdue first
-// (expanded, marked "Due"), the rest as directly-expandable collapsed rows
-// so early work can be recorded during a convenient fueling.
+// configured main service interval renders in one list in ascending
+// checklist-cadence order; due/overdue intervals render expanded and marked
+// "Due" AT their numerical position, the rest as directly-expandable
+// collapsed rows so early work can be recorded during a convenient fueling.
 import React from 'react';
 import {projectServiceIntervals} from '../lib/equipment.js';
 import {todayCentralISO} from '../lib/dateUtils.js';
@@ -1212,14 +1213,14 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
           </div>
         )}
 
-        {/* Service intervals — every configured main interval in one list.
-            Due first (always expanded, marked "Due"), the rest as directly
-            expandable collapsed rows for recording early work. */}
+        {/* Service intervals — every configured main interval in ONE list,
+            globally ordered by ascending checklist cadence. Due rows render
+            expanded and marked "Due" at their numerical position; the rest
+            are directly expandable collapsed rows for recording early work. */}
         {eq &&
           hasReading &&
           allIntervals.length > 0 &&
           (() => {
-            const upcomingIntervals = allIntervals.filter((iv) => !iv.due);
             // Most recent full completion across the due intervals — shown in
             // the blurb so the operator sees where the machine last stood.
             const mostRecentFull = dueIntervals
@@ -1266,8 +1267,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
                   </>
                 )}
                 <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
-                  {dueIntervals.map((iv) => renderDueInterval(iv))}
-                  {upcomingIntervals.map((iv) => renderUpcomingInterval(iv))}
+                  {/* ONE list in the projection's global ascending cadence
+                      order — due rows render expanded at their numerical
+                      position, never hoisted above smaller intervals. */}
+                  {allIntervals.map((iv) => (iv.due ? renderDueInterval(iv) : renderUpcomingInterval(iv)))}
                 </div>
               </div>
             );
