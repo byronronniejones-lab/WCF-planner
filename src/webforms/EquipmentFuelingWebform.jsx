@@ -1,13 +1,18 @@
 // EquipmentFuelingWebform — per-equipment form rendered at /fueling/<slug>.
-// Also handles the /fueling/quick variant: pass equipment=null + the full
-// equipment list, and the form adds an equipment-picker at the top.
+// Also supports a quick variant: pass equipment=null + the full equipment
+// list and the form adds an equipment-picker at the top. NOTE: no live route
+// currently mounts the quick variant (FuelingHub always passes a concrete
+// piece); its machine-switch state isolation is locked by
+// tests/static/equipment_fueling_quick_switch_static.test.js.
 //
 // Writes one equipment_fuelings row. Fuel type is hardcoded per piece
 // (not a dropdown). DEF gallons is a separate field shown only when the
-// equipment has takes_def=true. Service intervals surface only when they
-// are actually due given the reading the team just entered + history.
+// equipment has takes_def=true. Once a valid reading is entered, every
+// configured main service interval renders in one list: due/overdue first
+// (expanded, marked "Due"), the rest as directly-expandable collapsed rows
+// so early work can be recorded during a convenient fueling.
 import React from 'react';
-import {computeDueIntervals} from '../lib/equipment.js';
+import {projectServiceIntervals} from '../lib/equipment.js';
 import {todayCentralISO} from '../lib/dateUtils.js';
 import {useOfflineRpcSubmit} from '../lib/useOfflineRpcSubmit.js';
 import ManualsCard from '../equipment/ManualsCard.jsx';
@@ -30,6 +35,9 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
   const [reading, setReading] = React.useState('');
   const [fillupTicks, setFillupTicks] = React.useState(new Set());
   const [intervalTicks, setIntervalTicks] = React.useState(new Set()); // keys 'kind:value'
+  // Non-due interval rows the operator has opened. Due intervals always
+  // render expanded; this set only tracks the collapsed-by-default rows.
+  const [expandedIntervals, setExpandedIntervals] = React.useState(new Set()); // keys 'kind:value'
   // Per-interval task ticks: Map<'kind:value', Set<taskId>>
   const [taskTicks, setTaskTicks] = React.useState({});
   // Attachment-checklist ticks: Map<'name:kind:value', Set<taskId>>
@@ -72,20 +80,26 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     if (teamMember !== lockedName) setTeamMember(lockedName);
   }, [lockedName, teamMember]);
 
-  // Load this piece's fueling history to compute due intervals.
+  // Load this piece's fueling history to compute due intervals. History is
+  // cleared synchronously FIRST so a quick-mode machine switch never projects
+  // due/next status from the previous machine's completions while the new
+  // fetch is in flight; the cancellation flag stops a late response for a
+  // switched-away machine from overwriting the current machine's history.
   React.useEffect(() => {
-    if (!eq) {
-      setHistory([]);
-      return;
-    }
+    setHistory([]);
+    if (!eq) return;
+    let cancelled = false;
     sb.from('equipment_fuelings')
       .select('date,team_member,hours_reading,km_reading,service_intervals_completed,every_fillup_check')
       .eq('equipment_id', eq.id)
       .order('date', {ascending: false})
       .limit(500)
       .then(({data}) => {
-        if (data) setHistory(data);
+        if (!cancelled && data) setHistory(data);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [eq]);
 
   // Build the completions list with reading_at_completion + team_member baked
@@ -106,10 +120,15 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
 
   const readingNum = parseFloat(reading);
   const hasReading = Number.isFinite(readingNum) && readingNum > 0;
-  const dueIntervals = React.useMemo(() => {
+  // Unified projection of every configured main interval. Due membership
+  // comes from computeDueIntervals and status (next_due / until_due) from
+  // computeIntervalStatus — both inside projectServiceIntervals; this
+  // component adds no interval math of its own.
+  const allIntervals = React.useMemo(() => {
     if (!eq || !hasReading) return [];
-    return computeDueIntervals(eq.service_intervals || [], completions, readingNum);
+    return projectServiceIntervals(eq.service_intervals || [], completions, readingNum);
   }, [eq, completions, readingNum, hasReading]);
+  const dueIntervals = React.useMemo(() => allIntervals.filter((iv) => iv.due), [allIntervals]);
 
   // Every-fillup miss streaks. For each every_fillup_items[].id, count
   // consecutive prior fuelings (ordered by reading desc, falling back to
@@ -161,6 +180,16 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     else next.add(k);
     setIntervalTicks(next);
   }
+  // Open/close a non-due interval row. Only touches expansion — selected
+  // checklist items live in taskTicks/intervalTicks and survive collapse.
+  function toggleExpanded(k) {
+    setExpandedIntervals((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  }
   function toggleTask(intervalKey, taskId) {
     setTaskTicks((prev) => {
       const current = new Set(prev[intervalKey] || []);
@@ -208,17 +237,361 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     }
     setPhotos((arr) => arr.filter((_, i) => i !== idx));
   }
-  // If the team ticks a big interval, the divisor rule implicitly covers
-  // any smaller due interval that divides it. Surface this visually.
+  // Quick-mode machine switch. Every checklist key is equipment-CONFIG
+  // scoped (fillup item ids, interval 'kind:value', attachment
+  // 'name:kind:value'), NOT equipment-INSTANCE scoped — two machines sharing
+  // a key would silently inherit each other's ticks, and the projection/
+  // submit paths would record machine A's selections against machine B.
+  // Clear all equipment-scoped form state before the new machine can render
+  // or submit. Unsubmitted photos were uploaded under the previous machine's
+  // storage prefix (fueling/<slug>/…): best-effort remove them (mirrors
+  // removePhoto) so machine A's photos can neither attach to machine B nor
+  // linger as orphans. Submitted photos are never in state here — the done
+  // screen's Log Another clears photos before the picker can change again.
+  function resetEquipmentScopedState() {
+    setFillupTicks(new Set());
+    setIntervalTicks(new Set());
+    setTaskTicks({});
+    setAttachmentTicks({});
+    setExpandedIntervals(new Set());
+    const stale = photos;
+    setPhotos([]);
+    for (const p of stale) {
+      if (p && p.path) {
+        sb.storage
+          .from('equipment-maintenance-docs')
+          .remove([p.path])
+          .catch(() => {});
+      }
+    }
+  }
+  // An interval counts as explicitly fully done when its parent box is
+  // ticked (no-task intervals) or every task is ticked — the same rule
+  // submit() uses to build fullyDoneExplicit.
+  function isFullyTickedExplicit(iv) {
+    const k = iv.kind + ':' + iv.hours_or_km;
+    const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
+    if (tasks.length === 0) return intervalTicks.has(k);
+    const ticks = taskTicks[k] instanceof Set ? taskTicks[k] : new Set();
+    return ticks.size >= tasks.length;
+  }
+  // If the team fully ticks a big interval — due or recorded early while not
+  // yet due — the divisor rule implicitly covers any smaller configured
+  // interval that divides it. Surface this visually.
   function isImplicitlyCompleted(kind, value) {
     if (!eq) return false;
     if (intervalTicks.has(kind + ':' + value)) return false;
-    for (const iv of dueIntervals) {
+    for (const iv of eq.service_intervals || []) {
       if (iv.kind !== kind) continue;
       if (iv.hours_or_km === value) continue;
-      if (intervalTicks.has(iv.kind + ':' + iv.hours_or_km) && iv.hours_or_km % value === 0) return true;
+      if (iv.hours_or_km % value !== 0) continue;
+      if (isFullyTickedExplicit(iv)) return true;
     }
     return false;
+  }
+
+  // ---- Service-interval rendering ----------------------------------------
+  // ONE checklist renderer serves due and non-due intervals so their
+  // completion behavior cannot drift: identical state keys (taskTicks /
+  // intervalTicks), handlers, and implicit-completion rule. Only cosmetic
+  // colors and the due-only copy differ between the two row types.
+  function intervalUiState(iv) {
+    const k = iv.kind + ':' + iv.hours_or_km;
+    const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
+    const ticks = taskTicks[k] instanceof Set ? taskTicks[k] : new Set();
+    const explicit = intervalTicks.has(k);
+    const implicit = isImplicitlyCompleted(iv.kind, iv.hours_or_km);
+    const allTicked = tasks.length > 0 && ticks.size >= tasks.length;
+    const anyTicked = ticks.size > 0;
+    const done = (tasks.length === 0 ? explicit : allTicked) || implicit;
+    const unitShort = iv.kind === 'km' ? 'km' : 'h';
+    return {k, tasks, ticks, explicit, implicit, allTicked, anyTicked, done, unitShort};
+  }
+
+  function renderIntervalChecklist(iv, ui, {due, dividerColor}) {
+    const {k, tasks, ticks, explicit, implicit, allTicked, anyTicked} = ui;
+    return (
+      <>
+        {/* Field-level help text from Podio (torque specs, gap specs, etc.) */}
+        {iv.help_text && (
+          <div
+            style={{
+              fontSize: 11,
+              color: '#78716c',
+              background: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: 10,
+              padding: '6px 8px',
+              marginBottom: 8,
+              fontStyle: 'italic',
+              whiteSpace: 'pre-wrap',
+            }}
+          >
+            {iv.help_text}
+          </div>
+        )}
+        {tasks.length === 0 ? (
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 8px',
+              borderRadius: 10,
+              background: explicit ? '#dcfce7' : 'white',
+              cursor: implicit ? 'not-allowed' : 'pointer',
+              fontSize: 12,
+              opacity: implicit ? 0.6 : 1,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={explicit}
+              disabled={implicit}
+              onChange={() => toggleInterval(iv.kind, iv.hours_or_km)}
+              style={{
+                margin: 0,
+                flexShrink: 0,
+                width: 18,
+                height: 18,
+                padding: 0,
+                border: '1px solid var(--border-strong)',
+              }}
+            />
+            <span style={{color: explicit ? '#065f46' : '#374151', fontWeight: explicit ? 600 : 500}}>
+              Mark this service done
+            </span>
+          </label>
+        ) : (
+          <>
+            {/* Sub-task list (when this interval has tasks) */}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 4,
+                marginLeft: 0,
+                borderTop: '1px solid ' + dividerColor,
+                paddingTop: 8,
+              }}
+            >
+              {tasks.map((t) => {
+                const ticked = ticks.has(t.id);
+                return (
+                  <label
+                    key={t.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 8,
+                      padding: '6px 8px',
+                      borderRadius: 10,
+                      background: ticked ? '#dcfce7' : 'white',
+                      cursor: implicit ? 'not-allowed' : 'pointer',
+                      fontSize: 12,
+                      opacity: implicit ? 0.6 : 1,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={ticked}
+                      disabled={implicit}
+                      onChange={() => toggleTask(k, t.id)}
+                      style={{
+                        margin: '2px 0 0',
+                        flexShrink: 0,
+                        width: 16,
+                        height: 16,
+                        padding: 0,
+                        border: '1px solid var(--border-strong)',
+                      }}
+                    />
+                    <span style={{color: ticked ? '#065f46' : '#374151', fontWeight: ticked ? 600 : 500}}>
+                      {t.label}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            {(due || anyTicked) && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: anyTicked ? '#1e40af' : due ? '#991b1b' : 'var(--ink-muted)',
+                  marginTop: 6,
+                  fontWeight: 600,
+                }}
+              >
+                {ticks.size} of {tasks.length} tasks ticked
+                {allTicked
+                  ? ' · full completion'
+                  : anyTicked
+                    ? due
+                      ? ' · partial (will remain due)'
+                      : ' · partial'
+                    : ''}
+              </div>
+            )}
+          </>
+        )}
+      </>
+    );
+  }
+
+  // Due interval — always expanded, prominent, explicitly marked "Due".
+  function renderDueInterval(iv) {
+    const ui = intervalUiState(iv);
+    const {k, done, unitShort} = ui;
+    return (
+      <div
+        key={k}
+        data-interval-row={k}
+        data-interval-state="due"
+        style={{
+          borderRadius: 10,
+          background: done ? '#eff6ff' : '#fef2f2',
+          border: '1px solid ' + (done ? '#bfdbfe' : '#fca5a5'),
+          padding: '12px 14px',
+        }}
+      >
+        {/* Header line (always shown) */}
+        <div style={{marginBottom: 8}}>
+          <div style={{fontWeight: 700, color: done ? '#1e40af' : '#991b1b', fontSize: 14}}>
+            {iv.label}
+            <span
+              style={{
+                display: 'inline-block',
+                marginLeft: 8,
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+                color: '#991b1b',
+                background: '#fee2e2',
+                border: '1px solid #fca5a5',
+                borderRadius: 10,
+                padding: '1px 8px',
+                verticalAlign: 'middle',
+              }}
+            >
+              Due
+            </span>
+          </div>
+          <div style={{fontSize: 11, color: 'var(--ink-muted)', marginTop: 3}}>
+            {iv.missed_count > 1
+              ? `Missed ${iv.missed_count} times since ${iv.first_missed_at.toLocaleString()}${unitShort}`
+              : `Passed ${iv.first_missed_at.toLocaleString()}${unitShort}`}
+            {iv.last_done_at
+              ? ` · last full done at ${iv.last_done_at.toLocaleString()}${unitShort}`
+              : ' · never fully completed'}
+          </div>
+          {iv.last_partial &&
+            (() => {
+              // Only rendered when no full completion exists after this
+              // partial (filtered in computeDueIntervals). Resolve the
+              // ticked-item IDs against current task labels to show
+              // exactly what was missed and by whom.
+              const doneIds = new Set(iv.last_partial.items_completed || []);
+              const missing = (Array.isArray(iv.tasks) ? iv.tasks : []).filter((t) => !doneIds.has(t.id));
+              const who = iv.last_partial.team_member || 'someone';
+              return (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: '#92400e',
+                    marginTop: 4,
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: 10,
+                    padding: '5px 8px',
+                  }}
+                >
+                  <strong>
+                    Partial at {iv.last_partial.at_reading.toLocaleString()}
+                    {unitShort}
+                  </strong>{' '}
+                  by {who} — {iv.last_partial.items_done}/{iv.last_partial.total} done.
+                  {missing.length > 0 && (
+                    <>
+                      {' '}
+                      Missing: <span style={{fontStyle: 'italic'}}>{missing.map((m) => m.label).join(', ')}</span>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+        </div>
+        {renderIntervalChecklist(iv, ui, {due: true, dividerColor: done ? '#bfdbfe' : '#fca5a5'})}
+      </div>
+    );
+  }
+
+  // Non-due interval — collapsed row that opens directly (click / Enter /
+  // Space on the disclosure button). Neutral context only: next scheduled
+  // milestone + remaining distance. Must never read as due or missed work.
+  function renderUpcomingInterval(iv) {
+    const ui = intervalUiState(iv);
+    const {k, tasks, ticks, explicit, implicit, anyTicked, done, unitShort} = ui;
+    const expanded = expandedIntervals.has(k);
+    const bodyId = 'svc-body-' + k.replace(/[^a-zA-Z0-9_-]/g, '-');
+    return (
+      <div
+        key={k}
+        data-interval-row={k}
+        data-interval-state="upcoming"
+        style={{
+          borderRadius: 10,
+          background: done ? '#eff6ff' : '#fafafa',
+          border: '1px solid ' + (done ? '#bfdbfe' : '#e5e7eb'),
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => toggleExpanded(k)}
+          aria-expanded={expanded}
+          aria-controls={bodyId}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            padding: '12px 14px',
+            minHeight: 44,
+            background: 'none',
+            border: 'none',
+            borderRadius: 10,
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontFamily: 'inherit',
+            boxSizing: 'border-box',
+          }}
+        >
+          <span aria-hidden="true" style={{fontSize: 12, color: 'var(--ink-muted)', flexShrink: 0, marginTop: 2}}>
+            {expanded ? '▾' : '▸'}
+          </span>
+          <span style={{flex: 1, minWidth: 0}}>
+            <span style={{display: 'block', fontWeight: 700, color: done ? '#1e40af' : 'var(--ink)', fontSize: 14}}>
+              {iv.label}
+            </span>
+            <span style={{display: 'block', fontSize: 11, color: 'var(--ink-muted)', marginTop: 3}}>
+              Next at {iv.next_due.toLocaleString()}
+              {unitShort} · {iv.until_due.toLocaleString()}
+              {unitShort} remaining
+            </span>
+          </span>
+          {(anyTicked || explicit || implicit) && (
+            <span style={{flexShrink: 0, fontSize: 11, fontWeight: 600, color: '#1e40af', marginTop: 2}}>
+              {implicit ? '✓ covered' : tasks.length === 0 ? '✓ selected' : `${ticks.size} of ${tasks.length} selected`}
+            </span>
+          )}
+        </button>
+        {expanded && (
+          <div id={bodyId} style={{padding: '0 14px 12px 36px'}}>
+            {renderIntervalChecklist(iv, ui, {due: false, dividerColor: done ? '#bfdbfe' : '#e5e7eb'})}
+          </div>
+        )}
+      </div>
+    );
   }
 
   async function submit() {
@@ -258,13 +631,16 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
         return;
       }
     }
-    // Build service_intervals_completed. Each due interval may contribute a
-    // completion if either (a) the parent box was ticked, OR (b) any of
-    // its sub-tasks were ticked. Record which task ids were ticked so the
-    // due-interval math can decide "full vs partial."
-    const completed = [];
+    // Build service_intervals_completed. Every configured main interval —
+    // due or recorded early while not yet due — may contribute a completion
+    // if either (a) the parent box was ticked, OR (b) any of its sub-tasks
+    // were ticked. Record which task ids were ticked so the due-interval
+    // math can decide "full vs partial." One entry per interval identity
+    // (kind + hours_or_km): explicit selections and divisor-generated
+    // completions are deduplicated below.
+    const mainByKey = new Map(); // 'kind:value' -> completion entry
     const fullyDoneExplicit = new Set(); // intervals that had ALL tasks ticked
-    for (const iv of dueIntervals) {
+    for (const iv of allIntervals) {
       const key = iv.kind + ':' + iv.hours_or_km;
       const ticks = taskTicks[key] instanceof Set ? taskTicks[key] : new Set();
       const parentTicked = intervalTicks.has(key);
@@ -272,7 +648,7 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
       const items = Array.from(ticks);
       const fullyDone = tasks.length === 0 ? parentTicked : tasks.length > 0 && items.length >= tasks.length;
       if (!parentTicked && items.length === 0) continue; // nothing ticked for this interval
-      completed.push({
+      mainByKey.set(key, {
         interval: iv.hours_or_km,
         kind: iv.kind,
         label: iv.label,
@@ -284,7 +660,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
     }
     // Divisor rule: a fully-done big interval also counts as fully-done for
     // any smaller interval it divides (e.g. 1000h fully done → 500/250/100
-    // also marked done at the same reading).
+    // also marked done at the same reading) — including when the big interval
+    // was completed early from a non-due row. When the smaller interval was
+    // ALSO explicitly ticked (partially), upgrade that entry in place instead
+    // of appending a duplicate entry for the same interval identity.
     for (const key of fullyDoneExplicit) {
       const [kind, vStr] = key.split(':');
       const v = parseInt(vStr, 10);
@@ -295,17 +674,26 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
         const kk = iv.kind + ':' + iv.hours_or_km;
         if (fullyDoneExplicit.has(kk)) continue;
         const subTasks = Array.isArray(iv.tasks) ? iv.tasks : [];
-        completed.push({
-          interval: iv.hours_or_km,
-          kind: iv.kind,
-          label: iv.label,
-          completed_at: date,
-          auto_from: v,
-          items_completed: subTasks.map((t) => t.id),
-          total_tasks: subTasks.length,
-        });
+        const existing = mainByKey.get(kk);
+        if (existing && existing.auto_from != null) continue; // already covered by another parent
+        if (existing) {
+          existing.auto_from = v;
+          existing.items_completed = subTasks.map((t) => t.id);
+          existing.total_tasks = subTasks.length;
+        } else {
+          mainByKey.set(kk, {
+            interval: iv.hours_or_km,
+            kind: iv.kind,
+            label: iv.label,
+            completed_at: date,
+            auto_from: v,
+            items_completed: subTasks.map((t) => t.id),
+            total_tasks: subTasks.length,
+          });
+        }
       }
     }
+    const completed = Array.from(mainByKey.values());
 
     // Attachment completions — stored in service_intervals_completed with an
     // attachment_name key so the dashboard can distinguish from main intervals.
@@ -474,6 +862,15 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               setComments('');
               setFillupTicks(new Set());
               setIntervalTicks(new Set());
+              // Interval task ticks + open rows are per-record — a fresh log
+              // must not silently re-attach the previous record's checklist.
+              setTaskTicks({});
+              setExpandedIntervals(new Set());
+              // Photos now belong to the SAVED record. Dropping them from
+              // state stops them re-attaching to the next log AND keeps the
+              // quick-mode switch cleanup (which storage-removes unsubmitted
+              // photos) from ever touching a submitted record's files.
+              setPhotos([]);
             }}
             style={{
               width: '100%',
@@ -564,8 +961,10 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
               <select
                 value={eq?.id || ''}
                 onChange={(e) => {
-                  const found = (equipmentList || []).find((x) => x.id === e.target.value);
-                  setSelectedEq(found || null);
+                  const found = (equipmentList || []).find((x) => x.id === e.target.value) || null;
+                  const changed = (found?.id || null) !== (eq?.id || null);
+                  if (changed) resetEquipmentScopedState();
+                  setSelectedEq(found);
                 }}
                 style={inpS}
               >
@@ -813,218 +1212,62 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
           </div>
         )}
 
-        {/* Service intervals — ONLY those that are due given the reading. */}
+        {/* Service intervals — every configured main interval in one list.
+            Due first (always expanded, marked "Due"), the rest as directly
+            expandable collapsed rows for recording early work. */}
         {eq &&
           hasReading &&
-          dueIntervals.length > 0 &&
+          allIntervals.length > 0 &&
           (() => {
-            // Most recent full completion across all due intervals — shown in
+            const upcomingIntervals = allIntervals.filter((iv) => !iv.due);
+            // Most recent full completion across the due intervals — shown in
             // the blurb so the operator sees where the machine last stood.
             const mostRecentFull = dueIntervals
               .filter((iv) => iv.last_done_at)
               .sort((a, b) => (b.last_done_at || 0) - (a.last_done_at || 0))[0];
             return (
               <div style={cardS}>
-                <div style={{fontSize: 13, fontWeight: 700, color: '#991b1b', marginBottom: 4}}>⚠ Service due</div>
-                <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 12}}>
-                  Based on {readingLabel.toLowerCase()} {readingNum.toLocaleString()} + prior completions. Tick any
-                  service you performed during this fill.
-                  {mostRecentFull && (
-                    <>
-                      {' '}
-                      Last {mostRecentFull.hours_or_km}
-                      {mostRecentFull.kind === 'km' ? '-km' : '-hour'} checklist done at{' '}
-                      {mostRecentFull.last_done_at.toLocaleString()}
-                      {mostRecentFull.kind === 'km' ? 'km' : 'h'}.
-                    </>
-                  )}
+                <div style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4}}>
+                  Service intervals
                 </div>
-                <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
-                  {dueIntervals.map((iv) => {
-                    const k = iv.kind + ':' + iv.hours_or_km;
-                    const explicit = intervalTicks.has(k);
-                    const implicit = isImplicitlyCompleted(iv.kind, iv.hours_or_km);
-                    const tasks = Array.isArray(iv.tasks) ? iv.tasks : [];
-                    const ticks = taskTicks[k] instanceof Set ? taskTicks[k] : new Set();
-                    const tickedCount = ticks.size;
-                    const allTicked = tasks.length > 0 && tickedCount >= tasks.length;
-                    const anyTicked = tickedCount > 0;
-                    const done = (tasks.length === 0 ? explicit : allTicked) || implicit;
-                    const unitShort = iv.kind === 'km' ? 'km' : 'h';
-                    return (
-                      <div
-                        key={k}
-                        style={{
-                          borderRadius: 10,
-                          background: done ? '#eff6ff' : '#fef2f2',
-                          border: '1px solid ' + (done ? '#bfdbfe' : '#fca5a5'),
-                          padding: '12px 14px',
-                        }}
-                      >
-                        {/* Header line (always shown) */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            gap: 10,
-                            marginBottom: tasks.length > 0 ? 8 : 0,
-                          }}
-                        >
-                          {tasks.length === 0 && (
-                            <input
-                              type="checkbox"
-                              checked={explicit}
-                              disabled={implicit}
-                              onChange={() => toggleInterval(iv.kind, iv.hours_or_km)}
-                              style={{
-                                margin: '3px 0 0',
-                                flexShrink: 0,
-                                width: 18,
-                                height: 18,
-                                padding: 0,
-                                border: '1px solid var(--border-strong)',
-                              }}
-                            />
-                          )}
-                          <div style={{flex: 1}}>
-                            <div style={{fontWeight: 700, color: done ? '#1e40af' : '#991b1b', fontSize: 14}}>
-                              {iv.label}
-                            </div>
-                            <div style={{fontSize: 11, color: 'var(--ink-muted)', marginTop: 3}}>
-                              {iv.missed_count > 1
-                                ? `Missed ${iv.missed_count} times since ${iv.first_missed_at.toLocaleString()}${unitShort}`
-                                : `Passed ${iv.first_missed_at.toLocaleString()}${unitShort}`}
-                              {iv.last_done_at
-                                ? ` · last full done at ${iv.last_done_at.toLocaleString()}${unitShort}`
-                                : ' · never fully completed'}
-                            </div>
-                            {iv.last_partial &&
-                              (() => {
-                                // Only rendered when no full completion exists after this
-                                // partial (filtered in computeDueIntervals). Resolve the
-                                // ticked-item IDs against current task labels to show
-                                // exactly what was missed and by whom.
-                                const doneIds = new Set(iv.last_partial.items_completed || []);
-                                const missing = (Array.isArray(iv.tasks) ? iv.tasks : []).filter(
-                                  (t) => !doneIds.has(t.id),
-                                );
-                                const who = iv.last_partial.team_member || 'someone';
-                                return (
-                                  <div
-                                    style={{
-                                      fontSize: 11,
-                                      color: '#92400e',
-                                      marginTop: 4,
-                                      background: '#fffbeb',
-                                      border: '1px solid #fde68a',
-                                      borderRadius: 10,
-                                      padding: '5px 8px',
-                                    }}
-                                  >
-                                    <strong>
-                                      Partial at {iv.last_partial.at_reading.toLocaleString()}
-                                      {unitShort}
-                                    </strong>{' '}
-                                    by {who} — {iv.last_partial.items_done}/{iv.last_partial.total} done.
-                                    {missing.length > 0 && (
-                                      <>
-                                        {' '}
-                                        Missing:{' '}
-                                        <span style={{fontStyle: 'italic'}}>
-                                          {missing.map((m) => m.label).join(', ')}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              })()}
-                            {tasks.length > 0 && (
-                              <div
-                                style={{
-                                  fontSize: 11,
-                                  color: tickedCount > 0 ? '#1e40af' : '#991b1b',
-                                  marginTop: 4,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {tickedCount} of {tasks.length} tasks ticked
-                                {allTicked ? ' · full completion' : anyTicked ? ' · partial (will remain due)' : ''}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        {/* Field-level help text from Podio (torque specs, gap specs, etc.) */}
-                        {iv.help_text && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: '#78716c',
-                              background: '#fffbeb',
-                              border: '1px solid #fde68a',
-                              borderRadius: 10,
-                              padding: '6px 8px',
-                              marginBottom: tasks.length > 0 ? 8 : 0,
-                              fontStyle: 'italic',
-                              whiteSpace: 'pre-wrap',
-                            }}
-                          >
-                            {iv.help_text}
-                          </div>
-                        )}
-                        {/* Sub-task list (when this interval has tasks) */}
-                        {tasks.length > 0 && (
-                          <div
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 4,
-                              marginLeft: 0,
-                              borderTop: '1px solid ' + (done ? '#bfdbfe' : '#fca5a5'),
-                              paddingTop: 8,
-                            }}
-                          >
-                            {tasks.map((t) => {
-                              const ticked = ticks.has(t.id);
-                              return (
-                                <label
-                                  key={t.id}
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'flex-start',
-                                    gap: 8,
-                                    padding: '6px 8px',
-                                    borderRadius: 10,
-                                    background: ticked ? '#dcfce7' : 'white',
-                                    cursor: implicit ? 'not-allowed' : 'pointer',
-                                    fontSize: 12,
-                                    opacity: implicit ? 0.6 : 1,
-                                  }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={ticked}
-                                    disabled={implicit}
-                                    onChange={() => toggleTask(k, t.id)}
-                                    style={{
-                                      margin: '2px 0 0',
-                                      flexShrink: 0,
-                                      width: 16,
-                                      height: 16,
-                                      padding: 0,
-                                      border: '1px solid var(--border-strong)',
-                                    }}
-                                  />
-                                  <span style={{color: ticked ? '#065f46' : '#374151', fontWeight: ticked ? 600 : 500}}>
-                                    {t.label}
-                                  </span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        )}
+                {dueIntervals.length > 0 ? (
+                  <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 12}}>
+                    <span style={{color: '#991b1b', fontWeight: 700}}>⚠ Service due.</span> Based on{' '}
+                    {readingLabel.toLowerCase()} {readingNum.toLocaleString()} + prior completions. Tick any service you
+                    performed during this fill.
+                    {mostRecentFull && (
+                      <>
+                        {' '}
+                        Last {mostRecentFull.hours_or_km}
+                        {mostRecentFull.kind === 'km' ? '-km' : '-hour'} checklist done at{' '}
+                        {mostRecentFull.last_done_at.toLocaleString()}
+                        {mostRecentFull.kind === 'km' ? 'km' : 'h'}.
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        border: '1px solid #a7f3d0',
+                        background: '#ecfdf5',
+                        borderRadius: 10,
+                        padding: '8px 12px',
+                        marginBottom: 8,
+                      }}
+                    >
+                      <div style={{fontSize: 13, fontWeight: 600, color: '#065f46'}}>
+                        ✓ No service due at {readingNum.toLocaleString()} {readingLabel.toLowerCase()}.
                       </div>
-                    );
-                  })}
+                    </div>
+                    <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 12}}>
+                      Open any interval below to record service work done early.
+                    </div>
+                  </>
+                )}
+                <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
+                  {dueIntervals.map((iv) => renderDueInterval(iv))}
+                  {upcomingIntervals.map((iv) => renderUpcomingInterval(iv))}
                 </div>
               </div>
             );
@@ -1200,14 +1443,6 @@ export default function EquipmentFuelingWebform({sb, equipment, equipmentList, o
             {uploadingPhoto && (
               <div style={{fontSize: 11, color: 'var(--ink-faint)', marginTop: 6}}>Uploading{'…'}</div>
             )}
-          </div>
-        )}
-
-        {eq && hasReading && dueIntervals.length === 0 && (eq.service_intervals || []).length > 0 && (
-          <div style={{...cardS, border: '1px solid #a7f3d0', background: '#ecfdf5'}}>
-            <div style={{fontSize: 13, fontWeight: 600, color: '#065f46'}}>
-              ✓ No service due at {readingNum.toLocaleString()} {readingLabel.toLowerCase()}.
-            </div>
           </div>
         )}
 

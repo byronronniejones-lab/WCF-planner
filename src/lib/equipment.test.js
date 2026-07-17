@@ -2,6 +2,7 @@ import {describe, it, expect} from 'vitest';
 import {
   computeIntervalStatus,
   computeDueIntervals,
+  projectServiceIntervals,
   soonestDue,
   latestSaneReading,
   currentReadingFromFuelings,
@@ -39,6 +40,103 @@ describe('snap-to-nearest milestone', () => {
     const [status] = computeIntervalStatus(intervals, completions, 750);
     expect(status.last_satisfied_milestone).toBe(500);
     expect(status.next_due).toBe(1000);
+  });
+
+  // Fueling-checklist lane locks (2026-07-17): the exact three scenarios the
+  // directly-expandable-intervals build contract names. Redundant with the
+  // 968/1100/750 cases above by construction, but locked at these readings so
+  // the contract's own numbers stay executable.
+  it('500-hour service at 1,200 satisfies milestone 1,000; next due 1,500', () => {
+    const completions = [{kind: 'service', interval: 500, reading_at_completion: 1200}];
+    const [status] = computeIntervalStatus(intervals, completions, 1200);
+    expect(status.last_satisfied_milestone).toBe(1000);
+    expect(status.next_due).toBe(1500);
+    expect(status.overdue).toBe(false);
+  });
+
+  it('500-hour service at 1,300 satisfies milestone 1,500; next due 2,000', () => {
+    const completions = [{kind: 'service', interval: 500, reading_at_completion: 1300}];
+    const [status] = computeIntervalStatus(intervals, completions, 1300);
+    expect(status.last_satisfied_milestone).toBe(1500);
+    expect(status.next_due).toBe(2000);
+    expect(status.overdue).toBe(false);
+  });
+
+  it('exact midpoint (1,250) favors the earlier milestone 1,000; next due 1,500', () => {
+    const completions = [{kind: 'service', interval: 500, reading_at_completion: 1250}];
+    const [status] = computeIntervalStatus(intervals, completions, 1250);
+    expect(status.last_satisfied_milestone).toBe(1000);
+    expect(status.next_due).toBe(1500);
+  });
+});
+
+describe('projectServiceIntervals — unified fueling-list projection', () => {
+  // Merges computeDueIntervals (due membership) with computeIntervalStatus
+  // (next_due / until_due). Contains no math of its own — these tests lock
+  // ordering, due flags, and the neutral context fields the webform renders.
+
+  it('orders the due subset first (ascending) then non-due by soonest next_due', () => {
+    const intervals = [
+      {kind: 'hours', hours_or_km: 500, label: '500 Hour Service', tasks: []},
+      {kind: 'hours', hours_or_km: 100, label: '100 Hour Service', tasks: []},
+      {kind: 'hours', hours_or_km: 300, label: '300 Hour Service', tasks: []},
+    ];
+    // Reading 250: 100h due (milestones 100+200 passed, never done); 300h and
+    // 500h not yet due. 300h next at 300 (50 remaining) sorts before 500h
+    // next at 500 (250 remaining).
+    const projected = projectServiceIntervals(intervals, [], 250);
+    expect(projected.map((p) => [p.hours_or_km, p.due])).toEqual([
+      [100, true],
+      [300, false],
+      [500, false],
+    ]);
+  });
+
+  it('due entries carry computeDueIntervals metadata plus next_due/until_due', () => {
+    const intervals = [{kind: 'hours', hours_or_km: 100, label: '100 Hour Service', tasks: []}];
+    const [entry] = projectServiceIntervals(intervals, [], 250);
+    expect(entry.due).toBe(true);
+    expect(entry.missed_count).toBe(2); // milestones 100 and 200 both missed
+    expect(entry.first_missed_at).toBe(100);
+    expect(entry.next_due).toBe(100);
+    expect(entry.until_due).toBe(-150);
+  });
+
+  it('non-due entries expose neutral context: next milestone + remaining distance', () => {
+    const intervals = [{kind: 'hours', hours_or_km: 500, label: '500 Hour Service', tasks: []}];
+    const completions = [{kind: 'hours', interval: 500, reading_at_completion: 1000, total_tasks: 0}];
+    const [entry] = projectServiceIntervals(intervals, completions, 1200);
+    expect(entry.due).toBe(false);
+    expect(entry.next_due).toBe(1500);
+    expect(entry.until_due).toBe(300);
+  });
+
+  it('handles km-tracked intervals identically', () => {
+    const intervals = [
+      {kind: 'km', hours_or_km: 1000, label: '1,000 KM Service', tasks: []},
+      {kind: 'km', hours_or_km: 5000, label: '5,000 KM Service', tasks: []},
+    ];
+    const projected = projectServiceIntervals(intervals, [], 1500);
+    expect(projected.map((p) => [p.hours_or_km, p.due])).toEqual([
+      [1000, true],
+      [5000, false],
+    ]);
+    expect(projected[1].next_due).toBe(5000);
+    expect(projected[1].until_due).toBe(3500);
+  });
+
+  it('an interval due exactly AT its milestone stays in the due subset (computeDueIntervals owns membership)', () => {
+    // computeIntervalStatus.overdue is strictly currentReading > next_due, so
+    // at exactly 500 it reports overdue=false — but computeDueIntervals marks
+    // it due. Membership must come from computeDueIntervals.
+    const intervals = [{kind: 'hours', hours_or_km: 500, label: '500 Hour Service', tasks: []}];
+    const [entry] = projectServiceIntervals(intervals, [], 500);
+    expect(entry.due).toBe(true);
+  });
+
+  it('empty/absent intervals return []', () => {
+    expect(projectServiceIntervals([], [], 100)).toEqual([]);
+    expect(projectServiceIntervals(null, [], 100)).toEqual([]);
   });
 });
 

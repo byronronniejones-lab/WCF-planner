@@ -167,6 +167,40 @@ export function computeDueIntervals(intervals, completions, currentReading) {
   return due.sort((a, b) => a.hours_or_km - b.hours_or_km);
 }
 
+// Presentation projection for the fueling webform's unified "Service
+// intervals" list. Merges computeDueIntervals (due membership + missed
+// metadata) with computeIntervalStatus (next_due / until_due for every
+// configured interval). Deliberately contains NO due/remaining/milestone
+// math of its own — both inputs come from the locked helpers above.
+//
+// Returns one entry per configured interval:
+//   - due subset first, in computeDueIntervals order (ascending hours_or_km),
+//     each spread from computeDueIntervals' output plus {due: true} and the
+//     matching next_due / until_due from computeIntervalStatus;
+//   - then non-due intervals ({due: false}) ordered soonest-next first
+//     (until_due ascending, tie-break ascending hours_or_km), each spread
+//     from computeIntervalStatus' output.
+export function projectServiceIntervals(intervals, completions, currentReading) {
+  if (!Array.isArray(intervals) || intervals.length === 0) return [];
+  const due = computeDueIntervals(intervals, completions, currentReading);
+  const statuses = computeIntervalStatus(intervals, completions, currentReading);
+  const statusByKey = new Map(statuses.map((s) => [s.kind + ':' + s.hours_or_km, s]));
+  const dueKeys = new Set(due.map((d) => d.kind + ':' + d.hours_or_km));
+  const dueEntries = due.map((d) => {
+    const s = statusByKey.get(d.kind + ':' + d.hours_or_km);
+    return {...d, due: true, next_due: s ? s.next_due : null, until_due: s ? s.until_due : null};
+  });
+  const upcoming = statuses
+    .filter((s) => !dueKeys.has(s.kind + ':' + s.hours_or_km))
+    .sort((a, b) => {
+      const ua = a.until_due != null ? a.until_due : Infinity;
+      const ub = b.until_due != null ? b.until_due : Infinity;
+      return ua - ub || a.hours_or_km - b.hours_or_km;
+    })
+    .map((s) => ({...s, due: false}));
+  return [...dueEntries, ...upcoming];
+}
+
 // Internal helper used by both computeDueIntervals and computeIntervalStatus.
 // Aggregates completions by (interval, snapped milestone) and decides which
 // milestones are satisfied (full or virtual full from cumulative partials).
