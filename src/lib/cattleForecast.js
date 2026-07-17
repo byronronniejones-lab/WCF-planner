@@ -944,6 +944,55 @@ export function buildSequentialPlannedBatches({
   };
 }
 
+// ── projected-roster adapter ─────────────────────────────────────────────────
+//
+// One canonical projected-roster source for every Planned surface: the
+// consolidated batches list, the cattle batch record page, the forecast-only
+// batch detail, and the Processing Calendar's cattle Source details. Derives
+// per-cow rows for ONE forecast month from an already-built buildForecast
+// result — it contains NO eligibility/ADG/milestone/projection math of its
+// own, so the surfaces cannot disagree with each other or with the list
+// totals (bucket.animalIds are exactly the animalRows whose readyMonth is
+// this month, and projectedTotalLbs sums the same projectedWeightAtReady
+// values buildSequentialPlannedBatches sums for the row totals).
+//
+// Fail-closed: {ok:false, reason} on missing/unusable inputs. Callers must
+// render an explicit unavailable state — never zero or fabricated weights.
+// An ok result with count 0 is a truthful empty cohort (e.g. a scheduled
+// month whose cattle all rolled forward), not a failure.
+export function projectPlannedRoster(forecast, monthKeyWanted) {
+  if (!forecast || !Array.isArray(forecast.animalRows)) return {ok: false, reason: 'no_forecast'};
+  if (!parseMonthKey(monthKeyWanted)) return {ok: false, reason: 'bad_month'};
+  const rows = [];
+  for (const r of forecast.animalRows) {
+    if (!r || r.readyMonth !== monthKeyWanted) continue;
+    if (!Number.isFinite(r.projectedWeightAtReady)) return {ok: false, reason: 'missing_projection'};
+    rows.push({
+      cattleId: r.cow.id,
+      tag: r.cow.tag != null ? String(r.cow.tag) : null,
+      projectedWeight: r.projectedWeightAtReady,
+    });
+  }
+  // Numeric-aware tag sort (tags are numeric strings); no-tag rows last.
+  rows.sort((a, b) => {
+    if (a.tag == null) return 1;
+    if (b.tag == null) return -1;
+    const na = parseInt(a.tag, 10);
+    const nb = parseInt(b.tag, 10);
+    if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+    return a.tag.localeCompare(b.tag);
+  });
+  const projectedTotalLbs = rows.reduce((s, r) => s + r.projectedWeight, 0);
+  return {
+    ok: true,
+    monthKey: monthKeyWanted,
+    label: monthLabel(monthKeyWanted),
+    rows,
+    count: rows.length,
+    projectedTotalLbs,
+  };
+}
+
 // ── virtual-batch naming ──────────────────────────────────────────────────────
 //
 // Rules (locked in the build packet):

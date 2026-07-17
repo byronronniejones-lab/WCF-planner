@@ -26,6 +26,7 @@ import {
   checkProcessorGate,
   batchHasAllHangingWeights,
   batchMissingHangingTags,
+  projectPlannedRoster,
   ADG_SOURCES,
   WATCHLIST_REASONS,
   FORECAST_FALLBACK_ADG_DEFAULT,
@@ -957,5 +958,88 @@ describe('locked default constants', () => {
     expect(FORECAST_BIRTH_WEIGHT_LB_DEFAULT).toBe(64);
     expect(FORECAST_DISPLAY_WEIGHT_MIN_DEFAULT).toBe(1200);
     expect(FORECAST_DISPLAY_WEIGHT_MAX_DEFAULT).toBe(1500);
+  });
+});
+
+// ── projectPlannedRoster — canonical planned-surface roster adapter ──────────
+// One projection source for the consolidated Planned list, the cattle batch
+// record page, the forecast-only detail, and Processing Source details.
+// These locks prove the adapter re-derives EXACTLY the numbers the batch
+// rows already show (no second calculation) and fails closed on bad input.
+describe('projectPlannedRoster — canonical planned-surface roster adapter', () => {
+  const settings = {displayMin: 1200, displayMax: 1500, fallbackAdg: 1.18, birthWeight: 64, horizonYears: 3};
+  // F1 (1300 lb @ 2026-04-20) and F2 (1250 lb @ 2026-04-25) both project
+  // inside the window at the 2026-05 checkpoint; B1 (700 lb) lands far out.
+  const cattle = [
+    cow({id: 'F1', tag: '1001'}),
+    cow({id: 'F2', tag: '1002'}),
+    cow({id: 'B1', tag: '900', herd: 'backgrounders'}),
+  ];
+  const weighIns = [
+    wi('1001', 1300, '2026-04-20T12:00:00Z'),
+    wi('1002', 1250, '2026-04-25T12:00:00Z'),
+    wi('900', 700, '2026-04-01T12:00:00Z'),
+  ];
+
+  it('rows/count/total match the virtual batch and month bucket for the same month exactly', () => {
+    const out = buildForecast({cattle, weighIns, settings, todayMs: TODAY});
+    const roster = projectPlannedRoster(out, '2026-05');
+    expect(roster.ok).toBe(true);
+    expect(roster.rows.map((r) => r.tag)).toEqual(['1001', '1002']);
+    expect(roster.count).toBe(2);
+
+    // Per-cow weights are the animalRows' projectedWeightAtReady values.
+    const byId = new Map(out.animalRows.map((r) => [r.cow.id, r]));
+    for (const row of roster.rows) {
+      expect(row.projectedWeight).toBe(byId.get(row.cattleId).projectedWeightAtReady);
+    }
+    // Total = per-cow sum = the list row's total = the bucket's total.
+    const perCowSum = roster.rows.reduce((s, r) => s + r.projectedWeight, 0);
+    expect(roster.projectedTotalLbs).toBe(perCowSum);
+    const vb = out.virtualBatches.find((v) => v.monthKey === '2026-05');
+    expect(vb).toBeTruthy();
+    expect(roster.projectedTotalLbs).toBe(vb.projectedTotalLbs);
+    expect(new Set(roster.rows.map((r) => r.cattleId))).toEqual(new Set(vb.animalIds));
+    const bucket = out.monthBuckets.find((b) => b.monthKey === '2026-05');
+    expect(roster.projectedTotalLbs).toBeCloseTo(bucket.projectedTotalLbs, 9);
+  });
+
+  it('matches the enriched SCHEDULED batch for the same month (list/page/drawer equivalence)', () => {
+    const scheduled = [
+      {id: 'sb1', name: 'C-26-01', status: 'scheduled', planned_process_date: '2026-05-20', cows_detail: []},
+    ];
+    const out = buildForecast({cattle, weighIns, settings, scheduledBatches: scheduled, todayMs: TODAY});
+    const enriched = out.scheduledBatches.find((s) => s.id === 'sb1');
+    expect(enriched).toBeTruthy();
+    const roster = projectPlannedRoster(out, enriched.monthKey);
+    expect(roster.ok).toBe(true);
+    expect(roster.projectedTotalLbs).toBe(enriched.projectedTotalLbs);
+    expect(new Set(roster.rows.map((r) => r.cattleId))).toEqual(new Set(enriched.animalIds));
+  });
+
+  it('sorts tags numerically (900 before 1001), not lexicographically', () => {
+    const twoNow = [cow({id: 'A', tag: '900'}), cow({id: 'B', tag: '1001'})];
+    const wis = [wi('900', 1300, '2026-04-20T12:00:00Z'), wi('1001', 1300, '2026-04-20T12:00:00Z')];
+    const out = buildForecast({cattle: twoNow, weighIns: wis, settings, todayMs: TODAY});
+    const roster = projectPlannedRoster(out, '2026-05');
+    expect(roster.ok).toBe(true);
+    expect(roster.rows.map((r) => r.tag)).toEqual(['900', '1001']);
+  });
+
+  it('fails closed on missing forecast or malformed month', () => {
+    expect(projectPlannedRoster(null, '2026-05')).toEqual({ok: false, reason: 'no_forecast'});
+    expect(projectPlannedRoster({}, '2026-05')).toEqual({ok: false, reason: 'no_forecast'});
+    const out = buildForecast({cattle, weighIns, settings, todayMs: TODAY});
+    expect(projectPlannedRoster(out, 'not-a-month')).toEqual({ok: false, reason: 'bad_month'});
+    expect(projectPlannedRoster(out, '2026-13')).toEqual({ok: false, reason: 'bad_month'});
+  });
+
+  it('an empty month is a truthful ok/count-0 result, never fabricated rows', () => {
+    const out = buildForecast({cattle, weighIns, settings, todayMs: TODAY});
+    const roster = projectPlannedRoster(out, '2029-11');
+    expect(roster.ok).toBe(true);
+    expect(roster.count).toBe(0);
+    expect(roster.rows).toEqual([]);
+    expect(roster.projectedTotalLbs).toBe(0);
   });
 });

@@ -247,7 +247,9 @@ describe('CattleBatchesView - cold-boot readiness', () => {
     expect(listSrc).toContain('<InlineNotice notice={loadError} />');
     expect(listSrc).toMatch(/\{loadError && \([\s\S]*?onClick=\{loadAll\}[\s\S]*?Retry/);
     expect(listSrc).toMatch(/!loading && !loadError && \(/);
-    expect(listSrc).toMatch(/!loading && !loadError && scheduledList\.length > 0/);
+    // The consolidated Planned section is gated on load success like every
+    // other pipeline section.
+    expect(listSrc).toMatch(/!loading && !loadError && \([\s\S]*?data-planned-section/);
   });
 
   it('degrades forecast sidecar failures without blocking real batch rows', () => {
@@ -256,6 +258,77 @@ describe('CattleBatchesView - cold-boot readiness', () => {
     expect(loadAllSrc).toMatch(/loadHeiferIncludes\(sb\)\.catch[\s\S]*?return new Set\(\);/);
     expect(loadAllSrc).toMatch(/loadHidden\(sb\)\.catch[\s\S]*?return \[\];/);
     expect(loadAllSrc).toContain('Planned batches may be unavailable until refresh.');
+  });
+});
+
+describe('Consolidated Planned pipeline + projected rosters — canonical adapter locks', () => {
+  const forecastPageSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/CattleForecastBatchPage.jsx'), 'utf8');
+  const drawerSrc = fs.readFileSync(path.join(ROOT, 'src/processing/ProcessingDrawer.jsx'), 'utf8');
+  const apiSrc = fs.readFileSync(path.join(ROOT, 'src/lib/cattleForecastApi.js'), 'utf8');
+  const rosterTableSrc = fs.readFileSync(path.join(ROOT, 'src/cattle/ProjectedRosterTable.jsx'), 'utf8');
+
+  it('one Planned section: chronological merge, Forecast/Scheduled chips, no per-row PLANNED badge', () => {
+    expect(listSrc).toContain('data-planned-section');
+    expect(listSrc).not.toContain('Show Planned Batches');
+    expect(listSrc).toContain('const plannedRows = [');
+    expect(listSrc).toContain("sortKey: row.monthKey + '-15'");
+    // Scheduled rows no longer render the status-label badge ("Planned") —
+    // the section heading owns lifecycle; rows carry scheduling-state chips.
+    expect(listSrc).not.toMatch(/processingStatusLabel\(sb2\.status\)/);
+    expect(listSrc).toMatch(/data-planned-row="scheduled"/);
+    expect(listSrc).toMatch(/data-planned-row="forecast"/);
+  });
+
+  it('forecast rows open a real route-backed detail keyed by stable monthKey', () => {
+    expect(listSrc).toContain("navigate('/cattle/batches/forecast/' + vb.monthKey)");
+    expect(listSrc).toContain("location.pathname.startsWith('/cattle/batches/forecast/')");
+  });
+
+  it('scheduled batch page renders the PROJECTED roster through the canonical loader, fail-closed', () => {
+    expect(pageSrc).toContain('loadProjectedRosterForScheduledBatch');
+    expect(pageSrc).toContain('data-scheduled-projected-roster');
+    expect(pageSrc).toContain('data-projected-roster-unavailable');
+    expect(pageSrc).toContain('ProjectedRosterTable');
+    // Rendered ONLY for scheduled batches — actual rosters never mix with
+    // projections on active/complete pages.
+    expect(pageSrc).toMatch(/\{isScheduled && \([\s\S]*?data-scheduled-projected-roster/);
+    expect(pageSrc).toMatch(/batch\.status !== 'scheduled'[\s\S]*?setProjectedRoster\(null\)/);
+  });
+
+  it('forecast-only detail reconstructs from live data and never masquerades as a record', () => {
+    expect(forecastPageSrc).toContain('loadCattleForecastBundle');
+    expect(forecastPageSrc).toContain('projectPlannedRoster');
+    expect(forecastPageSrc).toContain('parseMonthKey');
+    // Scheduled month points at the persisted record instead of a shadow copy.
+    expect(forecastPageSrc).toContain('data-forecast-batch-scheduled-pointer');
+    // Fail-closed empty state, no fabricated cohort.
+    expect(forecastPageSrc).toContain('data-forecast-batch-empty');
+    // Not a persisted record page: no collaboration stream, no direct table
+    // access (all data arrives through the shared bundle loader).
+    expect(forecastPageSrc).not.toContain('RecordCollaborationSection');
+    expect(forecastPageSrc).not.toMatch(/from\('cattle_processing_batches'\)/);
+  });
+
+  it('Processing Drawer cattle source falls back to the canonical projected roster', () => {
+    expect(drawerSrc).toContain('loadProjectedRosterForScheduledBatch');
+    expect(drawerSrc).toContain('CattleProjectedSourceRoster');
+    expect(drawerSrc).toMatch(/kind === 'cattle' \? \([\s\S]*?CattleProjectedSourceRoster/);
+    expect(drawerSrc).toContain('data-processing-projected-roster');
+    expect(drawerSrc).toContain('data-processing-projected-unavailable');
+    // Non-scheduled empty batches keep the classic truthful copy.
+    expect(drawerSrc).toContain('No animals recorded on the source batch.');
+  });
+
+  it('no surface duplicates the forecast math — projection flows through the shared loader/adapter only', () => {
+    // The loader composes the canonical helpers…
+    expect(apiSrc).toContain('loadCattleWeighInsCached(sb, {throwOnError: true})');
+    expect(apiSrc).toMatch(/loadProjectedRosterForScheduledBatch[\s\S]*?dateToMonthKey[\s\S]*?projectPlannedRoster/);
+    // …and no consuming surface re-implements eligibility/ADG/projection.
+    for (const src of [pageSrc, drawerSrc, forecastPageSrc, rosterTableSrc]) {
+      expect(src).not.toMatch(/projectedWeightAtMonth|computeLast[23]ADG|snapToNearestMilestone|buildForecast\(\{/);
+    }
+    // The shared table is presentation-only (no math imports at all).
+    expect(rosterTableSrc).not.toContain("from '../lib/cattleForecast.js'");
   });
 });
 

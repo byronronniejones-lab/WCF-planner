@@ -155,15 +155,22 @@ describe('CattleBatches CSV + print export are fed the filtered + sorted rows', 
 
 describe('CattleBatches filtered-vs-empty states', () => {
   it('distinguishes filtered-no-results from true-empty per pipeline section', () => {
-    expect(batchesView).toContain('data-cattle-batches-scheduled-empty-filtered');
+    // Consolidated Planned section: ONE empty marker whose copy branches on
+    // whether toolbar filters hid scheduled rows or the pipeline is truly empty.
+    expect(batchesView).toContain('data-cattle-batches-planned-empty');
+    expect(batchesView).toContain('No planned batches match the current filters.');
     expect(batchesView).toContain('data-cattle-batches-active-empty-filtered');
     expect(batchesView).toContain('data-cattle-batches-processed-empty-filtered');
     // True-empty in-process message is preserved.
     expect(batchesView).toContain('No in-process batches. Cattle enter an in-process batch only via');
   });
 
-  it('keeps the pipeline sections + the existing scheduled/processed contract intact', () => {
-    expect(batchesView).toContain('data-scheduled-section');
+  it('keeps the pipeline sections + the consolidated planned/processed contract intact', () => {
+    // The two former planned surfaces ("Show Planned Batches" + the separate
+    // scheduled section) are consolidated into one Planned section.
+    expect(batchesView).toContain('data-planned-section');
+    expect(batchesView).not.toContain('data-scheduled-section');
+    expect(batchesView).not.toContain('Show Planned Batches');
     expect(batchesView).toContain('Show Complete Batches');
     expect(batchesView).toContain("completed = batches.filter((b) => b.status === 'complete')");
   });

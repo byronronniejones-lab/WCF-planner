@@ -28,7 +28,9 @@ import Badge from '../shared/Badge.jsx';
 import {detachCattleFromProcessingBatch} from '../lib/processingDetachApi.js';
 import {unscheduleCattleProcessingBatch} from '../lib/processingBatchDeleteApi.js';
 import {batchHasAllHangingWeights, batchMissingHangingTags, validateRealBatchRename} from '../lib/cattleForecast.js';
-import {markBatchComplete, reopenBatch} from '../lib/cattleForecastApi.js';
+import {markBatchComplete, reopenBatch, loadProjectedRosterForScheduledBatch} from '../lib/cattleForecastApi.js';
+// eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
+import ProjectedRosterTable from './ProjectedRosterTable.jsx';
 import {todayCentralISO} from '../lib/dateUtils.js';
 import {invalidateCattleWeighInsCache} from '../lib/cattleCache.js';
 import {recordStatusChange, recordActivityEvent} from '../lib/entityMutations.js';
@@ -140,6 +142,36 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
     setLoadError(null);
     loadAll();
   }, [batchId, authState]);
+
+  // Projected roster for SCHEDULED batches — cows_detail is empty until
+  // Send-to-Processor, so the cohort renders from the canonical forecast math
+  // (loadProjectedRosterForScheduledBatch → buildForecast →
+  // projectPlannedRoster; the same source as the Planned list and the
+  // Processing Drawer). Fail-closed: a failed forecast load renders an
+  // explicit unavailable state, never zero/fabricated weights. Re-runs when
+  // the planned date changes so a moved batch recomputes its cohort through
+  // the same math.
+  const [projectedRoster, setProjectedRoster] = React.useState(null);
+  React.useEffect(() => {
+    if (!batch || batch.status !== 'scheduled') {
+      setProjectedRoster(null);
+      return;
+    }
+    let cancelled = false;
+    setProjectedRoster({state: 'loading'});
+    loadProjectedRosterForScheduledBatch(sb, batch.id)
+      .then((r) => {
+        if (cancelled) return;
+        setProjectedRoster(r.ok ? {state: 'ok', ...r} : {state: 'unavailable', reason: r.reason});
+      })
+      .catch((e) => {
+        if (!cancelled) setProjectedRoster({state: 'unavailable', reason: (e && e.message) || 'load_failed'});
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sb, batch?.id, batch?.status, batch?.planned_process_date]);
 
   React.useEffect(() => {
     if (!loading && location.hash) {
@@ -494,6 +526,46 @@ export default function CattleBatchPage({sb, fmt, authState, Header}) {
                   Confirm unschedule
                 </button>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Projected roster — scheduled batches only. cows_detail stays empty
+            until Send-to-Processor, so the cohort renders as the LIVE
+            forecast projection (canonical adapter), clearly labeled
+            Projected. It is replaced by the actual attached cattle the
+            moment the batch goes active — projections never mix into the
+            actual roster or its weights. */}
+        {isScheduled && (
+          <div
+            data-scheduled-projected-roster={batch.id}
+            style={{
+              background: 'white',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: '14px 18px',
+              marginBottom: 12,
+            }}
+          >
+            <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4}}>
+              <span style={{fontSize: 13, fontWeight: 700, color: 'var(--ink)'}}>Projected roster</span>
+              <Badge variant="info" style={{textTransform: 'uppercase'}}>
+                Projected
+              </Badge>
+            </div>
+            <div style={{fontSize: 11, color: 'var(--ink-muted)', marginBottom: 10}}>
+              Live forecast for {batch.planned_process_date ? fmt(batch.planned_process_date) : 'the planned month'} —
+              updates with new weigh-ins until cattle are actually sent from WeighIns. Nothing is attached to this
+              record yet.
+            </div>
+            {!projectedRoster || projectedRoster.state === 'loading' ? (
+              <div style={{fontSize: 12, color: 'var(--ink-faint)'}}>Computing projection{'…'}</div>
+            ) : projectedRoster.state === 'unavailable' ? (
+              <div data-projected-roster-unavailable="1" style={{fontSize: 12, color: '#b91c1c'}}>
+                Projected roster unavailable — the forecast inputs could not be loaded. Refresh to retry.
+              </div>
+            ) : (
+              <ProjectedRosterTable roster={projectedRoster.roster} />
             )}
           </div>
         )}

@@ -10,6 +10,8 @@
 // layer surfaces error messages to the operator.
 
 import {todayCentralISO} from './dateUtils.js';
+import {loadCattleWeighInsCached} from './cattleCache.js';
+import {buildForecast, dateToMonthKey, projectPlannedRoster} from './cattleForecast.js';
 
 const SETTINGS_PK = 'global';
 
@@ -126,6 +128,80 @@ export async function addHidden(sb, {cattleId, monthKey, hiddenBy}) {
 export async function removeHidden(sb, {cattleId, monthKey}) {
   const r = await sb.from('cattle_forecast_hidden').delete().eq('cattle_id', cattleId).eq('month_key', monthKey);
   if (r.error) throw new Error('removeHidden: ' + r.error.message);
+}
+
+// ── shared forecast bundle + projected-roster loader ─────────────────────────
+
+// Load every input buildForecast needs, in one place, for the surfaces that
+// don't already hold them (cattle batch record page, forecast-only batch
+// detail, Processing Drawer cattle Source details). FAIL-CLOSED: any read
+// error throws — callers must render an explicit unavailable state instead
+// of projecting from partial inputs (a missing hidden/includes/settings read
+// would silently change cohort membership).
+export async function loadCattleForecastBundle(sb) {
+  const [cattleR, weighIns, settings, includes, hidden, batchesR] = await Promise.all([
+    sb.from('cattle').select('*').is('deleted_at', null),
+    // throwOnError: a raced/errored weigh-ins read must fail this loader —
+    // the soft [] fallback would silently project every cow from its DOB
+    // fallback (fabricated weights) instead of real weigh-in anchors.
+    loadCattleWeighInsCached(sb, {throwOnError: true}),
+    loadForecastSettings(sb),
+    loadHeiferIncludes(sb),
+    loadHidden(sb),
+    sb.from('cattle_processing_batches').select('*'),
+  ]);
+  if (cattleR.error) throw new Error('loadCattleForecastBundle (cattle): ' + cattleR.error.message);
+  if (batchesR.error) throw new Error('loadCattleForecastBundle (batches): ' + batchesR.error.message);
+  const batches = batchesR.data || [];
+  return {
+    cattle: cattleR.data || [],
+    weighIns: weighIns || [],
+    settings,
+    includes,
+    hidden,
+    batches,
+    realBatches: batches.filter((b) => b.status === 'active' || b.status === 'complete'),
+    scheduledBatches: batches.filter((b) => b.status === 'scheduled'),
+  };
+}
+
+// Build the forecast from a loaded bundle. Thin composition helper so every
+// caller passes the SAME partitioned inputs (no surface can accidentally
+// leak scheduled rows into realBatches or vice versa).
+export function forecastFromBundle(bundle, {todayMs = Date.now()} = {}) {
+  return buildForecast({
+    cattle: bundle.cattle,
+    weighIns: bundle.weighIns,
+    settings: bundle.settings,
+    includes: bundle.includes,
+    hidden: bundle.hidden,
+    realBatches: bundle.realBatches,
+    scheduledBatches: bundle.scheduledBatches,
+    todayMs,
+  });
+}
+
+// Projected roster for one PERSISTED scheduled batch, resolved through the
+// canonical forecast math (buildForecast → projectPlannedRoster). Used by the
+// cattle batch record page and the Processing Drawer so both render the exact
+// rows/totals the consolidated Planned list shows. Returns:
+//   {ok:true, batch, monthKey, roster, sequenceName}   — roster from
+//       projectPlannedRoster; sequenceName is the reconciliation-derived
+//       display name (may differ from the stored name until the management
+//       reconcile pass lands; stored name is authoritative for the record).
+//   {ok:false, reason, batch?}                          — fail-closed.
+export async function loadProjectedRosterForScheduledBatch(sb, batchId, {todayMs = Date.now()} = {}) {
+  const bundle = await loadCattleForecastBundle(sb);
+  const batch = bundle.batches.find((b) => b && b.id === batchId) || null;
+  if (!batch) return {ok: false, reason: 'batch_not_found'};
+  if (batch.status !== 'scheduled') return {ok: false, reason: 'not_scheduled', batch};
+  const monthKey = dateToMonthKey(batch.planned_process_date);
+  if (!monthKey) return {ok: false, reason: 'no_planned_date', batch};
+  const forecast = forecastFromBundle(bundle, {todayMs});
+  const roster = projectPlannedRoster(forecast, monthKey);
+  if (!roster.ok) return {ok: false, reason: roster.reason, batch};
+  const enriched = (forecast.scheduledBatches || []).find((s) => s && s.id === batchId) || null;
+  return {ok: true, batch, monthKey, roster, sequenceName: enriched ? enriched.name : batch.name};
 }
 
 // ── batch state-machine helpers ───────────────────────────────────────────────

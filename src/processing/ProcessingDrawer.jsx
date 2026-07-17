@@ -82,6 +82,7 @@ import {
 } from '../lib/processingSourceLink.js';
 import {processingStatusLabel, processingStatusVariantFromLabel} from '../lib/processingStatusDisplay.js';
 import {activeOptionLabels} from '../lib/processingFields.js';
+import {loadProjectedRosterForScheduledBatch} from '../lib/cattleForecastApi.js';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
 import Badge from '../shared/Badge.jsx';
 // eslint-disable-next-line no-unused-vars -- JSX-only use
@@ -244,6 +245,88 @@ function AnimalsTable({columns, rows}) {
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+// PROJECTED roster for a SCHEDULED cattle source batch. cows_detail is empty
+// until Send-to-Processor, so the server's `animals` projection is empty too;
+// this fills the gap CLIENT-SIDE from the canonical cattle forecast math
+// (loadProjectedRosterForScheduledBatch → buildForecast →
+// projectPlannedRoster) — the exact rows and totals the consolidated Planned
+// list and the cattle batch record page show, so the three surfaces cannot
+// disagree. Only truthful states render: projected rows for a scheduled
+// batch, the classic "No animals recorded" copy for a non-scheduled empty
+// batch, and an explicit unavailable line when forecast inputs cannot load
+// (never zero/fabricated weights). Once actual cattle attach,
+// record.animals is non-empty and the caller never mounts this component —
+// projections and actuals cannot mix.
+// eslint-disable-next-line no-unused-vars -- JSX-only use
+function CattleProjectedSourceRoster({sb, batchId}) {
+  const [state, setState] = React.useState({phase: 'loading'});
+  React.useEffect(() => {
+    if (!batchId) {
+      setState({phase: 'not_scheduled'});
+      return;
+    }
+    let cancelled = false;
+    setState({phase: 'loading'});
+    loadProjectedRosterForScheduledBatch(sb, batchId)
+      .then((r) => {
+        if (cancelled) return;
+        if (r.ok) setState({phase: 'ok', roster: r.roster});
+        else if (r.reason === 'not_scheduled' || r.reason === 'batch_not_found') setState({phase: 'not_scheduled'});
+        else setState({phase: 'unavailable'});
+      })
+      .catch(() => {
+        if (!cancelled) setState({phase: 'unavailable'});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sb, batchId]);
+
+  const mutedLine = (text, attrs = {}) => (
+    <div {...attrs} style={{fontSize: 12.5, color: T.faint, fontWeight: 600, padding: '8px 0 2px'}}>
+      {text}
+    </div>
+  );
+
+  if (state.phase === 'loading') return mutedLine('Computing projected roster…');
+  if (state.phase === 'not_scheduled') return mutedLine('No animals recorded on the source batch.');
+  if (state.phase === 'unavailable') {
+    return mutedLine('Projected roster unavailable — forecast inputs could not be loaded.', {
+      'data-processing-projected-unavailable': '1',
+    });
+  }
+  const roster = state.roster;
+  return (
+    <div data-processing-projected-roster={roster.count}>
+      <div style={{display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap'}}>
+        <Badge variant="info" style={{textTransform: 'uppercase'}}>
+          Projected
+        </Badge>
+        <span style={{fontSize: 11.5, color: T.faint, fontWeight: 600}}>
+          {roster.count} {roster.count === 1 ? 'cow' : 'cows'} · {Math.round(roster.projectedTotalLbs).toLocaleString()}{' '}
+          lb projected — live forecast until cattle are sent from WeighIns.
+        </span>
+      </div>
+      {roster.rows.length > 0 ? (
+        <AnimalsTable
+          rows={roster.rows}
+          columns={[
+            {key: 'tag', label: 'Tag', render: (a) => a.tag},
+            {
+              key: 'projected',
+              label: 'Projected live weight',
+              align: 'right',
+              render: (a) => weightText(Math.round(a.projectedWeight)),
+            },
+          ]}
+        />
+      ) : (
+        mutedLine('No cattle currently project into this month.')
+      )}
     </div>
   );
 }
@@ -1054,6 +1137,10 @@ export default function ProcessingDrawer({
                   {key: 'hang', label: 'Hanging weight', align: 'right', render: (a) => weightText(a.hanging_weight)},
                 ]}
               />
+            ) : kind === 'cattle' ? (
+              // Scheduled cattle batches have no attached animals yet — show
+              // the canonical PROJECTED roster instead of a dead empty state.
+              <CattleProjectedSourceRoster sb={sb} batchId={record.source_id} />
             ) : (
               <div style={{fontSize: 12.5, color: T.faint, fontWeight: 600, padding: '8px 0 2px'}}>
                 No animals recorded on the source batch.

@@ -134,9 +134,13 @@ describe('CattleBatchesView — Planned / Scheduled / Active / Processed', () =>
     expect(batchesViewSrc).toMatch(/scheduledBatches:\s*scheduledBatchesOnly/);
   });
 
-  it('renders a Scheduled section anchor when at least one scheduled row exists', () => {
-    expect(batchesViewSrc).toMatch(/data-scheduled-section/);
+  it('renders scheduled rows inside the consolidated Planned section', () => {
+    // One Planned section holds BOTH row types: persisted scheduled rows and
+    // virtual forecast rows, distinguished by data-planned-row state.
+    expect(batchesViewSrc).toMatch(/data-planned-section/);
     expect(batchesViewSrc).toMatch(/data-scheduled-batch=\{sb2\.name\}/);
+    expect(batchesViewSrc).toMatch(/data-planned-row="scheduled"/);
+    expect(batchesViewSrc).toMatch(/data-planned-row="forecast"/);
   });
 
   it('Schedule action is only offered when canEdit and writes status=scheduled with empty cows_detail', () => {

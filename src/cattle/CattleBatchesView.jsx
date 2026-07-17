@@ -31,6 +31,7 @@ import {
 // eslint-disable-next-line no-unused-vars -- JSX-only use (eslint flat config has no react/jsx-uses-vars rule)
 import Badge from '../shared/Badge.jsx';
 import CattleBatchPage from './CattleBatchPage.jsx';
+import CattleForecastBatchPage from './CattleForecastBatchPage.jsx';
 
 const CATTLE_BATCHES_SURFACE_KEY = 'cattle.batches';
 const EXTENDED_LIST_CONTROLS_ENABLED = false;
@@ -73,7 +74,6 @@ const CattleBatchesHub = ({
   const [forecastInputsReliable, setForecastInputsReliable] = useState(false);
   const reconcileAttemptRef = useRef('');
 
-  const [showPlanned, setShowPlanned] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [scheduleDateDraft, setScheduleDateDraft] = useState({});
   const [notice, setNotice] = useState(null);
@@ -330,6 +330,21 @@ const CattleBatchesHub = ({
   const scheduledVisible = scheduledPairs.map((p) => p.raw);
   const activeVisible = activePairs.map((p) => p.raw);
   const completedVisible = completedPairs.map((p) => p.raw);
+
+  // Consolidated Planned pipeline: persisted scheduled rows (toolbar-filtered
+  // like every persisted section) interleaved with virtual forecast rows
+  // (never toolbar-filtered — they aren't persisted records) in chronological
+  // order. Scheduled rows sort by their exact processor date; forecast rows
+  // anchor to the month's 15th (the forecast checkpoint date).
+  const plannedRows = [
+    ...scheduledVisible.map((row) => ({
+      kind: 'scheduled',
+      sortKey: row.planned_process_date || (row.monthKey || '') + '-15',
+      row,
+    })),
+    ...virtualPlanned.map((row) => ({kind: 'forecast', sortKey: row.monthKey + '-15', row})),
+  ].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+  const plannedHiddenByFilters = scheduledList.length - scheduledVisible.length;
 
   // Visible/rendered order for record sequence nav (scheduled → active → then
   // complete ONLY when the Show Complete Batches section is expanded).
@@ -610,7 +625,8 @@ const CattleBatchesHub = ({
           <div style={{fontSize: 16, fontWeight: 700, color: 'var(--ink)'}} data-cattle-batches-root>
             Processing Batches{' '}
             <span style={{fontSize: 13, fontWeight: 400, color: 'var(--ink-muted)'}}>
-              {scheduledList.length} planned · {active.length} in process · {completed.length} complete
+              {scheduledList.length + virtualPlanned.length} planned · {active.length} in process · {completed.length}{' '}
+              complete
             </span>
           </div>
           <div style={{display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end'}}>
@@ -956,105 +972,15 @@ const CattleBatchesHub = ({
           </div>
         )}
 
-        {/* Show Planned Batches (virtual, top, collapsed) */}
+        {/* Planned — ONE consolidated chronological pipeline. Persisted
+            scheduled batches (processor date booked) and virtual forecast
+            batches (cohort projected, no date yet) interleave by month. The
+            section heading establishes the lifecycle state, so rows carry a
+            Forecast/Scheduled state chip instead of a per-row PLANNED badge.
+            Forecast rows open the live forecast-only detail route; scheduled
+            rows open their persisted record page. */}
         {!loading && !loadError && (
-          <CollapsibleSection
-            label="Show Planned Batches"
-            count={virtualPlanned.length}
-            expanded={showPlanned}
-            onToggle={() => setShowPlanned((v) => !v)}
-            color="white"
-            border="var(--border)"
-            text="var(--text-primary)"
-            dataKey="planned"
-          >
-            {virtualPlanned.length === 0 ? (
-              <div style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}>
-                No planned batches in the next 12 months — the forecast has no eligible cattle landing in the display
-                window.
-              </div>
-            ) : (
-              <div style={{display: 'flex', flexDirection: 'column', gap: 6, padding: '0.5rem 0.75rem'}}>
-                {virtualPlanned.map((vb) => (
-                  <div
-                    key={vb.name}
-                    data-virtual-batch={vb.name}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      flexWrap: 'wrap',
-                      padding: '8px 10px',
-                      background: 'white',
-                      border: '1px dashed var(--border)',
-                      borderRadius: 10,
-                      fontSize: 12,
-                    }}
-                  >
-                    <strong style={{color: 'var(--text-primary)'}}>{vb.name}</strong>
-                    <span style={{color: 'var(--ink-muted)'}}>{vb.label}</span>
-                    <Badge variant="warn" style={{textTransform: 'uppercase'}}>
-                      Planned
-                    </Badge>
-                    <span style={{color: 'var(--ink-muted)'}}>
-                      {vb.animalIds.length} {vb.animalIds.length === 1 ? 'cow' : 'cows'}
-                    </span>
-                    {vb.projectedTotalLbs > 0 && (
-                      <span style={{color: 'var(--text-primary)', fontWeight: 600}}>
-                        {Math.round(vb.projectedTotalLbs).toLocaleString()} lb projected
-                      </span>
-                    )}
-                    <span style={{flex: 1}} />
-                    {canEdit ? (
-                      <span style={{display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}>
-                        <input
-                          data-virtual-batch-schedule-date={vb.name}
-                          type="date"
-                          value={scheduleDateDraft[vb.name] || ''}
-                          onChange={(e) => setScheduleDateDraft((prev) => ({...prev, [vb.name]: e.target.value}))}
-                          style={{
-                            fontSize: 11,
-                            padding: '3px 6px',
-                            border: '1px solid var(--border-strong)',
-                            borderRadius: 10,
-                            fontFamily: 'inherit',
-                          }}
-                          title="Processor date for this batch"
-                        />
-                        <button
-                          data-virtual-batch-schedule={vb.name}
-                          onClick={() => scheduleVirtualBatch(vb)}
-                          disabled={!scheduleDateDraft[vb.name]}
-                          style={{
-                            fontSize: 11,
-                            padding: '4px 10px',
-                            borderRadius: 10,
-                            border: 'none',
-                            background: scheduleDateDraft[vb.name] ? '#085041' : '#9ca3af',
-                            color: 'white',
-                            cursor: scheduleDateDraft[vb.name] ? 'pointer' : 'not-allowed',
-                            fontFamily: 'inherit',
-                            fontWeight: 600,
-                          }}
-                        >
-                          Schedule
-                        </button>
-                      </span>
-                    ) : (
-                      <span style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
-                        Created when sent to processor at WeighIns
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CollapsibleSection>
-        )}
-
-        {/* Scheduled batches — navigate to record page */}
-        {!loading && !loadError && scheduledList.length > 0 && (
-          <div style={{marginTop: 12}} data-scheduled-section>
+          <div style={{marginTop: 12}} data-planned-section>
             <div
               style={{
                 fontSize: 12,
@@ -1065,56 +991,154 @@ const CattleBatchesHub = ({
                 marginBottom: 8,
               }}
             >
-              Planned ({scheduledVisible.length}
-              {scheduledVisible.length !== scheduledList.length ? ' of ' + scheduledList.length : ''})
+              Planned ({plannedRows.length}
+              {plannedHiddenByFilters > 0 ? ' of ' + (plannedRows.length + plannedHiddenByFilters) : ''})
             </div>
-            {scheduledVisible.length === 0 ? (
+            {plannedRows.length === 0 ? (
               <div
-                data-cattle-batches-scheduled-empty-filtered
+                data-cattle-batches-planned-empty
                 style={{padding: '0.75rem', color: 'var(--ink-faint)', fontSize: 12, fontStyle: 'italic'}}
               >
-                No planned batches match the current filters.
+                {plannedHiddenByFilters > 0
+                  ? 'No planned batches match the current filters.'
+                  : 'No planned batches in the next 12 months — the forecast has no eligible cattle landing in the display window.'}
               </div>
             ) : (
               <div style={{display: 'flex', flexDirection: 'column', gap: 6}}>
-                {scheduledVisible.map((sb2) => (
-                  <div
-                    key={sb2.id}
-                    data-scheduled-batch={sb2.name}
-                    data-batch-row={sb2.id}
-                    {...openableProps(() =>
-                      navigate('/cattle/batches/' + sb2.id, recordSeqNavOptions(labeledSeqItems(batchSeqRows, 'name'))),
-                    )}
-                    className="hoverable-tile"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      flexWrap: 'wrap',
-                      padding: '8px 10px',
-                      background: 'white',
-                      border: '1px solid var(--border)',
-                      borderRadius: 10,
-                      fontSize: 12,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <strong style={{color: 'var(--text-primary)'}}>{sb2.name}</strong>
-                    <Badge variant="warn" style={{textTransform: 'uppercase'}}>
-                      {processingStatusLabel(sb2.status)}
-                    </Badge>
-                    <span style={{color: 'var(--ink-muted)'}}>
-                      {sb2.animalIds.length} {sb2.animalIds.length === 1 ? 'cow' : 'cows'} forecast
-                    </span>
-                    {sb2.planned_process_date && (
-                      <span style={{color: 'var(--ink-muted)'}}>{fmt(sb2.planned_process_date)}</span>
-                    )}
-                    <span style={{flex: 1}} />
-                    <span style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
-                      Cattle remain forecast-backed until sent from WeighIns
-                    </span>
-                  </div>
-                ))}
+                {plannedRows.map((entry) =>
+                  entry.kind === 'scheduled'
+                    ? (() => {
+                        const sb2 = entry.row;
+                        return (
+                          <div
+                            key={sb2.id}
+                            data-scheduled-batch={sb2.name}
+                            data-batch-row={sb2.id}
+                            data-planned-row="scheduled"
+                            {...openableProps(() =>
+                              navigate(
+                                '/cattle/batches/' + sb2.id,
+                                recordSeqNavOptions(labeledSeqItems(batchSeqRows, 'name')),
+                              ),
+                            )}
+                            className="hoverable-tile"
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              flexWrap: 'wrap',
+                              padding: '8px 10px',
+                              background: 'white',
+                              border: '1px solid var(--border)',
+                              borderRadius: 10,
+                              fontSize: 12,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <strong style={{color: 'var(--text-primary)'}}>{sb2.name}</strong>
+                            <Badge variant="info" style={{textTransform: 'uppercase'}}>
+                              Scheduled
+                            </Badge>
+                            {sb2.planned_process_date && (
+                              <span style={{color: 'var(--ink-muted)'}}>{fmt(sb2.planned_process_date)}</span>
+                            )}
+                            <span style={{color: 'var(--ink-muted)'}}>
+                              {sb2.animalIds.length} {sb2.animalIds.length === 1 ? 'cow' : 'cows'} forecast
+                            </span>
+                            <span style={{color: 'var(--text-primary)', fontWeight: 600}}>
+                              {Math.round(sb2.projectedTotalLbs || 0).toLocaleString()} lb projected
+                            </span>
+                            <span style={{flex: 1}} />
+                            <span style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
+                              Cattle remain forecast-backed until sent from WeighIns
+                            </span>
+                          </div>
+                        );
+                      })()
+                    : (() => {
+                        const vb = entry.row;
+                        return (
+                          <div
+                            key={vb.name}
+                            data-virtual-batch={vb.name}
+                            data-virtual-batch-month={vb.monthKey}
+                            data-planned-row="forecast"
+                            {...openableProps(() => navigate('/cattle/batches/forecast/' + vb.monthKey))}
+                            className="hoverable-tile"
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              flexWrap: 'wrap',
+                              padding: '8px 10px',
+                              background: 'white',
+                              border: '1px dashed var(--border)',
+                              borderRadius: 10,
+                              fontSize: 12,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <strong style={{color: 'var(--text-primary)'}}>{vb.name}</strong>
+                            <Badge variant="neutral" style={{textTransform: 'uppercase'}}>
+                              Forecast
+                            </Badge>
+                            <span style={{color: 'var(--ink-muted)'}}>{vb.label}</span>
+                            <span style={{color: 'var(--ink-muted)'}}>
+                              {vb.animalIds.length} {vb.animalIds.length === 1 ? 'cow' : 'cows'} forecast
+                            </span>
+                            <span style={{color: 'var(--text-primary)', fontWeight: 600}}>
+                              {Math.round(vb.projectedTotalLbs || 0).toLocaleString()} lb projected
+                            </span>
+                            <span style={{flex: 1}} />
+                            {canEdit ? (
+                              <span
+                                style={{display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap'}}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  data-virtual-batch-schedule-date={vb.name}
+                                  type="date"
+                                  value={scheduleDateDraft[vb.name] || ''}
+                                  onChange={(e) =>
+                                    setScheduleDateDraft((prev) => ({...prev, [vb.name]: e.target.value}))
+                                  }
+                                  style={{
+                                    fontSize: 11,
+                                    padding: '3px 6px',
+                                    border: '1px solid var(--border-strong)',
+                                    borderRadius: 10,
+                                    fontFamily: 'inherit',
+                                  }}
+                                  title="Processor date for this batch"
+                                />
+                                <button
+                                  data-virtual-batch-schedule={vb.name}
+                                  onClick={() => scheduleVirtualBatch(vb)}
+                                  disabled={!scheduleDateDraft[vb.name]}
+                                  style={{
+                                    fontSize: 11,
+                                    padding: '4px 10px',
+                                    borderRadius: 10,
+                                    border: 'none',
+                                    background: scheduleDateDraft[vb.name] ? '#085041' : '#9ca3af',
+                                    color: 'white',
+                                    cursor: scheduleDateDraft[vb.name] ? 'pointer' : 'not-allowed',
+                                    fontFamily: 'inherit',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  Schedule
+                                </button>
+                              </span>
+                            ) : (
+                              <span style={{fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic'}}>
+                                Created when sent to processor at WeighIns
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })(),
+                )}
               </div>
             )}
           </div>
@@ -1346,6 +1370,20 @@ function CollapsibleSection({label, count, expanded, onToggle, color, border, te
 
 function CattleBatchesRouter(props) {
   const location = useLocation();
+  // Forecast-only planned batch detail: a live projection keyed by the
+  // STABLE monthKey — not a persisted cattle_processing_batches record. The
+  // distinct /forecast/ segment keeps it from ever masquerading as (or
+  // clobbering) a /cattle/batches/:id record id.
+  if (location.pathname.startsWith('/cattle/batches/forecast/')) {
+    const monthKey = location.pathname.slice('/cattle/batches/forecast/'.length) || null;
+    return React.createElement(CattleForecastBatchPage, {
+      sb: props.sb,
+      fmt: props.fmt,
+      authState: props.authState,
+      Header: props.Header,
+      monthKey,
+    });
+  }
   const batchDetailId = location.pathname.startsWith('/cattle/batches/')
     ? location.pathname.slice('/cattle/batches/'.length) || null
     : null;

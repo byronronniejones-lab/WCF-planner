@@ -943,9 +943,9 @@ test('forecast: admin can save settings + open Include Heifers modal', async ({p
 });
 
 // --------------------------------------------------------------------------
-// Test 6 — Batches tab: four sections, no + New Batch.
+// Test 6 — Batches tab: ONE consolidated Planned section, no + New Batch.
 // --------------------------------------------------------------------------
-test('batches: four sections (planned / scheduled / in process / complete); + New Batch removed', async ({
+test('batches: consolidated Planned + In Process + Complete sections; + New Batch removed', async ({
   page,
   cattleForecastScenario,
 }) => {
@@ -955,15 +955,24 @@ test('batches: four sections (planned / scheduled / in process / complete); + Ne
   // No + New Batch button anywhere.
   await expect(page.getByRole('button', {name: /\+ New Batch/i})).toHaveCount(0);
 
-  // Planned (virtual) section header present, collapsed by default.
-  const plannedSection = page.locator('[data-batches-section="planned"]');
-  await expect(plannedSection).toBeVisible();
-  await expect(plannedSection).toContainText('Show Planned Batches');
-
-  // Scheduled section only renders when at least one scheduled row exists;
-  // by default the seed has none, so the data-scheduled-section anchor
-  // should be absent.
+  // ONE consolidated Planned section — the old collapsed "Show Planned
+  // Batches" section and the separate scheduled section are both gone.
+  const planned = page.locator('[data-planned-section]');
+  await expect(planned).toBeVisible();
+  await expect(page.getByText('Show Planned Batches')).toHaveCount(0);
+  await expect(page.locator('[data-batches-section="planned"]')).toHaveCount(0);
   await expect(page.locator('[data-scheduled-section]')).toHaveCount(0);
+
+  // Virtual forecast rows render directly (no expand step) with the Forecast
+  // state chip + projected cow count + projected total weight; the section
+  // heading owns lifecycle so rows carry no PLANNED badge.
+  const virtualBatches = page.locator('[data-virtual-batch]');
+  await expect(virtualBatches.first()).toBeVisible({timeout: 5_000});
+  await expect(virtualBatches.first()).toContainText('Forecast');
+  await expect(virtualBatches.first()).toContainText(/cows? forecast/);
+  await expect(virtualBatches.first()).toContainText(/lb projected/);
+  const firstRowText = await virtualBatches.first().innerText();
+  expect(firstRowText.toUpperCase()).not.toContain('PLANNED');
 
   // In Process section header rendered with count parenthesized; seed has zero
   // active stored batches by default.
@@ -974,12 +983,6 @@ test('batches: four sections (planned / scheduled / in process / complete); + Ne
   const processedSection = page.locator('[data-batches-section="processed"]');
   await expect(processedSection).toBeVisible();
   await expect(processedSection).toContainText('Show Complete Batches');
-
-  // Expand Planned — should show at least one virtual planned batch tile.
-  await plannedSection.locator('> div').first().click();
-  // Virtual batches use data-virtual-batch attr set to the C-YY-NN name.
-  const virtualBatches = page.locator('[data-virtual-batch]');
-  await expect(virtualBatches.first()).toBeVisible({timeout: 5_000});
 });
 
 // --------------------------------------------------------------------------
