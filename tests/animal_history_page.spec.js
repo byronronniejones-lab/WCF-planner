@@ -125,17 +125,13 @@ test.describe('Animals on Farm layer accuracy and small multiples', () => {
     const layersStat = animalsGrid.locator('.stat', {hasText: 'Layer Hens'});
     await expect(layersStat).toContainText(EXPECTED_LAYER_TOTAL, {timeout: 20_000});
 
-    // Freshness disclosure: latest RECORDED counts; the disclosed layer date
-    // is the OLDEST contributing source-evidence date (the seeded dailys all
-    // share one date), never today's date. All contributors are dated, so the
-    // undated warning must be absent.
-    const homeNote = page.locator('[data-animals-freshness-note="true"]');
-    await expect(homeNote).toBeVisible();
-    await expect(homeNote).toContainText('Latest recorded counts, not verified current counts');
-    await expect(homeNote).toContainText('Oldest layer count used was reported');
-    await expect(homeNote).toHaveAttribute('data-layers-oldest-reported', REPORT_DATE);
-    await expect(homeNote).toHaveAttribute('data-layers-has-undated', 'false');
-    await expect(homeNote).not.toContainText('no reported date');
+    // The Home tile carries NO freshness/help text (removed by Ronnie's
+    // 2026-07-17 hotfix): heading + five totals only. The freshness
+    // disclosure lives on the Animal History page, asserted below.
+    await expect(page.locator('[data-animals-freshness-note="true"]')).toHaveCount(0);
+    const homeCard = page.locator('button.card.stats').filter({hasText: 'Animals on Farm'});
+    await expect(homeCard).not.toContainText('Latest recorded counts');
+    await expect(homeCard).not.toContainText('Oldest layer count used was reported');
 
     // Review capture for Ronnie's UI-preview gate (Home card, no Total tile).
     await page.locator('button.card.stats').filter({hasText: 'Animals on Farm'}).screenshot({

@@ -811,18 +811,6 @@ export default function HomeDashboard({Header, loadUsers, canAccessProgram, VIEW
                   </div>
                 </div>
               </div>
-              <div
-                className="stat-freshness"
-                data-animals-freshness-note="true"
-                data-layers-oldest-reported={animalSnapshot.layersOldestReported || ''}
-                data-layers-has-undated={animalSnapshot.layersHasUndatedCounts ? 'true' : 'false'}
-              >
-                Latest recorded counts, not verified current counts.
-                {animalSnapshot.layersOldestReported
-                  ? ` Oldest layer count used was reported ${fmt(animalSnapshot.layersOldestReported)}.`
-                  : ''}
-                {animalSnapshot.layersHasUndatedCounts ? ' Some layer counts used have no reported date.' : ''}
-              </div>
             </button>
           );
         })()}

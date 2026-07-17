@@ -71,24 +71,25 @@ describe('Home Animals on Farm history route', () => {
     expect(homeSrc).not.toContain('cattleOnFarmCount.toLocaleString()');
   });
 
-  it('freshness disclosure binds to the OLDEST contributing evidence date on Home and the history page', () => {
-    // The counts are "latest recorded", not verified current counts. Because a
-    // combined layer figure can mix report dates, the disclosed date must be
-    // the model's layersOldestReported (the oldest contributing evidence, so
-    // newer reports cannot mask older ones), plus an explicit warning when any
-    // positive contributor has no reported date. Never a hardcoded date and
-    // never the as-of/today date.
+  it('freshness disclosure lives on the history page ONLY; the Home tile carries no help text', () => {
+    // The counts are "latest recorded", not verified current counts. That
+    // disclosure (bound to the model's layersOldestReported — the OLDEST
+    // contributing evidence date — plus the undated-contributor warning)
+    // belongs to the Animal History page. The Home tile intentionally shows
+    // the heading and totals with NO explanatory/freshness row (removed by
+    // Ronnie's 2026-07-17 hotfix — do not reintroduce it).
     expect(helperSrc).toContain('export function layersFreshnessAt');
     expect(helperSrc).toContain('layersOldestReported: layersFreshness.oldestReported');
     expect(helperSrc).toContain('layersHasUndatedCounts: layersFreshness.hasUndatedCounts');
 
-    expect(homeSrc).toContain('data-animals-freshness-note="true"');
-    expect(homeSrc).toContain('Latest recorded counts, not verified current counts');
-    expect(homeSrc).toContain('data-layers-oldest-reported={animalSnapshot.layersOldestReported');
-    expect(homeSrc).toContain('Oldest layer count used was reported ${fmt(animalSnapshot.layersOldestReported)}');
-    expect(homeSrc).toContain('Some layer counts used have no reported date.');
+    expect(homeSrc).not.toContain('data-animals-freshness-note');
+    expect(homeSrc).not.toContain('Latest recorded counts, not verified current counts');
+    expect(homeSrc).not.toContain('Oldest layer count used was reported');
+    expect(homeSrc).not.toContain('Some layer counts used have no reported date.');
+    expect(homeSrc).not.toContain('stat-freshness');
 
     expect(pageSrc).toContain('Latest recorded month-end counts');
+    expect(pageSrc).toContain('These are the latest recorded counts, not verified current counts.');
     expect(pageSrc).toContain('data-animal-history-layers-oldest-reported={latest.layersOldestReported');
     expect(pageSrc).toContain('Oldest layer count used was reported ${fmt(latest.layersOldestReported)}');
     expect(pageSrc).toContain('Some layer counts used have no reported date.');
