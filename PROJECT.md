@@ -262,9 +262,10 @@ Design/function invariants that govern cross-surface behavior live in
   proof (`29587188942`) passed verify and the stable policy gate while correctly
   skipping focused, both shards, and Pasture for the already-tested GitHub PR
   merge commit. Direct main pushes still undergo normal risk classification.
-- Git/workstation handoff: CC#1/CC#2/CC#3/CC#4, the retirement-date lane, and the
-  CI-policy lane are merged; their retained worktrees are safe to prune after
-  this docs wrap. The docs-wrap worktree contains this handoff. The intentional
+- Git/workstation handoff: CC#1/CC#2/CC#3/CC#4, the retirement-date lane, the
+  CI-policy lane, and the docs-wrap lane are merged. Their temporary worktrees
+  and fully merged topic branches were pruned on 2026-07-17; only the clean,
+  synchronized main worktree remains. The intentional
   `archive/ui-cleanup-wip-2026-06-17` tag remains because it is the only unique
   snapshot of that abandoned WIP; diagnostic traces under
   `C:\Users\Ronni\cc-research\` remain intentionally outside the repo.
