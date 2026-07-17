@@ -6,12 +6,14 @@
 //   supabase functions deploy processing-asana-sync --project-ref <ref> --no-verify-jwt
 //
 // Two callers (mirrors tasks-cron / newsletter-harvest, plan-locked):
-//   1. cron  — pg_cron invokes public.invoke_processing_asana_cron() (future
-//      migration) which reads the Vault secrets and POSTs:
+//   1. cron  — pg_cron invokes public.invoke_processing_asana_cron() (mig 185)
+//      which reads the Vault secrets and POSTs:
 //        Authorization: Bearer <PROCESSING_ASANA_CRON_SERVICE_ROLE_KEY>
 //        x-cron-secret: <PROCESSING_ASANA_CRON_SECRET>
 //        body: {"mode":"cron"}
-//      Cron ALWAYS pins action='sync_once' (body.action is ignored in cron mode).
+//      Cron ALWAYS pins action='sync_comments' (body.action is ignored in cron
+//      mode) — the recurring path is COMMENTS-ONLY, one-way, and can never run
+//      sync_once or any wider Asana action.
 //   2. admin — the Processing admin controls call
 //      sb.functions.invoke('processing-asana-sync', {body:{mode:'admin', action, since?}}).
 //      The caller's user JWT is in Authorization; verified via rpc('is_admin').
@@ -23,6 +25,10 @@
 // once the flag is false, dry runs AND writes fail closed with a clear message;
 // only the probe and the planner-only reconcile stay available (native
 // Processing + historical reads live in the DB and are unaffected).
+// ONE exception (mig 185): sync_comments — the pinned cron action — is ALSO
+// allowed while asana_comments_import_enabled=true, so one-way text-comment
+// import keeps running after the global cutover. Every other action (including
+// the other dry runs) stays behind the global flag.
 //
 // DESTINATION SAFETY: destination_audit is the read-only zero-unmapped report
 // (every field / enum option / user / section / story type / dependency must
@@ -1580,8 +1586,10 @@ serve(async (req: Request) => {
     return jsonResponse({ok: true, probe: true, run_mode: mode, asanaConfigured: !!ASANA_ACCESS_TOKEN});
   }
 
-  // cron ALWAYS pins sync_once; admin chooses (default dry_run — the safe read).
-  const action = mode === 'cron' ? 'sync_once' : String(body.action || 'dry_run').toLowerCase();
+  // cron ALWAYS pins the comments-only import; admin chooses (default dry_run —
+  // the safe read). The recurring path can never reach sync_once or any wider
+  // Asana action.
+  const action = mode === 'cron' ? 'sync_comments' : String(body.action || 'dry_run').toLowerCase();
   if (!ACTIONS.has(action)) {
     return jsonResponse({ok: false, error: `action must be one of: ${Array.from(ACTIONS).join(', ')}`}, 400);
   }
@@ -1599,17 +1607,31 @@ serve(async (req: Request) => {
   }
 
   // CUTOVER ENFORCEMENT: asana_sync_enabled=false locks EVERY remaining action
-  // (they all touch Asana) — reads and writes alike fail closed.
+  // (they all touch Asana) — reads and writes alike fail closed. The single
+  // exception is sync_comments (the pinned cron action): it is ALSO allowed
+  // while the independent asana_comments_import_enabled flag is true, so
+  // one-way comment import can keep running after the global cutover. A
+  // missing settings row fails closed for everything.
   try {
     const {data: settings, error: setErr} = await svc
       .from('processing_asana_sync_settings')
-      .select('asana_sync_enabled')
+      .select('asana_sync_enabled, asana_comments_import_enabled')
       .eq('id', 'singleton')
       .maybeSingle();
     if (setErr) throw new Error(setErr.message);
-    if (!settings || settings.asana_sync_enabled !== true) {
+    const globalEnabled = !!settings && settings.asana_sync_enabled === true;
+    const commentsEnabled = !!settings && settings.asana_comments_import_enabled === true;
+    const allowed = action === 'sync_comments' ? globalEnabled || commentsEnabled : globalEnabled;
+    if (!allowed) {
       return jsonResponse(
-        {ok: false, action, error: 'asana_sync_enabled is false — Asana sync/import is locked (final cutover)'},
+        {
+          ok: false,
+          action,
+          error:
+            action === 'sync_comments'
+              ? 'comments import is locked — asana_sync_enabled and asana_comments_import_enabled are both false'
+              : 'asana_sync_enabled is false — Asana sync/import is locked (final cutover)',
+        },
         423,
       );
     }

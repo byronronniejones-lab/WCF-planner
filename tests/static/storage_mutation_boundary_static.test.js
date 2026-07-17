@@ -18,6 +18,11 @@ const EXPECTED_REMOVE_OWNERS = new Map([
   // (both buckets flow through a single .remove call site). Never touches the
   // append-only daily/task buckets (asserted by the third test below).
   ['src/lib/newsletterApi.js', 1],
+  // Processing attachment delete (mig 185): ONE remove call site inside the
+  // two-phase admin contract — request RPC stamps the pending state, the
+  // narrow admin-only DELETE policy admits exactly that object path, and the
+  // finalize RPC records the truthful outcome (failure reopens, never claims).
+  ['src/lib/processingAttachmentsApi.js', 1],
   ['src/webforms/EquipmentFuelingWebform.jsx', 1],
 ]);
 
@@ -74,7 +79,7 @@ describe('Storage mutation boundary', () => {
       .filter(([rel, count]) => seen.get(rel) !== count)
       .map(([rel, count]) => `${rel}: expected ${count}, saw ${seen.get(rel) ?? 0}`);
 
-    expect(removeCount).toBe(12);
+    expect(removeCount).toBe(13);
     expect(unexpected).toEqual([]);
     expect(missing).toEqual([]);
     expect(wrongCounts).toEqual([]);
