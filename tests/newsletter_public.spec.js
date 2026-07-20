@@ -34,9 +34,15 @@ const PUB_BLOCKS = [
   },
 ];
 
-// Wait for the static boot splash to clear (it fades ~350ms after first paint on
-// every route) so screenshots show the real surface, then capture full-page.
+// Visual-review screenshots are OPT-IN: a default focused run must not write to
+// newsletter-shots/. Set NEWSLETTER_SCREENSHOTS=1 to capture. When off, this is a
+// no-op (never touches the boot splash or the filesystem) so behavioral coverage
+// is unchanged either way.
+const CAPTURE_SHOTS = process.env.NEWSLETTER_SCREENSHOTS === '1';
 async function cleanShot(page, name) {
+  if (!CAPTURE_SHOTS) return;
+  // Wait for the static boot splash to clear (it fades ~350ms after first paint on
+  // every route) so screenshots show the real surface, then capture full-page.
   await page
     .locator('#wcf-boot-loader')
     .waitFor({state: 'detached', timeout: 6000})
@@ -112,10 +118,11 @@ test.beforeAll(async ({supabaseAdmin}) => {
 
 test.afterAll(async ({supabaseAdmin}) => {
   await supabaseAdmin.from('newsletter_issues').delete().in('id', [PUB.id, DRAFT.id]);
-  // Re-lock: clear the seeded archive key.
+  // Re-lock: clear the seeded archive key, and restore the global voice/tone
+  // settings the Steer test may have written (voice_example + tone back to NULL).
   await supabaseAdmin
     .from('newsletter_settings')
-    .update({archive_access_token: null, archive_access_expires_at: null})
+    .update({archive_access_token: null, archive_access_expires_at: null, voice_example: null, tone: null})
     .eq('id', 'singleton');
 });
 
@@ -261,6 +268,12 @@ test.describe('admin newsletter (admin)', () => {
     await page.locator('.nla-tile', {hasText: DRAFT.title}).click();
     await expect(page.locator('.nla-readiness')).toBeVisible();
 
+    // Photo progress is disambiguated: the rail shows "Approved" + "Placed" as
+    // distinct labels (mig 189 wording fix), not the ambiguous single "Photos".
+    await expect(page.locator('.nla-lv').getByText('Approved', {exact: true})).toBeVisible();
+    await expect(page.locator('.nla-lv').getByText('Placed', {exact: true})).toBeVisible();
+    await expect(page.locator('.nla-lv').getByText('Photos', {exact: true})).toHaveCount(0);
+
     // The AI photo plan (shot-list) renders from the seeded plan, and the
     // revise-in-place box is present.
     await expect(page.getByText('Photo plan — shots to get this month')).toBeVisible();
@@ -271,5 +284,99 @@ test.describe('admin newsletter (admin)', () => {
     // Mobile capture of the editor for the UI review.
     await page.setViewportSize({width: 390, height: 844});
     await cleanShot(page, 'admin-editor-mobile');
+  });
+
+  test('Steer exposes and persists the farm-wide voice controls (mig 189)', async ({page}) => {
+    const SAMPLE = `WCF voice sample ${Date.now()}`;
+    await page.goto('/admin/newsletter');
+    await page.locator('.nla-tile', {hasText: DRAFT.title}).click();
+
+    // The Steer step is the single editorial control surface: tone preset, length,
+    // custom tone override, and the GLOBAL writing example all live here.
+    await expect(page.getByRole('heading', {name: 'Your direction'})).toBeVisible();
+    await expect(page.getByText('Voice, tone & length')).toBeVisible();
+    await expect(page.locator('#nla-tone-preset')).toBeVisible();
+    await expect(page.locator('#nla-length-detail')).toBeVisible();
+    await expect(page.locator('#nla-custom-tone')).toBeVisible();
+    await expect(page.locator('#nla-voice-example')).toBeVisible();
+    // The style-only helper copy is present (stable across AI-status states).
+    await expect(page.getByText(/its facts are never\s+reused/i)).toBeVisible();
+
+    const styleState = () =>
+      page.locator('.nla-subblock', {hasText: 'Voice, tone & length'}).locator('.nla-save-state');
+
+    // Type a writing sample → it autosaves through the settings RPC (no real AI,
+    // no publish, no token rotation, no photo mutation).
+    await page.locator('#nla-voice-example').fill(SAMPLE);
+    await expect(styleState()).toHaveText(/Saved/, {timeout: 10000});
+
+    // Survives a full reload (persisted to the global newsletter_settings singleton).
+    await page.reload();
+    await page.locator('.nla-tile', {hasText: DRAFT.title}).click();
+    await expect(page.locator('#nla-voice-example')).toHaveValue(SAMPLE);
+
+    // It can be explicitly cleared back to empty (saved as NULL).
+    await page.locator('#nla-voice-example').fill('');
+    await expect(styleState()).toHaveText(/Saved/, {timeout: 10000});
+    await page.reload();
+    await page.locator('.nla-tile', {hasText: DRAFT.title}).click();
+    await expect(page.locator('#nla-voice-example')).toHaveValue('');
+  });
+
+  test('a failed required style save blocks Write/Revise — nothing runs, edits kept + marked failed (mig 189)', async ({
+    page,
+  }) => {
+    // Never hit the real Edge Function / AI: route newsletter-harvest. Flag any
+    // DRAFT/harvest run (its body carries "steps"); answer the AI probe
+    // (probe:true, no steps) with a canned template-mode response so the honest
+    // status copy is deterministic.
+    let harvestRun = false;
+    await page.route('**/functions/v1/newsletter-harvest', async (route) => {
+      const body = route.request().postData() || '';
+      if (body.includes('"steps"')) {
+        harvestRun = true;
+        await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({ok: true})});
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ok: true, aiConfigured: false}),
+        });
+      }
+    });
+
+    await page.goto('/admin/newsletter');
+    await page.locator('.nla-tile', {hasText: DRAFT.title}).click();
+    await expect(page.locator('#nla-voice-example')).toBeVisible();
+    // Template mode is reflected honestly in the helper copy.
+    await expect(page.getByText(/template composer ignores the writing example/i)).toBeVisible();
+
+    // Force the settings save to fail for the REQUIRED pre-write flush.
+    await page.route('**/rest/v1/rpc/update_newsletter_settings', (route) =>
+      route.fulfill({status: 500, contentType: 'application/json', body: JSON.stringify({message: 'forced failure'})}),
+    );
+
+    // Make an unsaved style change + a revision note (the non-destructive Revise
+    // path — no overwrite confirm).
+    const SAMPLE = `unsaved voice ${Date.now()}`;
+    await page.locator('#nla-voice-example').fill(SAMPLE);
+    await page.getByPlaceholder(/tell the AI what to change/i).fill('warmer tone');
+
+    // Attempt Revise → the required style flush fails and ABORTS before any run.
+    await page.getByRole('button', {name: 'Revise draft'}).click();
+
+    // The UI reports that voice/tone couldn't be saved and nothing ran...
+    await expect(page.getByText(/nothing was run/i)).toBeVisible();
+    // ...the style save-state is marked failed (retry)...
+    await expect(
+      page.locator('.nla-subblock', {hasText: 'Voice, tone & length'}).locator('.nla-save-state'),
+    ).toHaveText(/Save failed/, {timeout: 10000});
+    // ...the local writing is preserved for retry...
+    await expect(page.locator('#nla-voice-example')).toHaveValue(SAMPLE);
+    // ...and NO draft/harvest generation was ever invoked.
+    expect(harvestRun).toBe(false);
+
+    await page.unroute('**/rest/v1/rpc/update_newsletter_settings');
+    await page.unroute('**/functions/v1/newsletter-harvest');
   });
 });

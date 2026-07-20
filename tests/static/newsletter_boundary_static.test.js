@@ -292,3 +292,63 @@ describe('migration 153 archive-link gating', () => {
     expect(new Set(anonGrants)).toEqual(new Set(['list_published_newsletters', 'get_published_newsletter']));
   });
 });
+
+describe('migration 189 voice reference + tone semantics boundary', () => {
+  const sql = read('supabase-migrations/189_newsletter_voice_example.sql');
+
+  it('adds a nullable voice_example column with a 12k length backstop', () => {
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS voice_example text/);
+    expect(sql).toMatch(/CHECK \(voice_example IS NULL OR char_length\(voice_example\) <= 12000\)/);
+  });
+
+  it('makes tone an optional override and normalizes ONLY the exact legacy default to NULL', () => {
+    expect(sql).toMatch(/ALTER COLUMN tone DROP DEFAULT/);
+    expect(sql).toMatch(/ALTER COLUMN tone DROP NOT NULL/);
+    expect(sql).toMatch(/SET tone = NULL\s*\n\s*WHERE tone = 'warm-but-credible owner-facing farm update'/);
+  });
+
+  it('cleanly replaces the update RPC signature (drops the old 11-arg; grants the new 12-arg to authenticated only)', () => {
+    expect(sql).toMatch(
+      /DROP FUNCTION IF EXISTS public\.update_newsletter_settings\(text, text, text, text, text, int, int, int, uuid, int, int\);/,
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.update_newsletter_settings\(text, text, text, text, text, int, int, int, uuid, int, int, text\)\s*\n?\s*TO authenticated/,
+    );
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.update_newsletter_settings\(text, text, text, text, text, int, int, int, uuid, int, int, text\)\s*\n?\s*FROM PUBLIC, anon/,
+    );
+  });
+
+  it('keeps the admin assertion and gives tone/voice_example explicit clear-on-empty semantics', () => {
+    expect(sql).toMatch(/PERFORM public\._newsletter_assert_admin\(\);/);
+    expect(sql).toMatch(/p_voice_example\s+text DEFAULT NULL/);
+    // Empty custom tone clears (the preset then drives resolveTone); NULL preserves.
+    expect(sql).toMatch(/WHEN btrim\(p_tone\) = '' THEN NULL/);
+    expect(sql).toMatch(/WHEN btrim\(p_voice_example\) = '' THEN NULL/);
+  });
+
+  it('surfaces voiceExample to the admin settings read but never to anon', () => {
+    expect(sql).toMatch(/'voiceExample', s\.voice_example/);
+    expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.get_newsletter_settings\(\) FROM PUBLIC, anon/);
+  });
+
+  it('returns voiceExample ONLY inside the service_role-only generation input', () => {
+    const genStart = sql.indexOf('FUNCTION public.get_newsletter_generation_input');
+    expect(genStart).toBeGreaterThan(-1);
+    const genBody = sql.slice(genStart);
+    expect(genBody).toMatch(/'voiceExample', s\.voice_example/);
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.get_newsletter_generation_input\(text\)\s*\n?\s*FROM PUBLIC, anon, authenticated/,
+    );
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.get_newsletter_generation_input\(text\) TO service_role/);
+  });
+
+  it('adds NO new anon grant (the exact three anon RPC boundary is unchanged)', () => {
+    expect(sql).not.toMatch(/GRANT EXECUTE ON FUNCTION[^;]*\bTO\b[^;]*\banon\b/);
+  });
+
+  it('the anon/public/preview payload migrations (144/153) never reference voice_example', () => {
+    expect(read('supabase-migrations/144_newsletter_engine.sql')).not.toContain('voice_example');
+    expect(read('supabase-migrations/153_newsletter_archive_link.sql')).not.toContain('voice_example');
+  });
+});

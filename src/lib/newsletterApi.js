@@ -346,6 +346,13 @@ export function withNewsletterKey(path, key) {
   return `${path}${sep}key=${encodeURIComponent(key)}`;
 }
 
+// Update newsletter settings. Every field is a PARTIAL update: an omitted key
+// (undefined) maps to null, which the RPC reads as "preserve current value", so
+// the Steer UI can send only the controls it owns (e.g. {tonePreset}) without
+// clobbering settings edited elsewhere. `tone` and `voiceExample` additionally
+// support explicit clearing: pass an empty string '' to clear the value to NULL
+// (the RPC distinguishes ''=clear from null=preserve). The writing example is
+// never logged here.
 export async function updateNewsletterSettings(
   sb,
   {
@@ -360,11 +367,14 @@ export async function updateNewsletterSettings(
     taskAssignee,
     draftGenDay,
     publishTargetDay,
+    voiceExample,
   } = {},
 ) {
   const {data, error} = await sb.rpc('update_newsletter_settings', {
     p_ai_provider: aiProvider ?? null,
     p_ai_model: aiModel ?? null,
+    // '' clears the custom tone override (preset then drives the draft); undefined
+    // preserves. Only null/undefined coalesce — an explicit '' is passed through.
     p_tone: tone ?? null,
     p_tone_preset: tonePreset ?? null,
     p_length_detail: lengthDetail ?? null,
@@ -374,6 +384,8 @@ export async function updateNewsletterSettings(
     p_task_assignee: taskAssignee ?? null,
     p_draft_gen_day: draftGenDay ?? null,
     p_publish_target_day: publishTargetDay ?? null,
+    // '' clears the writing example to NULL; undefined preserves.
+    p_voice_example: voiceExample ?? null,
   });
   if (error) throw new Error(`updateNewsletterSettings: ${error.message || String(error)}`);
   return data;

@@ -109,6 +109,34 @@ const COVERAGE_STATUS_LABEL = {
   error: 'error',
 };
 
+// ── Steer style settings (global newsletter_settings) ────────────────────────
+// The Steer step's tone preset, length, optional custom tone override, and the
+// farm-wide writing example all persist to the global newsletter_settings
+// singleton. They autosave inline via a debounced, dirty-tracked flush that
+// mirrors the direction autosave, so a background refresh never clobbers unsaved
+// edits and a failed save blocks Write/Revise from running on stale settings.
+// canonStyle trims tone/voiceExample so ''/null/whitespace all compare equal to
+// "cleared" (matching what the RPC stores), and preset/length compare literally.
+function styleFromSettings(s) {
+  return {
+    tonePreset: String((s && s.tonePreset) || 'warm_credible'),
+    lengthDetail: String((s && s.lengthDetail) || 'standard'),
+    tone: String((s && s.tone) || ''),
+    voiceExample: String((s && s.voiceExample) || ''),
+  };
+}
+function canonStyle(s) {
+  return JSON.stringify({
+    tonePreset: String((s && s.tonePreset) || ''),
+    lengthDetail: String((s && s.lengthDetail) || ''),
+    tone: String((s && s.tone) || '').trim(),
+    voiceExample: String((s && s.voiceExample) || '').trim(),
+  });
+}
+function styleEqual(a, b) {
+  return canonStyle(a) === canonStyle(b);
+}
+
 // The 7 direction-first steps, in order. `doneOf` reads derived editor state.
 const STEP_DEFS = [
   {key: 'facts', label: 'Facts', sub: 'Gathered'},
@@ -350,6 +378,18 @@ function IssueEditor({issueId, onBack}) {
   const directionTimerRef = useRef(null); // debounce timer id
   const directionSeqRef = useRef(0); // ignore stale in-flight saves
 
+  // Steer STYLE settings (tone preset, length, custom tone, writing example).
+  // `style` is a LOCAL draft over the GLOBAL newsletter_settings singleton; the
+  // refs mirror the direction autosave so a background refresh never clobbers
+  // unsaved style edits and a failed save can block Write/Revise.
+  const [style, setStyle] = useState(styleFromSettings({}));
+  const [styleSave, setStyleSave] = useState('idle');
+  const lastSavedStyleRef = useRef(styleFromSettings({})); // what the server holds
+  const styleRef = useRef(styleFromSettings({})); // latest local style (for flush)
+  const styleDirtyRef = useRef(false); // unsaved local style edits present?
+  const styleTimerRef = useRef(null); // debounce timer id
+  const styleSeqRef = useRef(0); // ignore stale in-flight saves
+
   // applyIssue refreshes issue + draft blocks after any mutation. It must NEVER
   // clobber unsaved "Your direction" text: the Steer textareas are a local
   // autosave draft, so we adopt the server's intake only when there are no
@@ -366,6 +406,18 @@ function IssueEditor({issueId, onBack}) {
     }
   }, []);
 
+  // Adopt the server's style settings into the local Steer draft. Like applyIssue
+  // for direction: it always refreshes what the server holds, but only overwrites
+  // the local controls when there are no unsaved style edits (no clobber).
+  const adoptStyle = useCallback((serverSettings) => {
+    const next = styleFromSettings(serverSettings);
+    lastSavedStyleRef.current = next;
+    if (!styleDirtyRef.current) {
+      styleRef.current = next;
+      setStyle(next);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -377,6 +429,7 @@ function IssueEditor({issueId, onBack}) {
       ]);
       applyIssue(data);
       setSettings(st || {});
+      adoptStyle(st || {});
       setRecentPublished(recent || []);
       setRuns(await listNewsletterRunsAdmin(sb, issueId).catch(() => []));
     } catch (e) {
@@ -384,7 +437,7 @@ function IssueEditor({issueId, onBack}) {
     } finally {
       setLoading(false);
     }
-  }, [issueId, applyIssue]);
+  }, [issueId, applyIssue, adoptStyle]);
 
   useEffect(() => {
     load();
@@ -508,13 +561,80 @@ function IssueEditor({issueId, onBack}) {
     flushDirection();
   }, [flushDirection]);
 
-  // Flush a pending direction save when leaving the editor (best-effort).
+  // ── Style autosave (tone preset, length, custom tone, writing example) ──────
+  // Persist the Steer style controls (global newsletter_settings) on a debounce.
+  // Partial update — only these four fields are sent, so a save never clobbers
+  // settings edited in the advanced Settings surface; an '' value clears the
+  // custom tone / writing example. required=true (used before Write/Revise)
+  // THROWS on failure so the caller ABORTS rather than generating a draft against
+  // stale settings; the debounced path stays friendly (keep local edits, surface
+  // an error state, allow retry) and returns false instead of throwing.
+  const flushStyle = useCallback(async ({required = false} = {}) => {
+    if (styleTimerRef.current) {
+      clearTimeout(styleTimerRef.current);
+      styleTimerRef.current = null;
+    }
+    const local = styleRef.current;
+    if (styleEqual(local, lastSavedStyleRef.current)) {
+      styleDirtyRef.current = false;
+      return true; // nothing pending — safe to proceed
+    }
+    const seq = ++styleSeqRef.current;
+    setStyleSave('saving');
+    try {
+      const saved = await updateNewsletterSettings(sb, {
+        tonePreset: local.tonePreset,
+        lengthDetail: local.lengthDetail,
+        tone: local.tone, // '' clears the custom override -> the preset drives the draft
+        voiceExample: local.voiceExample, // '' clears the writing example
+      });
+      if (seq === styleSeqRef.current) {
+        setSettings((prev) => ({...(prev || {}), ...saved}));
+        lastSavedStyleRef.current = styleFromSettings(saved);
+        const stillDirty = !styleEqual(styleRef.current, lastSavedStyleRef.current);
+        styleDirtyRef.current = stillDirty;
+        setStyleSave(stillDirty ? 'unsaved' : 'saved');
+      }
+      return true;
+    } catch (e) {
+      if (seq === styleSeqRef.current) {
+        styleDirtyRef.current = true; // keep local edits; allow retry
+        setStyleSave('error');
+        if (!required) setNotice({kind: 'error', message: friendlyNewsletterError(e)});
+      }
+      if (required) {
+        throw new Error(
+          'Your voice & tone settings couldn’t be saved, so nothing was run. Check your connection and try again.',
+        );
+      }
+      return false;
+    }
+  }, []);
+
+  // Style control onChange: update the local draft, mark dirty, (re)arm the debounce.
+  const onStyleChange = useCallback(
+    (key, value) => {
+      const next = {...styleRef.current, [key]: value};
+      styleRef.current = next;
+      setStyle(next);
+      const dirty = !styleEqual(next, lastSavedStyleRef.current);
+      styleDirtyRef.current = dirty;
+      setStyleSave(dirty ? 'unsaved' : 'saved');
+      if (styleTimerRef.current) clearTimeout(styleTimerRef.current);
+      if (dirty) styleTimerRef.current = setTimeout(flushStyle, DIRECTION_DEBOUNCE_MS);
+    },
+    [flushStyle],
+  );
+
+  // Flush a pending direction/style save when leaving the editor (best-effort).
   useEffect(() => {
     return () => {
       if (directionTimerRef.current) clearTimeout(directionTimerRef.current);
       if (directionDirtyRef.current) flushDirection();
+      if (styleTimerRef.current) clearTimeout(styleTimerRef.current);
+      if (styleDirtyRef.current) flushStyle();
     };
-  }, [flushDirection]);
+  }, [flushDirection, flushStyle]);
 
   // AI availability for the editor: boolean-only probe (never exposes the key).
   useEffect(() => {
@@ -604,6 +724,7 @@ function IssueEditor({issueId, onBack}) {
   const regenerateDraft = () =>
     withBusy(
       async () => {
+        await flushStyle({required: true}); // persist pending voice/tone/length before the AI writes; abort if it fails
         await flushDirection({required: true}); // persist pending direction before the AI writes; abort if it fails
         await regenerateNewsletterDraft(sb, {issueId, revisionNotes});
         await reloadAfterRun();
@@ -835,10 +956,84 @@ function IssueEditor({issueId, onBack}) {
               <p className="nla-faint">For something the planner data can’t see. No finances or mortalities.</p>
             </div>
             <div className="nla-subblock">
-              <div className="nla-subblock-label">Tone &amp; length</div>
-              <div className="nla-chips">
-                <span className="nla-chip">{toneLabel}</span>
-                <span className="nla-chip">{lengthLabel}</span>
+              <div className="nla-subblock-label nla-plan-head">
+                <span>Voice, tone &amp; length</span>
+                <DirectionSaveState state={styleSave} />
+              </div>
+              <p className="nla-faint">
+                Sets the farm-wide White Creek Farm voice used for every issue (not just this one). Saves automatically
+                as you edit.
+              </p>
+              <div className="nla-field">
+                <label className="nla-label" htmlFor="nla-tone-preset">
+                  Tone preset
+                </label>
+                <select
+                  id="nla-tone-preset"
+                  className="nla-select nla-select-full"
+                  value={style.tonePreset || 'warm_credible'}
+                  onChange={(e) => onStyleChange('tonePreset', e.target.value)}
+                >
+                  {Object.keys(NEWSLETTER_TONE_PRESETS).map((k) => (
+                    <option key={k} value={k}>
+                      {TONE_PRESET_LABELS[k] || k}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="nla-field">
+                <label className="nla-label" htmlFor="nla-length-detail">
+                  Length / detail
+                </label>
+                <select
+                  id="nla-length-detail"
+                  className="nla-select nla-select-full"
+                  value={style.lengthDetail || 'standard'}
+                  onChange={(e) => onStyleChange('lengthDetail', e.target.value)}
+                >
+                  {Object.keys(NEWSLETTER_LENGTH_PRESETS).map((k) => (
+                    <option key={k} value={k}>
+                      {LENGTH_LABELS[k] || k}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="nla-field">
+                <label className="nla-label" htmlFor="nla-custom-tone">
+                  Custom tone override (optional)
+                </label>
+                <input
+                  id="nla-custom-tone"
+                  className="nla-input"
+                  value={style.tone}
+                  placeholder="e.g. warm but credible, like a proud owner. Leave blank to use the preset."
+                  onChange={(e) => onStyleChange('tone', e.target.value)}
+                />
+              </div>
+              <div className="nla-field">
+                <label className="nla-label" htmlFor="nla-voice-example">
+                  Writing example / voice reference (optional)
+                </label>
+                <textarea
+                  id="nla-voice-example"
+                  className="nla-textarea"
+                  rows={6}
+                  maxLength={12000}
+                  value={style.voiceExample}
+                  placeholder="Paste a few paragraphs Ronnie wrote, in his own voice. Used for STYLE only — the AI matches the tone, rhythm, and word choice, never the facts."
+                  onChange={(e) => onStyleChange('voiceExample', e.target.value)}
+                />
+                <p className="nla-faint">
+                  A global sample of Ronnie’s writing so the AI can match his voice. Style only — it is sent to the
+                  configured AI provider only when an AI draft is written, is never published, and its facts are never
+                  reused.{' '}
+                  {aiStatus === 'ai'
+                    ? 'AI is ready — your writing example will be used for AI drafts.'
+                    : aiStatus === 'template'
+                      ? 'The template composer ignores the writing example; select and configure the AI provider in Settings to use it.'
+                      : 'Your writing example is saved, but AI availability couldn’t be confirmed — retry or check Settings before writing.'}
+                </p>
+                <AiStatusChip status={aiStatus} />
               </div>
             </div>
             <div className="nla-step-foot">
@@ -964,9 +1159,9 @@ function IssueEditor({issueId, onBack}) {
             action={
               <span className="nla-step-count">
                 <strong>
-                  {placedPhotoCount} of {photosTarget}
+                  {approvedPhotos.length} / {photosTarget}
                 </strong>{' '}
-                placed
+                approved · <strong>{placedPhotoCount}</strong> placed
               </span>
             }
           >
@@ -1128,12 +1323,16 @@ function IssueEditor({issueId, onBack}) {
                 </dd>
               </div>
               <div>
-                <dt>Photos</dt>
+                <dt>Approved</dt>
                 <dd className="nla-num">
                   <StatusText tone={photosOk ? 'ok' : 'warn'}>
                     {approvedPhotos.length} / {photosTarget}
                   </StatusText>
                 </dd>
+              </div>
+              <div>
+                <dt>Placed</dt>
+                <dd className="nla-num">{placedPhotoCount}</dd>
               </div>
               <div>
                 <dt>Tone</dt>

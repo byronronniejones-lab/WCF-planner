@@ -580,6 +580,9 @@ async function runDraft(
     tone: settings.tone,
     tonePreset: settings.tonePreset,
     lengthDetail: settings.lengthDetail,
+    // Ronnie's writing sample (admin settings, service_role-only in the input) —
+    // buildNewsletterPrompt fences it as untrusted, style-only reference material.
+    voiceExample: settings.voiceExample,
     revisionNotes: revisionNotes || '',
   };
 

@@ -84,6 +84,57 @@ describe('AI / fact workflow clarity (admin editor)', () => {
   });
 });
 
+describe('Steer step — complete editorial steering (mig 189)', () => {
+  const view = read(ADMIN_VIEW);
+
+  it('puts tone preset, length, custom tone, and the voice example in the editor Steer step', () => {
+    expect(view).toContain('nla-tone-preset');
+    expect(view).toContain('nla-length-detail');
+    expect(view).toContain('nla-custom-tone');
+    expect(view).toContain('nla-voice-example');
+    expect(view).toMatch(/onStyleChange\('voiceExample', e\.target\.value\)/);
+    // The writing example textarea is bounded to the 12k DB limit client-side too.
+    expect(view).toMatch(/maxLength=\{12000\}/);
+  });
+
+  it('autosaves the style controls with the shared debounce + dirty tracking (no clobber on refresh)', () => {
+    expect(view).toMatch(/setTimeout\(flushStyle, DIRECTION_DEBOUNCE_MS\)/);
+    expect(view).toMatch(/styleDirtyRef\.current/);
+    // adoptStyle overwrites the local controls only when there are no unsaved edits.
+    expect(view).toMatch(/if \(!styleDirtyRef\.current\)/);
+  });
+
+  it('force-flushes pending style before an AI Write/Revise, then aborts on a failed required save', () => {
+    expect(view).toMatch(
+      /await flushStyle\(\{required: true\}\);[\s\S]{0,180}await flushDirection\(\{required: true\}\);[\s\S]{0,180}await regenerateNewsletterDraft/,
+    );
+    expect(view).toMatch(/flushStyle = useCallback\(async \(\{required = false\} = \{\}\)/);
+    expect(view).toMatch(/if \(required\)\s*\{[\s\S]{0,180}throw new Error\(/);
+  });
+
+  it('shows honest tri-state copy about how (or whether) the writing example is used', () => {
+    // AI ready → it will be used; template → composer ignores it; unknown → saved
+    // but availability unconfirmed. Never exposes a key or provider secret.
+    expect(view).toMatch(/will be used for AI drafts/i);
+    expect(view).toMatch(/template composer ignores the writing example/i);
+    expect(view).toMatch(/availability couldn.t be confirmed/i);
+    expect(view).not.toMatch(/NEWSLETTER_AI_API_KEY/);
+  });
+});
+
+describe('photo progress wording (approved vs placed)', () => {
+  const view = read(ADMIN_VIEW);
+
+  it('shows both an Approved and a Placed count with explicit labels', () => {
+    // The Photos step header shows the placed count alongside approved...
+    expect(view).toContain('<strong>{placedPhotoCount}</strong> placed');
+    // ...and the utility rail is disambiguated to "Approved" + "Placed".
+    expect(view).toContain('<dt>Approved</dt>');
+    expect(view).toContain('<dt>Placed</dt>');
+    expect(view).not.toContain('<dt>Photos</dt>');
+  });
+});
+
 describe('public reader branding (WCF email family)', () => {
   const css = read(PUBLIC_CSS);
 

@@ -13,6 +13,7 @@ import {
   removeNewsletterPhoto,
   runNewsletterHarvest,
   listNewsletterRunsAdmin,
+  updateNewsletterSettings,
 } from './newsletterApi.js';
 
 // Minimal fake Supabase client for the storage-cleanup paths. `removeError`
@@ -115,6 +116,48 @@ describe('checked public/staging photo deletion', () => {
       {bucket: NEWSLETTER_PUBLIC_BUCKET, paths: [PHOTO.storagePath]},
       {bucket: NEWSLETTER_STAGING_BUCKET, paths: [PHOTO.storagePath]},
     ]);
+  });
+});
+
+describe('updateNewsletterSettings — partial updates + clear/preserve semantics', () => {
+  function captureSb() {
+    const calls = [];
+    return {
+      calls,
+      rpc: async (name, params) => {
+        calls.push({name, params});
+        return {data: {ok: true}, error: null};
+      },
+    };
+  }
+
+  it('sends a partial update: only provided fields are set; omitted fields map to null (preserve)', async () => {
+    const sb = captureSb();
+    await updateNewsletterSettings(sb, {tonePreset: 'celebratory'});
+    expect(sb.calls[0].name).toBe('update_newsletter_settings');
+    const p = sb.calls[0].params;
+    expect(p.p_tone_preset).toBe('celebratory');
+    // Every field the Steer UI did not touch preserves (null), so a partial save
+    // never clobbers settings edited elsewhere.
+    expect(p.p_tone).toBeNull();
+    expect(p.p_voice_example).toBeNull();
+    expect(p.p_length_detail).toBeNull();
+    expect(p.p_photo_min).toBeNull();
+    expect(p.p_ai_provider).toBeNull();
+  });
+
+  it('passes an explicit empty string through for tone + voiceExample (clear to NULL)', async () => {
+    const sb = captureSb();
+    await updateNewsletterSettings(sb, {tone: '', voiceExample: ''});
+    const p = sb.calls[0].params;
+    expect(p.p_tone).toBe('');
+    expect(p.p_voice_example).toBe('');
+  });
+
+  it('sends the writing example when provided', async () => {
+    const sb = captureSb();
+    await updateNewsletterSettings(sb, {voiceExample: 'plain and proud, like a farmer talking to neighbors'});
+    expect(sb.calls[0].params.p_voice_example).toBe('plain and proud, like a farmer talking to neighbors');
   });
 });
 
