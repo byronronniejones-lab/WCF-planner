@@ -3579,7 +3579,10 @@ a.pm-btn {
   flex: 1;
   border: none;
   border-radius: 15px;
-  padding: 11px 4px;
+  /* 8px (was 11px) keeps the toolbar its original height once the longer
+     "Draw temp paddock" label wraps to two lines on narrow phones, so it never
+     grows up into the draw form (bottom 104px) or field action card (bottom 96px). */
+  padding: 8px 4px;
   cursor: pointer;
   background: rgba(22, 30, 24, 0.94);
   color: #fff;
@@ -3589,6 +3592,14 @@ a.pm-btn {
   gap: 6px;
   font-size: 12px;
   font-weight: 850;
+}
+
+/* The Field tool label may wrap to two balanced, tight lines ("Draw temp
+   paddock"); centered so the wrap reads cleanly and stays within the button. */
+.pm-field-tool > span:last-child {
+  line-height: 1.1;
+  text-align: center;
+  text-wrap: balance;
 }
 
 .pm-field-tool:disabled {

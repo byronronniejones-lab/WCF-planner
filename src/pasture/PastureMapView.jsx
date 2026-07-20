@@ -4197,7 +4197,7 @@ export default function PastureMapView({Header, authState}) {
 
   // OnX-style Field chrome: the real map is the hero (rendered in pm-map-col);
   // this overlays a top status pill, the active build-tool save forms, and a dark
-  // bottom toolbar (Walk paddock / Draw paddock / Measure / Layers). Field is a
+  // bottom toolbar (Walk paddock / Draw temp paddock / Measure / Layers). Field is a
   // spatial GPS tool - locate yourself, build a temp paddock, measure - and never
   // records group moves (that stays in Plan).
   function renderFieldChrome() {
@@ -4282,7 +4282,7 @@ export default function PastureMapView({Header, authState}) {
             <span className="pm-field-tool-ic" aria-hidden="true">
               &#9998;
             </span>
-            <span>Draw paddock</span>
+            <span>Draw temp paddock</span>
           </button>
           <button
             type="button"

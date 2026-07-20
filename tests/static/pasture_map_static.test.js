@@ -446,7 +446,7 @@ describe('Tap-to-place paddock draw (unified Map + Field)', () => {
     // No Geoman polygon draw / pm:create: the custom tap-to-place engine owns it.
     expect(canvasSrc).not.toContain("enableDraw('Polygon'");
     expect(canvasSrc).not.toContain("map.on('pm:create'");
-    // Both Map "Draw temp paddock" (draw) and Field "Draw paddock" (droppin) run
+    // Both Map "Draw temp paddock" (draw) and Field "Draw temp paddock" (droppin) run
     // the SAME engine: a map click drops a vertex, every vertex is draggable.
     expect(canvasSrc).toContain("mode === 'draw' || mode === 'droppin'");
     expect(canvasSrc).toContain('function renderDropShape');
@@ -457,7 +457,7 @@ describe('Tap-to-place paddock draw (unified Map + Field)', () => {
     expect(canvasSrc).toContain('data-pasture-drop-undo');
     expect(canvasSrc).toContain('data-pasture-drop-cancel');
     expect(canvasSrc).toContain('onDrawComplete(gj, metrics)');
-    // Field "Draw paddock" drives droppin; Map "Draw temp paddock" drives draw.
+    // Field "Draw temp paddock" drives droppin; Map "Draw temp paddock" drives draw.
     expect(viewSrc).toContain("switchToolMode('droppin')");
     expect(viewSrc).toContain("switchToolMode('draw')");
   });
@@ -1571,7 +1571,7 @@ describe('One-shot redesign: Setup lifecycle / Reports tags / Plan conflict / Fi
     // GPS walk -> temp paddock save path is preserved.
     expect(viewSrc).toContain('closeOutlineToPolygon(trackForm.geometry)');
     expect(viewSrc).toContain('const asTemp = closed.valid');
-    // OnX-style field chrome: Walk paddock / Draw paddock / Measure / Layers + real online state.
+    // OnX-style field chrome: Walk paddock / Draw temp paddock / Measure / Layers + real online state.
     expect(viewSrc).toContain('data-pasture-field-chrome');
     expect(viewSrc).toContain('data-pasture-field-walk');
     expect(viewSrc).toContain('data-pasture-field-draw');
@@ -2333,6 +2333,12 @@ describe('Pasture Map: per-entry grazing delete + parent-from-child coloring (mi
     expect(viewSrc).toContain('data-pasture-field-walk');
     expect(viewSrc).toContain('data-pasture-field-draw');
     expect(viewSrc).toContain('data-pasture-field-measure');
+    // The Field draw control now visibly discloses that it creates a TEMP paddock;
+    // the old ambiguous "Draw paddock" visible label is gone from that toolbar.
+    const fieldDrawIdx = viewSrc.indexOf('data-pasture-field-draw');
+    expect(fieldDrawIdx).toBeGreaterThan(-1);
+    expect(viewSrc.slice(fieldDrawIdx, fieldDrawIdx + 260)).toContain('<span>Draw temp paddock</span>');
+    expect(viewSrc).not.toContain('<span>Draw paddock</span>');
     // The one-time setup/help "Layers" peer button is gone; fieldLayersOpen retired.
     expect(viewSrc).not.toContain('data-pasture-field-layers');
     expect(viewSrc).not.toContain('fieldLayersOpen');

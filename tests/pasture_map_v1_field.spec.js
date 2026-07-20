@@ -156,3 +156,67 @@ test('rapid Field map mount/unmount does not emit Leaflet _leaflet_pos teardown 
 
   expect(teardownNoise).toEqual([]);
 });
+
+async function areaByName(name) {
+  const {data, error} = await getTestAdminClient()
+    .from('land_areas')
+    .select('kind,permanence')
+    .eq('name', name)
+    .single();
+  if (error) throw new Error(`lookup area "${name}": ` + error.message);
+  return data;
+}
+
+test('mobile Field: toolbar exposes "Draw temp paddock" and it builds a temp paddock', async ({page}) => {
+  // Phone-first hotfix: the Field toolbar must make it obvious that Draw creates a
+  // TEMP paddock (the label used to read the ambiguous "Draw paddock", which led
+  // Ronnie to conclude there was no way to create one).
+  await page.setViewportSize({width: 390, height: 844});
+  await page.goto('/pasture-map', {timeout: 90_000});
+  await expect(page.locator('.pm-tabs')).toBeVisible({timeout: 25_000});
+  await page.locator('.pm-tabs button', {hasText: 'Field'}).click();
+
+  const drawBtn = page.locator('[data-pasture-field-draw]');
+  await expect(drawBtn).toBeVisible({timeout: 15_000});
+  await expect(drawBtn).toContainText('Draw temp paddock');
+  // The old ambiguous visible label is gone from the toolbar.
+  await expect(page.locator('[data-pasture-field-toolbar]').getByText('Draw paddock', {exact: true})).toHaveCount(0);
+  // Walk + Measure remain available alongside it.
+  await expect(page.locator('[data-pasture-field-walk]')).toContainText('Walk paddock');
+  await expect(page.locator('[data-pasture-field-measure]')).toContainText('Measure');
+
+  // The longer label stays inside the toolbar and does not grow it into the draw
+  // form (bottom 104px) or field action card (bottom 96px) at the two tightest
+  // phone widths — it may wrap, but the toolbar keeps its height.
+  for (const [w, h] of [
+    [390, 844],
+    [360, 800],
+  ]) {
+    await page.setViewportSize({width: w, height: h});
+    await expect(drawBtn).toContainText('Draw temp paddock');
+    const tb = await page.locator('[data-pasture-field-toolbar]').boundingBox();
+    const btn = await drawBtn.boundingBox();
+    expect(btn.x).toBeGreaterThanOrEqual(0);
+    expect(btn.x + btn.width).toBeLessThanOrEqual(w + 0.5); // no horizontal overflow
+    expect(tb.height).toBeLessThanOrEqual(96); // clears the action card (96) + draw form (104)
+  }
+
+  // Tapping the control enters draw mode (the bottom draw bar appears).
+  await drawBtn.click();
+  await expect(page.locator('[data-pasture-drawbar]')).toBeVisible({timeout: 15_000});
+
+  // Completing the polygon opens the draw form disclosing "New area = Temp paddock".
+  await dropStableShape(page);
+  await page.locator('[data-pasture-drop-save]').click();
+  await expect(page.locator('[data-pasture-drawform]')).toBeVisible({timeout: 10_000});
+  const tempNote = page.locator('[data-pasture-drawform-temp]');
+  await expect(tempNote).toBeVisible();
+  await expect(tempNote).toHaveText(/New area = Temp paddock/i);
+
+  // Saving persists a real TEMP paddock (kind=paddock, permanence=temporary) via
+  // the existing createTempLandArea path.
+  await page.locator('[data-pasture-drawform-name]').fill('Mobile Temp Paddock');
+  await page.locator('[data-pasture-drawform-save]').click();
+  await page.waitForTimeout(800);
+  expect(await areaByName('Mobile Temp Paddock')).toEqual({kind: 'paddock', permanence: 'temporary'});
+});
