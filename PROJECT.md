@@ -71,8 +71,10 @@ Design/function invariants that govern cross-surface behavior live in
 - Production deploy: Netlify auto-deploys from the GitHub organization repo
   `White-Creek-Farm/WCF-planner`, branch `main` (`npm run build`, publish `dist`,
   Functions `netlify/functions`). Runtime code is merged through `68872cb`;
-  confirm the final Netlify production deploy after this wrap's remaining
-  checkpoints reach `main`.
+  Netlify reported the wrap commit `9860a08` published and `ready` at
+  2026-07-20 21:43 UTC, directly confirming the organization-repo linkage and
+  current build settings. Later docs-only commits may advance the displayed
+  deploy ref without changing runtime behavior.
 - Supabase live high-water: all repository migrations through `166`, `170`-`183`,
   `185`-`189` are reported PROD-applied; numbers `167`-`169` are intentionally
   unused and `184` is reserved/not present. Migration `189`'s PROD apply was
@@ -323,9 +325,12 @@ Design/function invariants that govern cross-surface behavior live in
   proof (`29587188942`) passed verify and the stable policy gate while correctly
   skipping focused, both shards, and Pasture for the already-tested GitHub PR
   merge commit. Direct main pushes still undergo normal risk classification.
-- Git/workstation handoff: runtime work is linear through `68872cb`; the final
-  docs commit adds this `PROJECT.md` update plus only the approved historical-file
-  removals. The completed CC#1 label/viewport and CC#3 Client Errors worktrees
+  Wrap run `29781240070` started for `9860a08` and was still in progress when
+  this handoff closed; inspect that run first in the next CI reliability session.
+- Git/workstation handoff: runtime work is linear through `68872cb`; docs commit
+  `9860a08` adds this `PROJECT.md` wrap plus only the approved historical-file
+  removals. This deploy-confirmation addendum follows it. The completed CC#1
+  label/viewport and CC#3 Client Errors worktrees
   remain at their merged commits. The CC#2 worktree remains on merged
   `feature/processing-pig-drawer-title` with one untracked generated report that
   must not be staged. The clean CC#4 design-audit worktree remains at `06f04f6`.
