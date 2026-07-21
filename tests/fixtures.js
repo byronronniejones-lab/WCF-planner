@@ -1,5 +1,6 @@
 import {test as base} from '@playwright/test';
 import {getTestAdminClient, resetTestDatabase} from './setup/reset.js';
+import {waitForAppReady} from './helpers/appReady.js';
 import {seedP2601Scenario} from './scenarios/p2601_seed.js';
 import {
   seedCattleSendToProcessor,
@@ -45,7 +46,68 @@ import {seedAnimalTransfer} from './scenarios/animal_transfer_seed.js';
 //   test('something', async ({ page }) => { ... });
 // ============================================================================
 
+// Treat localhost and 127.0.0.1 as the same app origin — baseURL is
+// http://localhost:5173 while dev:test binds 127.0.0.1, and specs use both.
+function appOriginKey(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    const host = url.hostname === '127.0.0.1' ? 'localhost' : url.hostname;
+    return `${host}:${url.port}`;
+  } catch {
+    return null; // about:blank, data:, chrome-error:, malformed
+  }
+}
+
 export const test = base.extend({
+  // ==========================================================================
+  // Navigation readiness (see tests/helpers/appReady.js for the mechanism).
+  // ==========================================================================
+  // Specs raced the fail-closed cold-boot gate: page.goto() resolves as soon as
+  // the document loads, but the app then renders "Loading your farm data..."
+  // until loadAllData settles. Any assertion made in that window fails with
+  // "element(s) not found" on whatever surface marker it wanted. Under CI load
+  // the window outlived the 5s default expect budget, so the failing spec name
+  // rotated run to run while the mechanism stayed constant.
+  //
+  // Requiring every spec to remember a readiness call does not scale — the two
+  // specs that failed in run 29840170206 had no readiness gate at all and never
+  // referenced the boot splash, so no lint-style prohibition could have caught
+  // them. Readiness is therefore part of navigation itself, in one place.
+  //
+  // Scope and limits:
+  //   • Applies to page.goto() on the standard `page` fixture only.
+  //   • Keyed on page.url() AFTER navigation, so in-app redirects are covered.
+  //   • Skips non-app origins (external URLs, about:blank, data:).
+  //   • Returns the original Response and never swallows a navigation error.
+  //   • Fails closed: a boot that never completes raises, it is not retried,
+  //     reloaded, slept through, or downgraded to a warning.
+  //   • NOT covered: popups (page.waitForEvent('popup')), pages from a manually
+  //     created context/browser, page.goBack/goForward/reload, and history
+  //     navigation driven by in-app clicks. Those still need an explicit
+  //     waitForAppReady() call, which is why the helper stays exported.
+  wcfAutoReady: [true, {option: true}],
+  wcfAutoReadyReason: ['', {option: true}],
+
+  page: async ({page, baseURL, wcfAutoReady, wcfAutoReadyReason}, use) => {
+    if (!wcfAutoReady && !String(wcfAutoReadyReason).trim()) {
+      throw new Error(
+        'wcfAutoReady:false requires a non-empty wcfAutoReadyReason. Declare both together, e.g.\n' +
+          "  test.use({wcfAutoReady: false, wcfAutoReadyReason: 'asserts the pre-ready loading state'});",
+      );
+    }
+    const appOrigin = appOriginKey(baseURL || 'http://localhost:5173');
+    const nativeGoto = page.goto.bind(page);
+    page.goto = async (url, options) => {
+      const response = await nativeGoto(url, options);
+      if (wcfAutoReady && appOriginKey(page.url()) === appOrigin) {
+        await waitForAppReady(page);
+      }
+      return response;
+    };
+    await use(page);
+  },
+
   // eslint-disable-next-line no-empty-pattern -- canonical Playwright fixture pattern
   supabaseAdmin: async ({}, use) => {
     await use(getTestAdminClient());

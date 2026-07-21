@@ -31,6 +31,9 @@ const ALLOWED = new Map([
   // Asserts the splash-clearing behavior itself; makes no data-dependent
   // assertion afterwards.
   ['smoke.spec.js', 'asserts the boot splash fades — the splash IS the subject'],
+  // Proves the centralized auto-ready fixture; both readiness markers are its
+  // subject, so it asserts on them directly.
+  ['navigation_readiness.spec.js', 'behavioral proof of the readiness contract — both markers ARE the subject'],
   // Public-bypass product assertion + a screenshot-capture helper.
   ['newsletter_public.spec.js', 'public bypass clears the splash (product assertion) + screenshot helper'],
   // Local capture utilities; excluded from root CI runs by playwright.config.js
