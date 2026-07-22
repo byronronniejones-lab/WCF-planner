@@ -1,5 +1,6 @@
 import {createClient} from '@supabase/supabase-js';
 import {assertTestDatabase} from './assertTestDatabase.js';
+import {captureTruncateBlockerDiagnostic, isLockTimeoutError} from './truncateLockDiagnostic.js';
 
 // ============================================================================
 // Truncate test-owned tables. Called from per-spec beforeAll to reset state.
@@ -206,8 +207,16 @@ export async function resetTestDatabase(client = getTestAdminClient()) {
   // success and leave cross-test residue behind.
   const truncate = client
     .rpc('exec_sql', {sql: `TRUNCATE TABLE ${tables} RESTART IDENTITY CASCADE;`})
-    .then(({error}) => {
-      if (error) throw new Error(`resetTestDatabase: TRUNCATE failed: ${error.message}`);
+    .then(async ({error}) => {
+      if (!error) return;
+      // Diagnostic ONLY for a lock/statement timeout, and only additive: it
+      // logs a sanitized blocker snapshot, then re-throws the original error so
+      // the reset still fails closed. No retry, no timeout change, no suppress.
+      if (isLockTimeoutError(error.message)) {
+        const snapshot = await captureTruncateBlockerDiagnostic(client).catch(() => null);
+        if (snapshot) console.error(`resetTestDatabase: TRUNCATE blocked — ${snapshot}`);
+      }
+      throw new Error(`resetTestDatabase: TRUNCATE failed: ${error.message}`);
     });
   await Promise.all([truncate, cleanupFuelBillsStorage(client), cleanupDailyPhotosStorage(client)]);
 }

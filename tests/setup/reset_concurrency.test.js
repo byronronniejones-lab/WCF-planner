@@ -111,3 +111,47 @@ describe('resetTestDatabase concurrency', () => {
     await expect(resetTestDatabase(fake)).rejects.toThrow(/WCF_TEST_DATABASE/);
   });
 });
+
+// A client whose rpc distinguishes the TRUNCATE call from the diagnostic DO
+// block by SQL content, so we can drive the lock-timeout path deterministically.
+function lockTimeoutClient({truncateError, diagnosticSnapshot}) {
+  const rpc = vi.fn(async (_name, args) => {
+    if (/TRUNCATE TABLE/.test(args.sql)) return {error: truncateError};
+    if (/pg_stat_activity/.test(args.sql)) return {error: {message: diagnosticSnapshot}};
+    return {error: null};
+  });
+  return {
+    rpc,
+    storage: {
+      from: () => ({list: async () => ({data: [], error: null}), remove: async () => ({data: [], error: null})}),
+    },
+    _rpc: rpc,
+  };
+}
+
+describe('TRUNCATE lock diagnostic wiring', () => {
+  it('on a lock timeout, captures the sanitized snapshot AND still rejects (fail closed)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const fake = lockTimeoutClient({
+      truncateError: {message: 'canceling statement due to statement timeout'},
+      diagnosticSnapshot: 'TRUNCATE blocker snapshot: [pid=99 state=active rel=cattle mode=AccessShareLock]',
+    });
+    await expect(resetTestDatabase(fake)).rejects.toThrow(
+      /TRUNCATE failed: canceling statement due to statement timeout/,
+    );
+    // Diagnostic ran (a second rpc for the DO block) and its snapshot was logged.
+    expect(fake._rpc).toHaveBeenCalledTimes(2);
+    const logged = errSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(logged).toMatch(/blocker snapshot.*pid=99/);
+    errSpy.mockRestore();
+  });
+
+  it('does NOT run the diagnostic for a non-lock TRUNCATE error', async () => {
+    const fake = lockTimeoutClient({
+      truncateError: {message: 'permission denied for relation cattle'},
+      diagnosticSnapshot: 'should-not-be-used',
+    });
+    await expect(resetTestDatabase(fake)).rejects.toThrow(/permission denied/);
+    expect(fake._rpc).toHaveBeenCalledTimes(1); // TRUNCATE only, no diagnostic
+  });
+});

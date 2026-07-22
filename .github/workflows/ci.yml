@@ -226,7 +226,14 @@ jobs:
         # Step timeout below the job budget so an overrun FAILS the step (keeps
         # the artifact upload) instead of cancelling the whole job.
         timeout-minutes: 32
-        run: npm run test:e2e:ci -- --shard=${{ matrix.shard }}/2
+        # Background runner-telemetry sampler; the trap stops it on any shell
+        # exit (pass, fail, or cancel). It is backgrounded, so a telemetry
+        # failure never changes the test command's exit code — the log simply
+        # lacks TELEMETRY lines, which is the unavailability signal.
+        run: |
+          node scripts/ci_runner_telemetry.cjs & TELEM_PID=$!
+          trap 'kill "$TELEM_PID" 2>/dev/null || true' EXIT
+          npm run test:e2e:ci -- --shard=${{ matrix.shard }}/2
       - name: Upload Playwright report on failure or cancellation
         if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v4
