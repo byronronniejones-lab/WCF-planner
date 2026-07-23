@@ -113,6 +113,24 @@ Design/function invariants that govern cross-surface behavior live in
   CI, and Netlify deployment behavior. The source is safe to publish because the
   manual-only job cannot receive missing secrets; do not run its workflow until
   all seven Environment secrets are present and verified by name.
+- Supabase project fleet inventory (dashboard-confirmed 2026-07-23):
+  - `Farm Planner` is the PROD project (`AWS us-west-2`, Nano). It is never a
+    browser-test, seed, reset, fixture, or CI target.
+  - `wcf-planner-test-main` is the existing TEST project (`AWS us-east-1`,
+    Nano). It remains the reserved main/focused-browser lane.
+  - `TEST A`, `TEST B`, `TEST C`, and `TEST D` exist as new isolated TEST
+    projects (`AWS us-east-1`, Micro).
+  - Project existence is not readiness. TEST A-D are not approved for execution
+    until repository migrations, synthetic Auth users, Storage buckets/policies,
+    required functions/configuration, secrets, drift verification, and
+    project-specific leases are bootstrapped and proven. Never copy PROD data or
+    credentials into a TEST project.
+  - Target allocation is controlled by Codex for every CC iteration: one full
+    run uses TEST A/B as shard 1/2; a second simultaneous full run may use TEST
+    C/D as shard 1/2; `wcf-planner-test-main` stays available for main/focused
+    browser proof. CCs may not choose, swap, or share targets themselves. Every
+    prompt must name the exact project, shard, lease group, and prohibited
+    targets. An unassigned CC performs DB-free work only.
 - Shared TEST/Playwright reliability: branch
   `feature/test-playwright-reliability` contains boot-readiness commits
   `61e9bed`/`6cbdd9c` and fixture-budget Package A commit `e5b9ab3`; none is
@@ -429,10 +447,12 @@ Next-session routing: item 1 starts with Ronnie adding the seven already-stored
 1Password values as GitHub `dr-backup` Environment secrets. Then run the
 read-only preflight, separately approve the first immutable backup, and prove an
 isolated restore before building the Site & Recovery Admin tab. Item 2 resumes
-with the merge-baseline decision after measured run `30002663288`; do not buy a
-larger runner as the primary response. If merged, split the remaining low-load
-sheep fixture/query cascade, Broiler render race, and offline IndexedDB race into
-bounded lanes while keeping two shards and telemetry. Newsletter item 3
+by safely bootstrapping and proving the five-project TEST fleet before assigning
+parallel browser work, followed by the merge-baseline decision after measured
+run `30002663288`; do not buy a larger runner as the primary response. Once
+isolation is proven, split the remaining low-load sheep fixture/query cascade,
+Broiler render race, and offline IndexedDB race into bounded parallel lanes.
+Newsletter item 3
 needs Ronnie's writing example and a controlled PROD AI probe before the first
 issue. Item 4 remains a later operational cutover decision. Item 5 removes
 Processing Center tasks from the Task Center list without deleting their source
@@ -522,8 +542,50 @@ records or disrupting Processing workflows.
 2. Shared TEST / Playwright rotating-flake closure
    - Status: ACTIVE ON `feature/test-playwright-reliability`; FIVE TEST-INFRA
      CHECKPOINTS PUSHED TO THE FEATURE BRANCH, NONE MERGED; MEASURED WARM-UP
-     RUN COMPLETE; MERGE-BASELINE DECISION OPEN.
+     RUN COMPLETE; FIVE-PROJECT TEST FLEET CREATED BUT NOT BOOTSTRAPPED;
+     MERGE-BASELINE DECISION OPEN.
    - Class: `DEFECT`/`CI`/`TEST-INFRA`/`RELIABILITY`.
+   - Locked TEST-fleet allocation:
+     - PROD `Farm Planner` is prohibited for all tests, resets, seeds, probes,
+       and migrations not separately approved as PROD work.
+     - Full-run lane 1 is the fixed pair `TEST A` = shard 1 and `TEST B` = shard
+       2. Full-run lane 2 is `TEST C` = shard 1 and `TEST D` = shard 2.
+       `wcf-planner-test-main` is reserved for main/focused browser validation.
+     - The pairs describe capacity, not permanent CC ownership. Codex assigns a
+       free pair to a named CC iteration and includes the exact targets in that
+       CC's prompt. No CC may infer a target from its number, reuse another
+       lane's credentials, launch an extra shard, or dispatch against an
+       unassigned project.
+     - Every project gets its own concurrency/lease identity. A lease is
+       exclusive per project, while different projects may execute in parallel.
+       Until this routing is built and validated, the existing single
+       `wcf-test-db` lease and serialized execution contract remain authoritative.
+     - Keep all five through the reliability-correction phase and at least two
+       weeks of repeatably trustworthy CI. Then consciously review cost and
+       usage; the expected steady-state option is TEST A/B for parallel full
+       shards plus `wcf-planner-test-main` for focused work, with TEST C/D paused
+       or removed if two simultaneous full runs are no longer valuable.
+   - Fleet bootstrap gate:
+     1. Inventory the five TEST project refs and required non-PROD credentials
+        without placing secret values in source, chat, screenshots, or logs.
+     2. Build one idempotent bootstrap from repository migrations and synthetic
+        TEST-only seed/configuration. It must create/verify required Auth users,
+        Storage buckets/policies, functions, and fixture prerequisites without
+        copying any PROD row, object, credential, or auth identity.
+     3. Add a fail-closed drift attestation proving schema/migration, Auth,
+        Storage, function, and TEST-marker parity before a project can receive a
+        shard.
+     4. Store project-specific GitHub secrets behind clearly named TEST
+        environments or equivalent protected boundaries; never expose
+        service-role or database credentials to browser code.
+     5. Change leases and CI routing to explicit project IDs, then prove A/B
+        parallel isolation first. Deliberately hold/reset A and demonstrate B is
+        unaffected. Only after that proof enable C/D and reserve
+        `wcf-planner-test-main` for focused/main work.
+     6. Run two concurrent full suites plus a focused TEST-main proof and verify
+        no target collision, cross-project residue, configuration drift, or
+        accidental PROD reference. Do not remove the legacy global lease until
+        this gate passes.
    - Evidence and completed feature-branch work:
      - `61e9bed` replaced direct splash waits in 26 families with the shared
        two-marker readiness helper and guards its ownership. `6cbdd9c` makes
@@ -2351,11 +2413,13 @@ Workflow/worktable entities:
 - Offline queue IndexedDB ownership is centralized in `src/lib/offlineQueue.js`.
 - Offline RPC replay goes through `useOfflineRpcSubmit` where needed.
 - Ownership stamping is server-side on replay.
-- Shared TEST DB Playwright specs that reset/seed the DB must run one file at a
-  time. GitHub CI serializes its two root shards and path-gated Pasture job, but
-  local Playwright is outside that concurrency group: check active GitHub runs
-  and obtain the TEST-DB execution window before starting any local browser
-  spec. Never overlap local TEST Playwright with GitHub CI.
+- Within any one TEST project, Playwright specs that reset/seed must run one file
+  at a time and hold that project's exclusive lease. Different TEST projects may
+  run in parallel only after the five-project bootstrap/drift/isolation gate in
+  Build Queue item 2 passes. Until then, GitHub CI remains serialized under the
+  legacy global lease, and local Playwright must not overlap it. `Farm Planner`
+  PROD is never a TEST target. Codex assigns each CC iteration an exact TEST
+  project; an unassigned CC is DB-free only.
 
 ### Storage And File Inputs
 
@@ -2499,12 +2563,20 @@ Playwright notes:
   floor without repeating browser work already executed against that PR's
   combined head. Direct main pushes still undergo ordinary fail-closed risk
   classification.
-- Specs that reset the shared TEST DB must run one file at a time.
-- Every local TEST-backed Playwright run must use
-  `scripts/test_db_lease_run.cjs`; it dispatches the shared GitHub
+- Specs that reset a TEST database must run one file at a time within that
+  project. Parallelism is across isolated projects, never within one project's
+  reset/seed stream.
+- The approved target map is A/B for full-run lane 1, C/D for full-run lane 2,
+  and `wcf-planner-test-main` for main/focused browser work. Codex must assign
+  the exact target and lease in every CC prompt; CC numbering does not imply
+  project ownership. PROD `Farm Planner` is prohibited.
+- Until per-project routing is implemented and its isolation proof passes, every
+  local TEST-backed Playwright run must still use
+  `scripts/test_db_lease_run.cjs`; it dispatches the legacy shared GitHub
   `wcf-test-db` concurrency lease and lets CI go first. Never run an unleased
-  local TEST browser process because that process is invisible to the group and
-  can corrupt seed/reset state.
+  local TEST browser process. After cutover, the same fail-closed rule applies
+  through a distinct lease for each project; no random or fallback target
+  selection is permitted.
 - Local dev-server cold-start can hang if stray node/vite processes remain in
   old worktrees. Clear stale processes before diagnosing product flake.
 
