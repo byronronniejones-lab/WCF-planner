@@ -116,10 +116,19 @@ Design/function invariants that govern cross-surface behavior live in
   - `Farm Planner` is the PROD project (`AWS us-west-2`, Nano). It is never a
     browser-test, seed, reset, fixture, or CI target.
   - `wcf-planner-test-main` is the existing TEST project (`AWS us-east-1`,
-    Nano). It remains the reserved main/focused-browser lane.
+    Nano). It remains the currently operational main/focused-browser lane, but
+    it is not a canonical configuration template: read-only comparison found it
+    missing repository migrations `110`, `111`, `113`, `114`, and `134`, while
+    retaining shelved migration `083` residue and a stale
+    `update_todo_item` overload. Do not copy its remote state to new projects;
+    repository migrations are authoritative. Correcting this existing project
+    remains separately gated.
   - `TEST A`, `TEST B`, `TEST C`, and `TEST D` exist as new isolated TEST
     projects (`AWS us-east-1`, Micro).
-  - Project existence is not readiness. TEST A-D are not approved for execution
+  - Project existence is not readiness. TEST A is bootstrapped from repository
+    migrations but remains NOT READY pending ledger, drift, credential, lease,
+    isolation, and browser-pilot proof. TEST B-D are not bootstrapped. None is
+    approved for execution
     until repository migrations, synthetic Auth users, Storage buckets/policies,
     required functions/configuration, secrets, drift verification, and
     project-specific leases are bootstrapped and proven. Never copy PROD data or
@@ -586,6 +595,30 @@ Admin Fuel Log and Cost by Month implementations can be deleted safely.
         no target collision, cross-project residue, configuration drift, or
         accidental PROD reference. Do not remove the legacy global lease until
         this gate passes.
+   - Fleet implementation checkpoint: CC#1 is working on
+     `feature/test-project-fleet` from `561e589`. TEST A has a repo-derived
+     structural bootstrap (83 base tables, 304 function names, nine buckets and
+     the required synthetic fixture prerequisites) but is explicitly NOT READY.
+     TEST B-D are untouched. `wcf-planner-test-main` remained read-only and PROD
+     was never targeted. Neither TEST-main nor the original TEST A apply has a
+     migration ledger; the in-progress bootstrap must add per-migration
+     checksums, atomic apply-once semantics, interruption-safe resume, and
+     fail-closed drift detection before replication.
+   - Exact reference classification: TEST-main's extra
+     `webform_submitter_identities` table and trigger come from shelved migration
+     `083`; its six-argument `update_todo_item` overload is stale. TEST-main
+     lacks repo-owned functions from migrations `110`, `111`, `113`, `114`, and
+     `134`. TEST A correctly follows repository source rather than copying this
+     drift. Historical preflight fixtures for migrations `039`/`046`, `052`,
+     `137`, and `172` must be synthetic, idempotent, and inserted only at their
+     proven migration boundaries.
+   - Tasks-cron Vault values in the new fleet are structural TEST placeholders,
+     not operational integrations. Placeholder URLs use reserved `.invalid`
+     hosts and placeholder secrets are marked non-operational, but this alone
+     does not prove zero outbound traffic because DNS may still be attempted.
+     Bootstrap/readiness must disable or unschedule the related TEST cron jobs
+     and attest that they cannot initiate traffic unless a separately approved
+     TEST integration is configured.
    - Evidence and completed feature-branch work:
      - `61e9bed` replaced direct splash waits in 26 families with the shared
        two-marker readiness helper and guards its ownership. `6cbdd9c` makes
