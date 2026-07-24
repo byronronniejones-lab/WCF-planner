@@ -131,7 +131,16 @@ jobs:
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
-          pg_dump --version
+          # Installing the 17 client is necessary but NOT sufficient: ubuntu-latest
+          # ships postgresql-client-16, and /usr/bin/pg_dump is the Debian
+          # pg_wrapper, which keeps resolving to 16 after the 17 install. pg_dump 16
+          # then refuses the 17.x server ("aborting because of server version
+          # mismatch") and the first real backup failed here. Put the versioned 17
+          # bin dir FIRST on PATH so pg_dump/psql are the 17 binaries directly,
+          # bypassing the wrapper. GITHUB_PATH only affects LATER steps, so verify
+          # in-step against the explicit path.
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+          /usr/lib/postgresql/17/bin/pg_dump --version
 
       - name: Install age
         run: |
@@ -142,6 +151,16 @@ jobs:
         run: |
           aws --version   # preinstalled on ubuntu-latest; used for B2 + R2 (both S3-compatible)
           node --version
+          # pg_dump must be >= the 17.x server major or the dump aborts with a
+          # version mismatch. This runs on the PATH the backup step will use (pg17
+          # prepended via GITHUB_PATH in the previous step), so a wrapper/PATH
+          # regression fails here, cheaply, instead of after connecting to PROD.
+          pg_dump --version
+          pg_major="$(pg_dump --version | grep -oE '[0-9]+' | head -1)"
+          if [ "$pg_major" -lt 17 ]; then
+            echo "refusing: pg_dump major $pg_major < 17 (PROD server is 17.x)"
+            exit 1
+          fi
 
       - name: Run backup
         env:

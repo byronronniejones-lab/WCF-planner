@@ -150,8 +150,15 @@ describe('workflow credential containment', () => {
     expect(wfCode).toMatch(/cancel-in-progress: false/);
   });
 
-  it('pins a pg client at least as new as the 17.6 server', () => {
+  it('pins a pg client at least as new as the 17.6 server AND makes it the one on PATH', () => {
+    // Installing postgresql-client-17 is necessary but NOT sufficient: the runner
+    // ships client 16 and /usr/bin/pg_dump is the Debian pg_wrapper, which keeps
+    // resolving to 16 after the 17 install, so pg_dump refuses the 17.x server
+    // ("server version mismatch") — the failure mode that broke the first real
+    // backup. The versioned 17 bin dir must be put first on PATH via GITHUB_PATH.
     expect(wfCode).toMatch(/postgresql-client-17/);
+    expect(wfCode).toMatch(/\/usr\/lib\/postgresql\/17\/bin/);
+    expect(wfCode).toMatch(/GITHUB_PATH/);
   });
 });
 
