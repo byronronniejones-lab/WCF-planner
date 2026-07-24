@@ -395,6 +395,39 @@ describe('storage body transfer: streaming, no staging', () => {
     expect(src).toMatch(/DR_STORAGE_S3_SECRET_ACCESS_KEY,/);
     expect(src).toMatch(/DR_STORAGE_S3_ACCESS_KEY_ID,/);
   });
+
+  it('requests an explicit checksum ONLY on the B2 storage destination', () => {
+    // B2's bucket-default Object Lock requires a checksum on every put, including
+    // these streamed storage bodies; the flag is gated on the B2 provider only.
+    const t = region(src, 'function streamOneObject', 'function supabaseEndpoint');
+    expect(t).toMatch(/if \(provider === 'b2'\) destArgs\.push\('--checksum-algorithm', 'SHA256'\)/);
+    // Exactly one checksum flag exists in the streaming function.
+    expect((t.match(/--checksum-algorithm/g) || []).length).toBe(1);
+  });
+
+  it('leaves the R2 storage cp arguments unchanged (shared args carry no checksum)', () => {
+    const t = region(src, 'function streamOneObject', 'function supabaseEndpoint');
+    const gate = t.indexOf("if (provider === 'b2')");
+    expect(gate).toBeGreaterThan(-1);
+    // The base destArgs both providers share must not add a checksum; only the
+    // B2-gated push does. So R2's aws s3 cp is byte-for-byte what it was.
+    expect(t.slice(0, gate)).not.toMatch(/--checksum-algorithm/);
+  });
+
+  it('keeps the provider response TAIL in storage errors over long object keys', () => {
+    // aws prefixes errors with "upload failed: - to s3://<long key>"; a HEAD slice
+    // discards the real reason. errTail keeps a bounded TAIL instead.
+    const t = region(src, 'function streamOneObject', 'function supabaseEndpoint');
+    expect(t).toMatch(/errTail\(destErr\)/);
+    expect(t).toMatch(/errTail\(srcErr\)/);
+    expect(t).not.toMatch(/\.slice\(0, 160\)/);
+    expect(src).toMatch(/const errTail =[\s\S]*?\.slice\(-max\)/); // negative slice == keep the tail
+  });
+
+  it('redacts the provider error via clean() before logging it', () => {
+    // Redaction is mandatory: errTail must route stderr through clean() first.
+    expect(src).toMatch(/const errTail = \(t, max = 400\) =>\s*clean\(t\)/);
+  });
 });
 
 describe('bounded concurrency and retry (orchestration module)', () => {

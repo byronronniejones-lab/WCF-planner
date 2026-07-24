@@ -120,6 +120,13 @@ const SECRETS = [
 ].filter(Boolean);
 const clean = (t) => L.redactSecrets(t, SECRETS);
 
+// Provider errors from `aws s3 cp` begin with "upload failed: - to
+// s3://<very long object key>", so slicing the HEAD of the stderr throws away
+// the actual provider response (e.g. an InvalidRequest reason) for any object
+// with a long path. Redact FIRST (never skip clean()), collapse whitespace, then
+// keep a bounded TAIL so the meaningful end of the message survives long keys.
+const errTail = (t, max = 400) => clean(t).replace(/\s+/g, ' ').trim().slice(-max);
+
 // Execute mode is fail-closed: refuse unless EVERY provider value is present.
 // A partially configured run could upload to one provider only, leaving a
 // single point of failure that still looks like a success.
@@ -419,20 +426,26 @@ function streamOneObject(obj, provider, destKey) {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: supabaseEnv(),
     });
-    const dest = spawnTracked(
-      'aws',
-      [
-        's3',
-        'cp',
-        '-',
-        `s3://${destBucket}/${destKey}`,
-        '--endpoint-url',
-        endpointFor(provider),
-        '--expected-size',
-        String(obj.size),
-      ],
-      {stdio: ['pipe', 'ignore', 'pipe'], env: awsEnvFor(provider)},
-    );
+    // B2's bucket-default Object Lock makes EVERY put — including these streamed
+    // storage bodies — require a Content-MD5 or x-amz-checksum-* header, and the
+    // shared AWS_REQUEST_CHECKSUM_CALCULATION=when_required adds none, so B2
+    // rejected 801/828 storage puts. Streaming from stdin uses multipart, so
+    // request an explicit checksum algorithm; the CLI applies it to BOTH
+    // single-part and multipart uploads. SHA256 is broadly compatible. This is
+    // added ONLY on the B2 destination — R2's args are left exactly as they were,
+    // so R2 keeps its existing when_required compatibility behavior.
+    const destArgs = [
+      's3',
+      'cp',
+      '-',
+      `s3://${destBucket}/${destKey}`,
+      '--endpoint-url',
+      endpointFor(provider),
+      '--expected-size',
+      String(obj.size),
+    ];
+    if (provider === 'b2') destArgs.push('--checksum-algorithm', 'SHA256');
+    const dest = spawnTracked('aws', destArgs, {stdio: ['pipe', 'ignore', 'pipe'], env: awsEnvFor(provider)});
 
     let srcErr = '';
     let destErr = '';
@@ -443,13 +456,13 @@ function streamOneObject(obj, provider, destKey) {
     Promise.all([
       new Promise((res) =>
         src.on('close', (code) => {
-          if (code !== 0) errors.push(`source read exited ${code}: ${clean(srcErr).slice(0, 160)}`);
+          if (code !== 0) errors.push(`source read exited ${code}: ${errTail(srcErr)}`);
           res();
         }),
       ),
       new Promise((res) =>
         dest.on('close', (code) => {
-          if (code !== 0) errors.push(`dest write exited ${code}: ${clean(destErr).slice(0, 160)}`);
+          if (code !== 0) errors.push(`dest write exited ${code}: ${errTail(destErr)}`);
           res();
         }),
       ),
