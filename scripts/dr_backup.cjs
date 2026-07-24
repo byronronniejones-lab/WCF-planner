@@ -339,24 +339,23 @@ function awsRead(provider, args) {
 function runPreflight() {
   const results = [];
 
+  // The B2 writer key is deliberately bucket-scoped (listBuckets + writeFiles +
+  // writeFileRetentions only). B2 maps the S3 ListBuckets operation to the
+  // ACCOUNT-level listAllBucketNames capability, which this key does not hold,
+  // so ListBuckets returns AccessDenied "not entitled" even when the credentials
+  // are valid — the credential authenticated, it simply is not authorized for an
+  // account-wide op. HeadBucket on THIS bucket is satisfied by listBuckets and is
+  // the correct read-only proof of credentials + endpoint + bucket for a
+  // bucket-scoped key. (A truly bad credential fails earlier with
+  // InvalidAccessKeyId / SignatureDoesNotMatch, not "not entitled".)
   const b2Bucket = process.env.DR_B2_BUCKET;
-  const lb = awsRead('b2', ['list-buckets']);
-  if (!lb.ok) {
-    results.push({provider: 'B2', check: 'list-buckets', ok: false, detail: lb.error});
-  } else {
-    let found = false;
-    try {
-      found = (JSON.parse(lb.out).Buckets || []).some((b) => b.Name === b2Bucket);
-    } catch {
-      found = lb.out.includes(b2Bucket);
-    }
-    results.push({
-      provider: 'B2',
-      check: 'credentials valid + bucket visible',
-      ok: found,
-      detail: found ? `${b2Bucket} present` : `${b2Bucket} NOT in the key's visible buckets`,
-    });
-  }
+  const hbB2 = awsRead('b2', ['head-bucket', '--bucket', b2Bucket]);
+  results.push({
+    provider: 'B2',
+    check: 'credentials valid + bucket reachable (head-bucket)',
+    ok: hbB2.ok,
+    detail: hbB2.ok ? `${b2Bucket} reachable` : hbB2.error,
+  });
 
   const r2Bucket = process.env.DR_R2_BUCKET;
   const hb = awsRead('r2', ['head-bucket', '--bucket', r2Bucket]);

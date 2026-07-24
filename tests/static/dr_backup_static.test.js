@@ -276,7 +276,6 @@ describe('provider preflight is non-destructive', () => {
     const pre = region(src, 'function runPreflight', 'function spawnTracked');
     expect(pre).not.toMatch(/put-object/);
     expect(pre).not.toMatch(/delete/);
-    expect(pre).toMatch(/list-buckets/);
     expect(pre).toMatch(/head-bucket/);
   });
 
@@ -286,10 +285,16 @@ describe('provider preflight is non-destructive', () => {
     expect(new Set(calls)).toEqual(new Set(['awsRead(']));
   });
 
-  it('does not attempt B2 object listing, which the writer key cannot do', () => {
-    // The B2 key holds listBuckets/writeFiles/writeFileRetentions only.
+  it('probes B2 with head-bucket, not account-level list-buckets or object listing', () => {
+    // The B2 key holds listBuckets/writeFiles/writeFileRetentions only and is
+    // bucket-scoped. B2 maps S3 ListBuckets to the account-level
+    // listAllBucketNames capability, which this key lacks, so ListBuckets returns
+    // "not entitled". HeadBucket on the specific bucket is satisfied by
+    // listBuckets and is the correct read-only credential/bucket proof.
     const pre = region(src, 'function runPreflight', 'function spawnTracked');
+    expect(pre).not.toMatch(/awsRead\('b2', \['list-buckets/);
     expect(pre).not.toMatch(/awsRead\('b2', \['list-objects/);
+    expect(pre).toMatch(/awsRead\('b2', \['head-bucket/);
   });
 
   it('runs before the expensive dump so mistakes surface in seconds', () => {
